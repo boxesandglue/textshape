@@ -131,6 +131,39 @@ func (g *Glyf) GetGlyphBytes(gid GlyphID) []byte {
 	return g.data[offset : offset+length]
 }
 
+// GetGlyphExtents returns the extents (bounding box) for a glyph.
+// Returns false if the glyph has no outline (e.g., space) or doesn't exist.
+func (g *Glyf) GetGlyphExtents(gid GlyphID) (GlyphExtents, bool) {
+	offset, length, ok := g.loca.GetOffset(gid)
+	if !ok {
+		return GlyphExtents{}, false
+	}
+
+	// Empty glyph (like space) - no extents
+	if length == 0 {
+		return GlyphExtents{}, false
+	}
+
+	// Glyph header: numberOfContours (2) + xMin (2) + yMin (2) + xMax (2) + yMax (2) = 10 bytes
+	if int(offset)+10 > len(g.data) {
+		return GlyphExtents{}, false
+	}
+
+	data := g.data[offset:]
+	// Skip numberOfContours (bytes 0-1)
+	xMin := int16(binary.BigEndian.Uint16(data[2:]))
+	yMin := int16(binary.BigEndian.Uint16(data[4:]))
+	xMax := int16(binary.BigEndian.Uint16(data[6:]))
+	yMax := int16(binary.BigEndian.Uint16(data[8:]))
+
+	return GlyphExtents{
+		XBearing: xMin,
+		YBearing: yMax,                  // Top of glyph
+		Width:    xMax - xMin,
+		Height:   -(yMax - yMin),        // Negative height (top to bottom)
+	}, true
+}
+
 // IsComposite returns true if the glyph is a composite glyph.
 func (gd *GlyphData) IsComposite() bool {
 	return gd.NumberOfContours < 0

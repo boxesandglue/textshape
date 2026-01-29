@@ -50,8 +50,10 @@ func TestBufferCodepoints(t *testing.T) {
 func TestBufferDirection(t *testing.T) {
 	buf := NewBuffer()
 
-	if buf.Direction != DirectionLTR {
-		t.Error("Default direction should be LTR")
+	// Default direction is 0 (unset), not LTR
+	// Direction is set by GuessSegmentProperties or explicitly
+	if buf.Direction != 0 {
+		t.Error("Default direction should be unset (0)")
 	}
 
 	buf.SetDirection(DirectionRTL)

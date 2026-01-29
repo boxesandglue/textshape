@@ -145,7 +145,7 @@ func TestRealFontGSUB(t *testing.T) {
 					t.Logf("Testing 'fi' ligature: glyphs %v", glyphs)
 
 					// Apply liga feature with GDEF
-					result := gsub.ApplyFeatureWithGDEF(TagLiga, glyphs, gdef)
+					result := gsub.ApplyFeatureWithGDEF(TagLiga, glyphs, gdef, nil)
 					t.Logf("After 'liga': glyphs %v", result)
 
 					if len(result) == 1 {
@@ -414,5 +414,75 @@ func TestArabicFont(t *testing.T) {
 
 	if gdef.HasMarkGlyphSets() {
 		t.Logf("Font has %d mark glyph sets", gdef.MarkGlyphSetCount())
+	}
+}
+
+// TestHebrewDiacriticsDebug debugs the Hebrew diacritics test case line 18.
+func TestHebrewDiacriticsDebug(t *testing.T) {
+	// Load the Hebrew test font
+	fontPath := "../harfbuzz-tests/fonts/b895f8ff06493cc893ec44de380690ca0074edfa.ttf"
+	data, err := os.ReadFile(fontPath)
+	if err != nil {
+		t.Skip("Hebrew font not found:", err)
+	}
+
+	font, err := ParseFont(data, 0)
+	if err != nil {
+		t.Fatalf("Failed to parse font: %v", err)
+	}
+
+	shaper, err := NewShaper(font)
+	if err != nil {
+		t.Fatalf("Failed to create shaper: %v", err)
+	}
+
+	// Input: U+05D9,U+05B0,U+05E8,U+05D5,U+05BC,U+05E9,U+05C1,U+05B8,U+05DC,U+05B7,U+05B4,U+05DD
+	// yod, sheva, resh, vav, dagesh, shin, shin-dot, qamats, lamed, patah, hiriq, finalmem
+	input := []Codepoint{0x05D9, 0x05B0, 0x05E8, 0x05D5, 0x05BC, 0x05E9, 0x05C1, 0x05B8, 0x05DC, 0x05B7, 0x05B4, 0x05DD}
+
+	buf := NewBuffer()
+	buf.AddCodepoints(input)
+	buf.Direction = DirectionRTL
+	buf.Script = MakeTag('H', 'e', 'b', 'r')
+
+	// Enable debug output
+	debugGPOS = true
+	defer func() { debugGPOS = false }()
+
+	// Print GPOS lookup info
+	if shaper.gpos != nil {
+		t.Logf("GPOS has %d lookups", shaper.gpos.NumLookups())
+		for i := 0; i < shaper.gpos.NumLookups(); i++ {
+			lookup := shaper.gpos.GetLookup(i)
+			if lookup != nil {
+				if i == 31 || i == 32 {
+					t.Logf("  Lookup %d: Type=%d Flag=0x%04X MarkFilter=%d", i, lookup.Type, lookup.Flag, lookup.MarkFilter)
+				} else {
+					t.Logf("  Lookup %d: Type=%d (1=Single, 2=Pair, 3=Cursive, 4=MarkBase, 5=MarkLig, 6=MarkMark)", i, lookup.Type)
+				}
+			}
+		}
+	}
+
+	// Shape
+	shaper.Shape(buf, nil)
+
+	t.Logf("After shaping: %d glyphs", len(buf.Info))
+	for i, info := range buf.Info {
+		pos := buf.Pos[i]
+		t.Logf("  [%d] gid=%d cluster=%d class=%d xoff=%d yoff=%d xadv=%d yadv=%d attach=%d",
+			i, info.GlyphID, info.Cluster, info.GlyphClass,
+			pos.XOffset, pos.YOffset, pos.XAdvance, pos.YAdvance, pos.AttachChain)
+	}
+
+	// Expected: hiriq (glyph at some index) should have xoffset -97
+	// We're looking for the hiriq glyph and checking its offset
+	for i, info := range buf.Info {
+		// Find hiriq by checking if it's attached to lamed (cluster 8)
+		if info.Cluster == 8 && buf.Pos[i].XAdvance == 0 {
+			pos := buf.Pos[i]
+			t.Logf("Mark at cluster 8: gid=%d xoffset=%d (expected: hiriq=-97, patah=499)",
+				info.GlyphID, pos.XOffset)
+		}
 	}
 }

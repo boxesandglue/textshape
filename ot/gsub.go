@@ -1,5 +1,26 @@
 package ot
 
+// GSUB (Glyph Substitution) Table Implementation
+//
+// This file implements OpenType GSUB table parsing and application.
+// HarfBuzz equivalent files:
+//   - hb-ot-layout-gsub-table.hh (Table definitions, substitution logic)
+//   - hb-ot-layout-gsubgpos.hh (Shared lookup application logic)
+//
+// GSUB Lookup Types implemented:
+//   Type 1: SingleSubst (Lines ~50-150)
+//   Type 2: MultipleSubst (Lines ~150-300)
+//   Type 3: AlternateSubst (Lines ~300-450)
+//   Type 4: LigatureSubst (Lines ~450-800)
+//   Type 5: ContextSubst (Lines ~800-1200)
+//   Type 6: ChainContextSubst (Lines ~2400-2900)
+//   Type 8: ReverseChainSingleSubst (Lines ~2900-3000)
+//
+// Key functions:
+//   - ApplyLookupWithMask: Apply lookup with feature mask (Line ~1692)
+//   - ApplyLookupToBufferWithMask: Apply to buffer with mask (Line ~1800)
+//   - ContextSubst.applyLookups: Context lookup with moveTo pattern (Line ~1040)
+
 import (
 	"encoding/binary"
 	"sort"
@@ -102,6 +123,7 @@ func (c *Coverage) getCoverageFormat1(glyph GlyphID) uint32 {
 			return uint32(mid)
 		}
 	}
+
 	return NotCovered
 }
 
@@ -124,6 +146,7 @@ func (c *Coverage) getCoverageFormat2(glyph GlyphID) uint32 {
 			return uint32(startCoverageIndex) + uint32(glyph-GlyphID(startGlyph))
 		}
 	}
+
 	return NotCovered
 }
 
@@ -163,6 +186,10 @@ type GSUB struct {
 
 	// Parsed lookup list
 	lookups []*GSUBLookup
+
+	// FeatureVariations (GSUB version 1.1+ only)
+	// HarfBuzz: hb-ot-layout-common.hh - struct GSUBGPOS
+	featureVariations *FeatureVariations
 }
 
 // ParseGSUB parses a GSUB table from data.
@@ -196,6 +223,15 @@ func ParseGSUB(data []byte) (*GSUB, error) {
 	// Parse lookup list
 	if err := gsub.parseLookupList(); err != nil {
 		return nil, err
+	}
+
+	// Parse FeatureVariations for version 1.1+
+	// HarfBuzz: hb-ot-layout-common.hh - GSUBGPOS::get_feature_variations()
+	if version >= 0x00010001 && len(data) >= 14 {
+		fvOffset := binary.BigEndian.Uint32(data[10:])
+		if fvOffset != 0 && int(fvOffset) < len(data) {
+			gsub.featureVariations, _ = ParseFeatureVariations(data, int(fvOffset))
+		}
 	}
 
 	return gsub, nil
@@ -241,6 +277,22 @@ func (g *GSUB) GetLookup(index int) *GSUBLookup {
 	return g.lookups[index]
 }
 
+// FindVariationsIndex finds the matching FeatureVariations record index for the
+// given normalized coordinates (in F2DOT14 format).
+// Returns VariationsNotFoundIndex if no record matches or no FeatureVariations table exists.
+// HarfBuzz: hb_ot_layout_table_find_feature_variations() in hb-ot-layout.cc
+func (g *GSUB) FindVariationsIndex(coords []int) uint32 {
+	if g.featureVariations == nil {
+		return VariationsNotFoundIndex
+	}
+	return g.featureVariations.FindIndex(coords)
+}
+
+// GetFeatureVariations returns the FeatureVariations table, or nil if not present.
+func (g *GSUB) GetFeatureVariations() *FeatureVariations {
+	return g.featureVariations
+}
+
 // GSUBLookup represents a GSUB lookup table.
 type GSUBLookup struct {
 	Type       uint16
@@ -258,7 +310,8 @@ func (l *GSUBLookup) Subtables() []GSUBSubtable {
 type GSUBSubtable interface {
 	// Apply applies the substitution to the glyph at the current position.
 	// Returns the number of glyphs consumed (0 if not applied).
-	Apply(ctx *GSUBContext) int
+	// HarfBuzz equivalent: subtable dispatch in hb-ot-layout-gsubgpos.hh
+	Apply(ctx *OTApplyContext) int
 }
 
 // parseGSUBLookup parses a single GSUB lookup.
@@ -404,8 +457,8 @@ func parseSingleSubst(data []byte, offset int) (*SingleSubst, error) {
 }
 
 // Apply applies the single substitution.
-func (s *SingleSubst) Apply(ctx *GSUBContext) int {
-	glyph := ctx.Glyphs[ctx.Index]
+func (s *SingleSubst) Apply(ctx *OTApplyContext) int {
+	glyph := ctx.Buffer.Info[ctx.Buffer.Idx].GlyphID
 	coverageIndex := s.coverage.GetCoverage(glyph)
 	if coverageIndex == NotCovered {
 		return 0
@@ -505,9 +558,10 @@ func parseMultipleSubst(data []byte, offset int) (*MultipleSubst, error) {
 }
 
 // Apply applies the multiple substitution.
-func (m *MultipleSubst) Apply(ctx *GSUBContext) int {
-	glyph := ctx.Glyphs[ctx.Index]
+func (m *MultipleSubst) Apply(ctx *OTApplyContext) int {
+	glyph := ctx.Buffer.Info[ctx.Buffer.Idx].GlyphID
 	coverageIndex := m.coverage.GetCoverage(glyph)
+
 	if coverageIndex == NotCovered {
 		return 0
 	}
@@ -597,14 +651,14 @@ func parseAlternateSubst(data []byte, offset int) (*AlternateSubst, error) {
 // Apply applies the alternate substitution.
 // By default, it selects the first alternative (index 0).
 // Use ApplyWithIndex to select a specific alternative.
-func (a *AlternateSubst) Apply(ctx *GSUBContext) int {
+func (a *AlternateSubst) Apply(ctx *OTApplyContext) int {
 	return a.ApplyWithIndex(ctx, 0)
 }
 
 // ApplyWithIndex applies the alternate substitution with a specific alternate index.
 // altIndex is 0-based (0 = first alternate, 1 = second, etc.)
-func (a *AlternateSubst) ApplyWithIndex(ctx *GSUBContext, altIndex int) int {
-	glyph := ctx.Glyphs[ctx.Index]
+func (a *AlternateSubst) ApplyWithIndex(ctx *OTApplyContext, altIndex int) int {
+	glyph := ctx.Buffer.Info[ctx.Buffer.Idx].GlyphID
 	coverageIndex := a.coverage.GetCoverage(glyph)
 	if coverageIndex == NotCovered {
 		return 0
@@ -895,7 +949,7 @@ func parseContextFormat3(data []byte, offset int, gsub *GSUB) (*ContextSubst, er
 }
 
 // Apply applies the context substitution.
-func (cs *ContextSubst) Apply(ctx *GSUBContext) int {
+func (cs *ContextSubst) Apply(ctx *OTApplyContext) int {
 	switch cs.format {
 	case 1:
 		return cs.applyFormat1(ctx)
@@ -909,8 +963,8 @@ func (cs *ContextSubst) Apply(ctx *GSUBContext) int {
 }
 
 // applyFormat1 applies ContextSubstFormat1 (simple glyph context).
-func (cs *ContextSubst) applyFormat1(ctx *GSUBContext) int {
-	glyph := ctx.Glyphs[ctx.Index]
+func (cs *ContextSubst) applyFormat1(ctx *OTApplyContext) int {
+	glyph := ctx.Buffer.Info[ctx.Buffer.Idx].GlyphID
 	coverageIndex := cs.coverage.GetCoverage(glyph)
 	if coverageIndex == NotCovered {
 		return 0
@@ -932,24 +986,34 @@ func (cs *ContextSubst) applyFormat1(ctx *GSUBContext) int {
 }
 
 // matchRuleFormat1 checks if a ContextRule matches at the current position (Format 1).
-func (cs *ContextSubst) matchRuleFormat1(ctx *GSUBContext, rule *ContextRule) bool {
-	inputLen := len(rule.Input) + 1
-	if ctx.Index+inputLen > len(ctx.Glyphs) {
-		return false
-	}
+// This version uses skippy iteration to respect LookupFlags (IgnoreMarks, etc).
+func (cs *ContextSubst) matchRuleFormat1(ctx *OTApplyContext, rule *ContextRule) bool {
+	// Find match positions for each input glyph, skipping ignored glyphs
+	matchPositions := make([]int, len(rule.Input)+1)
+	matchPositions[0] = ctx.Buffer.Idx
 
+	pos := ctx.Buffer.Idx
 	for i, g := range rule.Input {
-		if ctx.Glyphs[ctx.Index+1+i] != g {
+		// Find next non-skipped glyph
+		// NextGlyph(pos) searches from pos+1, so we pass the current position
+		pos = ctx.NextGlyph(pos)
+		if pos == -1 {
 			return false
 		}
+		if ctx.Buffer.Info[pos].GlyphID != g {
+			return false
+		}
+		matchPositions[i+1] = pos
 	}
 
+	// Store match positions for applyLookups
+	ctx.MatchPositions = matchPositions
 	return true
 }
 
 // applyFormat2 applies ContextSubstFormat2 (class-based context).
-func (cs *ContextSubst) applyFormat2(ctx *GSUBContext) int {
-	glyph := ctx.Glyphs[ctx.Index]
+func (cs *ContextSubst) applyFormat2(ctx *OTApplyContext) int {
+	glyph := ctx.Buffer.Info[ctx.Buffer.Idx].GlyphID
 	if cs.coverage.GetCoverage(glyph) == NotCovered {
 		return 0
 	}
@@ -971,53 +1035,128 @@ func (cs *ContextSubst) applyFormat2(ctx *GSUBContext) int {
 }
 
 // matchRuleFormat2 checks if a ContextRule matches at the current position (Format 2).
-func (cs *ContextSubst) matchRuleFormat2(ctx *GSUBContext, rule *ContextRule) bool {
-	inputLen := len(rule.Input) + 1
-	if ctx.Index+inputLen > len(ctx.Glyphs) {
-		return false
-	}
+// This version uses skippy iteration to respect LookupFlags (IgnoreMarks, etc).
+func (cs *ContextSubst) matchRuleFormat2(ctx *OTApplyContext, rule *ContextRule) bool {
+	// Find match positions for each input glyph, skipping ignored glyphs
+	matchPositions := make([]int, len(rule.Input)+1)
+	matchPositions[0] = ctx.Buffer.Idx
 
+	pos := ctx.Buffer.Idx
 	for i, classID := range rule.Input {
-		glyphClass := cs.classDef.GetClass(ctx.Glyphs[ctx.Index+1+i])
+		// Find next non-skipped glyph
+		// NextGlyph(pos) searches from pos+1, so we pass the current position
+		pos = ctx.NextGlyph(pos)
+		if pos == -1 {
+			return false
+		}
+		glyphClass := cs.classDef.GetClass(ctx.Buffer.Info[pos].GlyphID)
 		if glyphClass != int(classID) {
 			return false
 		}
+		matchPositions[i+1] = pos
 	}
 
+	// Store match positions for applyLookups
+	ctx.MatchPositions = matchPositions
 	return true
 }
 
 // applyFormat3 applies ContextSubstFormat3 (coverage-based context).
-func (cs *ContextSubst) applyFormat3(ctx *GSUBContext) int {
+// HarfBuzz equivalent: ContextFormat3::apply() which calls context_apply_lookup() -> match_input()
+func (cs *ContextSubst) applyFormat3(ctx *OTApplyContext) int {
 	inputLen := len(cs.inputCoverages)
 	if inputLen == 0 {
 		return 0
 	}
 
-	if ctx.Index+inputLen > len(ctx.Glyphs) {
+	// Check first coverage (current glyph)
+	if cs.inputCoverages[0].GetCoverage(ctx.Buffer.Info[ctx.Buffer.Idx].GlyphID) == NotCovered {
 		return 0
 	}
 
-	for i, cov := range cs.inputCoverages {
-		if cov.GetCoverage(ctx.Glyphs[ctx.Index+i]) == NotCovered {
+	// Build match positions using skippy-iteration (like HarfBuzz match_input)
+	matchPositions := make([]int, inputLen)
+	matchPositions[0] = ctx.Buffer.Idx
+
+	// Match remaining input sequence by coverage using skippy-iteration
+	pos := ctx.Buffer.Idx
+	for i := 1; i < inputLen; i++ {
+		pos = ctx.NextGlyph(pos)
+		if pos < 0 {
 			return 0
 		}
+		if cs.inputCoverages[i].GetCoverage(ctx.Buffer.Info[pos].GlyphID) == NotCovered {
+			return 0
+		}
+		matchPositions[i] = pos
 	}
+
+	// Store match positions for use in applyLookups
+	ctx.MatchPositions = matchPositions
 
 	cs.applyLookups(ctx, cs.lookupRecords, inputLen)
 	return 1
 }
 
-// applyLookups applies the nested lookups.
-func (cs *ContextSubst) applyLookups(ctx *GSUBContext, lookupRecords []LookupRecord, inputLen int) {
+// applyLookups applies lookup records to matched input positions.
+// HarfBuzz equivalent: apply_lookup() in hb-ot-layout-gsubgpos.hh:1772-1912
+func (cs *ContextSubst) applyLookups(ctx *OTApplyContext, lookupRecords []LookupRecord, count int) {
 	if cs.gsub == nil {
+		ctx.Buffer.Idx += count
 		return
 	}
 
+	// Check recursion limit
+	if ctx.NestingLevel >= MaxNestingLevel {
+		ctx.Buffer.Idx += count
+		return
+	}
+
+	buffer := ctx.Buffer
+	if !buffer.haveOutput {
+		buffer.Idx += count
+		return
+	}
+
+	// Validate MatchPositions
+	if ctx.MatchPositions == nil || len(ctx.MatchPositions) < count {
+		// Fallback: create consecutive positions
+		ctx.MatchPositions = make([]int, count)
+		for i := 0; i < count; i++ {
+			ctx.MatchPositions[i] = buffer.Idx + i
+		}
+	}
+
+	// HarfBuzz: apply_lookup() lines 1781-1791
+	// "All positions are distance from beginning of *output* buffer. Adjust."
+	bl := buffer.outLen // backtrack_len()
+	matchEnd := ctx.MatchPositions[count-1] + 1
+	end := bl + matchEnd - buffer.Idx
+
+	delta := bl - buffer.Idx
+	// Convert positions to new indexing (in-place modification like HarfBuzz)
+	for j := 0; j < count; j++ {
+		ctx.MatchPositions[j] += delta
+	}
+
+	// Apply each lookup record
 	for _, record := range lookupRecords {
-		seqIdx := int(record.SequenceIndex)
-		if seqIdx >= inputLen {
+		idx := int(record.SequenceIndex)
+		if idx >= count {
 			continue
+		}
+
+		// HarfBuzz: orig_len = backtrack_len() + lookahead_len()
+		origLen := buffer.outLen + (len(buffer.Info) - buffer.Idx)
+
+		// HarfBuzz: "This can happen if earlier recursed lookups deleted many entries."
+		if ctx.MatchPositions[idx] >= origLen {
+			continue
+		}
+
+		// Move to the target position
+		if !buffer.moveTo(ctx.MatchPositions[idx]) {
+			break
 		}
 
 		lookup := cs.gsub.GetLookup(int(record.LookupIndex))
@@ -1031,31 +1170,93 @@ func (cs *ContextSubst) applyLookups(ctx *GSUBContext, lookupRecords []LookupRec
 			nestedMarkFilteringSet = int(lookup.MarkFilter)
 		}
 
-		// Create context for nested lookup with its own flags
-		nestedCtx := &GSUBContext{
-			Glyphs:           ctx.Glyphs,
-			Index:            ctx.Index + seqIdx,
+		// Apply nested lookup
+		nestedCtx := &OTApplyContext{
+			Buffer:           buffer,
 			LookupFlag:       lookup.Flag,
 			GDEF:             ctx.GDEF,
+			HasGlyphClasses:  ctx.HasGlyphClasses,
 			MarkFilteringSet: nestedMarkFilteringSet,
-			OnReplace:        ctx.OnReplace,
-			OnReplaces:       ctx.OnReplaces,
-			OnDelete:         ctx.OnDelete,
-			OnLigate:         ctx.OnLigate,
+			NestingLevel:     ctx.NestingLevel + 1,
+			FeatureMask:      ctx.FeatureMask,
+			Font:             ctx.Font,
 		}
 
-		if nestedCtx.Index < len(nestedCtx.Glyphs) {
-			for _, subtable := range lookup.subtables {
-				if subtable.Apply(nestedCtx) > 0 {
-					// Update the main context's Glyphs if they changed
-					ctx.Glyphs = nestedCtx.Glyphs
-					break
-				}
+		applied := false
+		for _, subtable := range lookup.subtables {
+			if subtable.Apply(nestedCtx) > 0 {
+				applied = true
+				break
 			}
+		}
+
+		if !applied {
+			continue
+		}
+
+		// HarfBuzz: new_len = backtrack_len() + lookahead_len()
+		newLen := buffer.outLen + (len(buffer.Info) - buffer.Idx)
+		delta := newLen - origLen
+
+		if delta == 0 {
+			continue
+		}
+
+		// HarfBuzz: "Recursed lookup changed buffer len. Adjust."
+		end += delta
+		if end < ctx.MatchPositions[idx] {
+			// HarfBuzz: "End might end up being smaller than match_positions[idx]..."
+			delta += ctx.MatchPositions[idx] - end
+			end = ctx.MatchPositions[idx]
+		}
+
+		next := idx + 1 // next now is the position after the recursed lookup
+
+		if delta > 0 {
+			// Ensure MatchPositions has enough capacity
+			if count+delta > len(ctx.MatchPositions) {
+				newPositions := make([]int, count+delta)
+				copy(newPositions, ctx.MatchPositions)
+				ctx.MatchPositions = newPositions
+			}
+		} else {
+			// NOTE: delta is non-positive
+			if next-count > delta {
+				delta = next - count
+			}
+			next -= delta
+		}
+
+		// Shift subsequent positions
+		if next < count {
+			copy(ctx.MatchPositions[next+delta:], ctx.MatchPositions[next:count])
+		}
+		next += delta
+		count += delta
+
+		// Fill in new entries
+		for j := idx + 1; j < next; j++ {
+			ctx.MatchPositions[j] = ctx.MatchPositions[j-1] + 1
+		}
+
+		// Fixup the rest
+		for ; next < count; next++ {
+			ctx.MatchPositions[next] += delta
 		}
 	}
 
-	ctx.Index += inputLen
+	if end < 0 {
+		end = 0
+	}
+	// Ensure end doesn't exceed the virtual buffer length
+	maxEnd := buffer.outLen + (len(buffer.Info) - buffer.Idx)
+	if end > maxEnd {
+		end = maxEnd
+	}
+	if !buffer.moveTo(end) {
+		// moveTo failed - advance Idx by count to prevent infinite loop
+		buffer.Idx += count
+	}
 }
 
 // --- Ligature Substitution ---
@@ -1175,8 +1376,8 @@ func parseLigature(data []byte, offset int) (Ligature, error) {
 }
 
 // Apply applies the ligature substitution.
-func (l *LigatureSubst) Apply(ctx *GSUBContext) int {
-	glyph := ctx.Glyphs[ctx.Index]
+func (l *LigatureSubst) Apply(ctx *OTApplyContext) int {
+	glyph := ctx.Buffer.Info[ctx.Buffer.Idx].GlyphID
 	coverageIndex := l.coverage.GetCoverage(glyph)
 	if coverageIndex == NotCovered {
 		return 0
@@ -1190,9 +1391,12 @@ func (l *LigatureSubst) Apply(ctx *GSUBContext) int {
 
 	// Try each ligature in order of preference
 	for _, lig := range ligSet {
-		if l.matchLigature(ctx, &lig) {
-			// Apply ligature
-			ctx.Ligate(lig.LigGlyph, len(lig.Components)+1)
+		matchedPositions := l.matchLigature(ctx, &lig)
+		if matchedPositions != nil {
+			// Apply ligature - replace all matched positions with the ligature glyph
+			// The matchedPositions includes all positions that should be consumed
+			// (including default ignorables that were skipped during matching)
+			ctx.LigatePositions(lig.LigGlyph, matchedPositions)
 			return 1
 		}
 	}
@@ -1201,140 +1405,141 @@ func (l *LigatureSubst) Apply(ctx *GSUBContext) int {
 }
 
 // matchLigature checks if the ligature matches at the current position.
-func (l *LigatureSubst) matchLigature(ctx *GSUBContext, lig *Ligature) bool {
-	if ctx.Index+len(lig.Components)+1 > len(ctx.Glyphs) {
-		return false
+// Returns the positions of the matched glyphs (components only), or nil if no match.
+// HarfBuzz behavior: Glyphs that should be skipped based on LookupFlag (e.g., marks when
+// IgnoreMarks is set) are skipped during matching but KEPT in the output.
+func (l *LigatureSubst) matchLigature(ctx *OTApplyContext, lig *Ligature) []int {
+	// positions contains only the component positions (not skipped glyphs)
+	positions := make([]int, 0, len(lig.Components)+1)
+	positions = append(positions, ctx.Buffer.Idx) // First glyph is always included
+
+	// For per-syllable matching, get the syllable of the starting glyph
+	// HarfBuzz equivalent: per_syllable check in may_match() (hb-ot-layout-gsubgpos.hh:436-439)
+	var startSyllable uint8
+	if ctx.PerSyllable {
+		startSyllable = ctx.Buffer.Info[ctx.Buffer.Idx].Syllable
 	}
 
-	for i, comp := range lig.Components {
-		// TODO: Handle ignoreMarks flag properly
-		if ctx.Glyphs[ctx.Index+1+i] != comp {
-			return false
+	pos := ctx.Buffer.Idx + 1
+	for _, comp := range lig.Components {
+		// Skip glyphs based on LookupFlag (marks, ligatures, etc.)
+		// HarfBuzz: uses skippy_iter to skip based on lookup flags
+		for pos < len(ctx.Buffer.Info) && ctx.ShouldSkipGlyph(pos) {
+			pos++
 		}
+
+		if pos >= len(ctx.Buffer.Info) {
+			return nil // Not enough glyphs
+		}
+
+		// Per-syllable check: all matched glyphs must be in the same syllable
+		// HarfBuzz equivalent: per_syllable && syllable != info.syllable() in may_match()
+		if ctx.PerSyllable && ctx.Buffer.Info[pos].Syllable != startSyllable {
+			return nil // Cross-syllable match not allowed
+		}
+
+		if ctx.Buffer.Info[pos].GlyphID != comp {
+			return nil // Component doesn't match
+		}
+
+		positions = append(positions, pos)
+		pos++
 	}
 
-	return true
+	return positions
 }
 
 // --- GSUBContext ---
 
 // GSUBContext provides context for GSUB application.
-type GSUBContext struct {
-	Glyphs []GlyphID // Current glyph sequence
-	Index  int       // Current position
+// MaxNestingLevel is the maximum recursion depth for nested lookups.
+// HarfBuzz equivalent: HB_MAX_NESTING_LEVEL
+const MaxNestingLevel = 64
 
-	// Lookup filtering
-	LookupFlag       uint16 // Current lookup flag
-	GDEF             *GDEF  // GDEF table for glyph classification (may be nil)
-	MarkFilteringSet int    // Mark filtering set index (-1 if not used)
-
-	// Output callbacks
-	OnReplace  func(index int, newGlyph GlyphID)
-	OnReplaces func(index int, newGlyphs []GlyphID)
-	OnDelete   func(index int)
-	OnLigate   func(index int, ligGlyph GlyphID, numGlyphs int)
+// IsDefaultIgnorable returns true if the codepoint is a Unicode Default Ignorable.
+// Based on HarfBuzz hb-unicode.hh is_default_ignorable().
+func IsDefaultIgnorable(cp Codepoint) bool {
+	plane := cp >> 16
+	if plane == 0 {
+		// BMP
+		page := cp >> 8
+		switch page {
+		case 0x00:
+			return cp == 0x00AD // SOFT HYPHEN
+		case 0x03:
+			return cp == 0x034F // COMBINING GRAPHEME JOINER
+		case 0x06:
+			return cp == 0x061C // ARABIC LETTER MARK
+		case 0x17:
+			return cp >= 0x17B4 && cp <= 0x17B5 // Khmer vowels
+		case 0x18:
+			return cp >= 0x180B && cp <= 0x180E // Mongolian FVS
+		case 0x20:
+			return (cp >= 0x200B && cp <= 0x200F) || // Zero-width, directional
+				(cp >= 0x202A && cp <= 0x202E) || // Directional overrides
+				(cp >= 0x2060 && cp <= 0x206F) // Word joiner, etc.
+		case 0xFE:
+			return (cp >= 0xFE00 && cp <= 0xFE0F) || cp == 0xFEFF // Variation Selectors, BOM
+		case 0xFF:
+			return cp >= 0xFFF0 && cp <= 0xFFF8 // Specials
+		}
+		return false
+	}
+	if plane == 1 {
+		// Plane 1: Variation Selectors Supplement
+		return cp >= 0xE0100 && cp <= 0xE01EF
+	}
+	if plane == 14 {
+		// Plane 14: Tags
+		return cp >= 0xE0000 && cp <= 0xE0FFF
+	}
+	return false
 }
 
-// ShouldSkipGlyph returns true if the glyph at the given index should be skipped
-// based on the current LookupFlag and GDEF glyph classification.
-func (ctx *GSUBContext) ShouldSkipGlyph(index int) bool {
-	if index < 0 || index >= len(ctx.Glyphs) {
+// isHiddenDefaultIgnorable returns true if the codepoint should have the HIDDEN flag.
+// HarfBuzz: UPROPS_MASK_HIDDEN in hb-ot-layout.hh:199, 233-243
+// These characters should NOT be skipped during GSUB context matching (ignore_hidden=false).
+// Set for: CGJ (U+034F), Mongolian FVS (U+180B-U+180D, U+180F), TAG chars (U+E0020-U+E007F)
+func isHiddenDefaultIgnorable(cp Codepoint) bool {
+	// CGJ (Combining Grapheme Joiner)
+	// https://github.com/harfbuzz/harfbuzz/issues/554
+	if cp == 0x034F {
 		return true
 	}
-	return shouldSkipGlyph(ctx.Glyphs[index], ctx.LookupFlag, ctx.GDEF, ctx.MarkFilteringSet)
+	// Mongolian Free Variation Selectors
+	// https://github.com/harfbuzz/harfbuzz/issues/234
+	if (cp >= 0x180B && cp <= 0x180D) || cp == 0x180F {
+		return true
+	}
+	// TAG characters
+	// https://github.com/harfbuzz/harfbuzz/issues/463
+	if cp >= 0xE0020 && cp <= 0xE007F {
+		return true
+	}
+	return false
 }
 
-// NextGlyph returns the index of the next glyph that should not be skipped,
-// starting from startIndex. Returns -1 if no such glyph exists.
-func (ctx *GSUBContext) NextGlyph(startIndex int) int {
-	for i := startIndex; i < len(ctx.Glyphs); i++ {
-		if !ctx.ShouldSkipGlyph(i) {
-			return i
-		}
+// IsVariationSelector returns true if the codepoint is a Variation Selector.
+// Includes: U+180B-U+180D, U+180F (Mongolian FVS), U+FE00-U+FE0F (VS1-VS16),
+// and U+E0100-U+E01EF (VS17-VS256).
+func IsVariationSelector(cp Codepoint) bool {
+	// Mongolian Free Variation Selectors: U+180B-U+180D, U+180F
+	// These are used for Mongolian script variant forms
+	if cp >= 0x180B && cp <= 0x180D {
+		return true
 	}
-	return -1
-}
-
-// PrevGlyph returns the index of the previous glyph that should not be skipped,
-// starting from startIndex (exclusive). Returns -1 if no such glyph exists.
-func (ctx *GSUBContext) PrevGlyph(startIndex int) int {
-	for i := startIndex - 1; i >= 0; i-- {
-		if !ctx.ShouldSkipGlyph(i) {
-			return i
-		}
+	if cp == 0x180F {
+		return true
 	}
-	return -1
-}
-
-// ReplaceGlyph replaces the current glyph.
-func (ctx *GSUBContext) ReplaceGlyph(newGlyph GlyphID) {
-	if ctx.OnReplace != nil {
-		ctx.OnReplace(ctx.Index, newGlyph)
+	// VS1-VS16 in BMP
+	if cp >= 0xFE00 && cp <= 0xFE0F {
+		return true
 	}
-	ctx.Glyphs[ctx.Index] = newGlyph
-	ctx.Index++
-}
-
-// ReplaceGlyphs replaces the current glyph with multiple glyphs.
-func (ctx *GSUBContext) ReplaceGlyphs(newGlyphs []GlyphID) {
-	if ctx.OnReplaces != nil {
-		ctx.OnReplaces(ctx.Index, newGlyphs)
+	// VS17-VS256 in Plane 14 (Supplementary Special-purpose Plane)
+	if cp >= 0xE0100 && cp <= 0xE01EF {
+		return true
 	}
-
-	if len(newGlyphs) == 0 {
-		ctx.DeleteGlyph()
-		return
-	}
-
-	if len(newGlyphs) == 1 {
-		ctx.Glyphs[ctx.Index] = newGlyphs[0]
-		ctx.Index++
-		return
-	}
-
-	// Replace 1 glyph with multiple
-	oldGlyphs := ctx.Glyphs
-	newLen := len(oldGlyphs) - 1 + len(newGlyphs)
-	result := make([]GlyphID, newLen)
-
-	copy(result, oldGlyphs[:ctx.Index])
-	copy(result[ctx.Index:], newGlyphs)
-	copy(result[ctx.Index+len(newGlyphs):], oldGlyphs[ctx.Index+1:])
-
-	ctx.Glyphs = result
-	ctx.Index += len(newGlyphs)
-}
-
-// DeleteGlyph deletes the current glyph.
-func (ctx *GSUBContext) DeleteGlyph() {
-	if ctx.OnDelete != nil {
-		ctx.OnDelete(ctx.Index)
-	}
-	ctx.Glyphs = append(ctx.Glyphs[:ctx.Index], ctx.Glyphs[ctx.Index+1:]...)
-}
-
-// Ligate replaces numGlyphs at current position with a ligature.
-func (ctx *GSUBContext) Ligate(ligGlyph GlyphID, numGlyphs int) {
-	if ctx.OnLigate != nil {
-		ctx.OnLigate(ctx.Index, ligGlyph, numGlyphs)
-	}
-
-	if numGlyphs <= 1 {
-		ctx.ReplaceGlyph(ligGlyph)
-		return
-	}
-
-	// Remove numGlyphs-1 glyphs and replace first with ligature
-	oldGlyphs := ctx.Glyphs
-	newLen := len(oldGlyphs) - numGlyphs + 1
-	result := make([]GlyphID, newLen)
-
-	copy(result, oldGlyphs[:ctx.Index])
-	result[ctx.Index] = ligGlyph
-	copy(result[ctx.Index+1:], oldGlyphs[ctx.Index+numGlyphs:])
-
-	ctx.Glyphs = result
-	ctx.Index++
+	return false
 }
 
 // --- Feature/Script lookup ---
@@ -1446,19 +1651,433 @@ func (f *FeatureList) Count() int {
 	return f.count
 }
 
-// --- Apply lookup ---
-
-// ApplyLookup applies a single lookup to the glyph sequence.
-// This version does not use GDEF for glyph filtering.
-func (g *GSUB) ApplyLookup(lookupIndex int, glyphs []GlyphID) []GlyphID {
-	return g.ApplyLookupWithGDEF(lookupIndex, glyphs, nil)
+// FindFirstFeature finds the first feature with the given tag and returns its lookup indices.
+// This is useful when a font has multiple features with the same tag (e.g., for different scripts)
+// and you want to use the default/first one (typically the default script's feature).
+func (f *FeatureList) FindFirstFeature(tag Tag) []uint16 {
+	for i := 0; i < f.count; i++ {
+		feat, err := f.GetFeature(i)
+		if err != nil {
+			continue
+		}
+		if feat.Tag == tag {
+			return feat.Lookups
+		}
+	}
+	return nil
 }
 
-// ApplyLookupWithGDEF applies a single lookup with GDEF-based glyph filtering.
-func (g *GSUB) ApplyLookupWithGDEF(lookupIndex int, glyphs []GlyphID, gdef *GDEF) []GlyphID {
+// FindFeatureWithVariations returns lookup indices for a feature tag, considering FeatureVariations.
+// This is a global search that considers all features with the matching tag.
+func (f *FeatureList) FindFeatureWithVariations(tag Tag, fv *FeatureVariations, variationsIndex uint32) []uint16 {
+	lookupSet := make(map[uint16]bool)
+
+	for i := 0; i < f.count; i++ {
+		feat, err := f.GetFeature(i)
+		if err != nil {
+			continue
+		}
+		if feat.Tag == tag {
+			// Check if this feature index has a substitution
+			var lookups []uint16
+			if variationsIndex != VariationsNotFoundIndex && fv != nil {
+				lookups = fv.GetSubstituteLookups(variationsIndex, uint16(i))
+			}
+			// Use original lookups if no substitution
+			if lookups == nil {
+				lookups = feat.Lookups
+			}
+			for _, lookupIdx := range lookups {
+				lookupSet[lookupIdx] = true
+			}
+		}
+	}
+
+	if len(lookupSet) == 0 {
+		return nil
+	}
+
+	// Convert to sorted slice
+	lookups := make([]uint16, 0, len(lookupSet))
+	for idx := range lookupSet {
+		lookups = append(lookups, idx)
+	}
+	// Sort to ensure consistent application order
+	for i := 0; i < len(lookups)-1; i++ {
+		for j := i + 1; j < len(lookups); j++ {
+			if lookups[j] < lookups[i] {
+				lookups[i], lookups[j] = lookups[j], lookups[i]
+			}
+		}
+	}
+	return lookups
+}
+
+// FindFeatureByIndices returns lookup indices for a feature tag, considering only the specified feature indices.
+// This is the correct way to query features when respecting Script/Language systems.
+func (f *FeatureList) FindFeatureByIndices(tag Tag, featureIndices []uint16) []uint16 {
+	lookupSet := make(map[uint16]bool)
+
+	for _, idx := range featureIndices {
+		if int(idx) >= f.count {
+			continue
+		}
+		feat, err := f.GetFeature(int(idx))
+		if err != nil {
+			continue
+		}
+		if feat.Tag == tag {
+			for _, lookupIdx := range feat.Lookups {
+				lookupSet[lookupIdx] = true
+			}
+		}
+	}
+
+	if len(lookupSet) == 0 {
+		return nil
+	}
+
+	lookups := make([]uint16, 0, len(lookupSet))
+	for idx := range lookupSet {
+		lookups = append(lookups, idx)
+	}
+	sort.Slice(lookups, func(i, j int) bool { return lookups[i] < lookups[j] })
+	return lookups
+}
+
+// FindFeatureByIndicesWithVariations returns lookup indices for a feature tag,
+// considering FeatureVariations substitutions.
+// HarfBuzz: hb_ot_map_t::collect_lookups() with feature_substitutes_map
+func (f *FeatureList) FindFeatureByIndicesWithVariations(tag Tag, featureIndices []uint16, fv *FeatureVariations, variationsIndex uint32) []uint16 {
+	lookupSet := make(map[uint16]bool)
+
+	for _, idx := range featureIndices {
+		if int(idx) >= f.count {
+			continue
+		}
+		feat, err := f.GetFeature(int(idx))
+		if err != nil {
+			continue
+		}
+		if feat.Tag == tag {
+			// Check if this feature index has a substitution
+			var lookups []uint16
+			if variationsIndex != VariationsNotFoundIndex && fv != nil {
+				lookups = fv.GetSubstituteLookups(variationsIndex, idx)
+			}
+			// Use original lookups if no substitution
+			if lookups == nil {
+				lookups = feat.Lookups
+			}
+			for _, lookupIdx := range lookups {
+				lookupSet[lookupIdx] = true
+			}
+		}
+	}
+
+	if len(lookupSet) == 0 {
+		return nil
+	}
+
+	lookups := make([]uint16, 0, len(lookupSet))
+	for idx := range lookupSet {
+		lookups = append(lookups, idx)
+	}
+	sort.Slice(lookups, func(i, j int) bool { return lookups[i] < lookups[j] })
+	return lookups
+}
+
+// --- Script/Language System ---
+
+// ScriptList represents the ScriptList table.
+type ScriptList struct {
+	data   []byte
+	offset int
+	count  int
+}
+
+// ParseScriptList parses the ScriptList from a GSUB table.
+func (g *GSUB) ParseScriptList() (*ScriptList, error) {
+	off := int(g.scriptList)
+	if off+2 > len(g.data) {
+		return nil, ErrInvalidOffset
+	}
+
+	count := int(binary.BigEndian.Uint16(g.data[off:]))
+	if off+2+count*6 > len(g.data) {
+		return nil, ErrInvalidOffset
+	}
+
+	return &ScriptList{
+		data:   g.data,
+		offset: off,
+		count:  count,
+	}, nil
+}
+
+// FindChosenScriptTag returns the actual script tag found in the font's GSUB table.
+// This is needed for Indic old-spec vs new-spec detection.
+// HarfBuzz equivalent: plan->map.chosen_script[0] in hb-ot-shaper-indic.cc:324
+// Returns 0 if no matching script is found.
+func (g *GSUB) FindChosenScriptTag(scriptTag Tag) Tag {
+	sl, err := g.ParseScriptList()
+	if err != nil {
+		return 0
+	}
+	return sl.FindChosenScriptTag(scriptTag)
+}
+
+// LangSys represents a Language System table with its feature indices.
+type LangSys struct {
+	RequiredFeature int      // -1 if none
+	FeatureIndices  []uint16 // indices into FeatureList
+}
+
+// GetScript returns the LangSys for a script tag (using default language).
+// Returns nil if the script is not found.
+func (sl *ScriptList) GetScript(scriptTag Tag) *LangSys {
+	for i := 0; i < sl.count; i++ {
+		recOff := sl.offset + 2 + i*6
+		tag := Tag(binary.BigEndian.Uint32(sl.data[recOff:]))
+		if tag == scriptTag {
+			scriptOff := int(binary.BigEndian.Uint16(sl.data[recOff+4:]))
+			return sl.parseScript(sl.offset + scriptOff)
+		}
+	}
+	return nil
+}
+
+// GetLangSys returns the LangSys for a specific script and language combination.
+// HarfBuzz equivalent: hb_ot_layout_collect_features_map() in hb-ot-map.cc:244-248
+//   const OT::LangSys &l = g.get_script (script_index).get_lang_sys (language_index);
+//
+// If languageTag is 0 or the language is not found, returns the default LangSys.
+// Returns nil if the script is not found.
+func (sl *ScriptList) GetLangSys(scriptTag Tag, languageTag Tag) *LangSys {
+	// Convert scriptTag to OpenType format (lowercase first char)
+	// HarfBuzz: hb_ot_old_tag_from_script() in hb-ot-tag.cc:58-59 does:
+	//   return ((hb_tag_t) script) | 0x20000000u;
+	// ISO 15924 uses 'Phag', OpenType uses 'phag'
+	otScriptTag := scriptTag | 0x20000000 // Force first char lowercase
+
+	// HarfBuzz prefers the new script tags (dev2, bng2, knd3, etc.) over the old ones (deva, beng, knda, etc.)
+	// These are the "new" OpenType script tags for Indic scripts used with USE (Universal Shaping Engine)
+	// HarfBuzz: hb_ot_tags_from_script_and_language() in hb-ot-tag.cc
+	newScriptTags := getNewScriptTags(otScriptTag)
+
+	// Try new script tags first, but only for Indic scripts where this matters.
+	// For other scripts, prefer the original tag to avoid regressions.
+	// HarfBuzz: hb_ot_layout_table_select_script() in hb-ot-layout.cc:572-580
+	tagsToTry := make([]Tag, 0, len(newScriptTags)+2)
+	tagsToTry = append(tagsToTry, newScriptTags...)
+	tagsToTry = append(tagsToTry, otScriptTag, scriptTag)
+
+	// Find the script
+	for _, tryTag := range tagsToTry {
+		for i := 0; i < sl.count; i++ {
+			recOff := sl.offset + 2 + i*6
+			tag := Tag(binary.BigEndian.Uint32(sl.data[recOff:]))
+			if tag == tryTag {
+				scriptOff := sl.offset + int(binary.BigEndian.Uint16(sl.data[recOff+4:]))
+				return sl.parseScriptWithLanguage(scriptOff, languageTag)
+			}
+		}
+	}
+	return nil
+}
+
+// FindChosenScriptTag returns the actual script tag found in the font.
+// This is needed for Indic old-spec vs new-spec detection.
+// HarfBuzz equivalent: plan->map.chosen_script[0] in hb-ot-shaper-indic.cc:324
+// Returns 0 if no matching script is found.
+func (sl *ScriptList) FindChosenScriptTag(scriptTag Tag) Tag {
+	// Convert scriptTag to OpenType format (lowercase first char)
+	otScriptTag := scriptTag | 0x20000000
+
+	// Get new script tags if available (v3 and v2 versions)
+	newScriptTags := getNewScriptTags(otScriptTag)
+
+	// Build list of tags to try: new tags first (v3, v2), then old tags
+	tagsToTry := make([]Tag, 0, len(newScriptTags)+2)
+	tagsToTry = append(tagsToTry, newScriptTags...)
+	tagsToTry = append(tagsToTry, otScriptTag, scriptTag)
+
+	// Find which tag actually exists in the font
+	for _, tryTag := range tagsToTry {
+		for i := 0; i < sl.count; i++ {
+			recOff := sl.offset + 2 + i*6
+			tag := Tag(binary.BigEndian.Uint32(sl.data[recOff:]))
+			if tag == tryTag {
+				return tag // Return the tag that was actually found
+			}
+		}
+	}
+	return 0
+}
+
+// getNewScriptTags returns all "new" OpenType script tags for Indic scripts.
+// HarfBuzz: hb_ot_tags_from_script_and_language() in hb-ot-tag.cc
+// The new tags (dev2, bng2, knd3, etc.) are used for the Universal Shaping Engine (USE).
+// Note: Some fonts use v3 tags (like knd3) instead of v2 tags.
+func getNewScriptTags(oldTag Tag) []Tag {
+	switch oldTag {
+	case MakeTag('d', 'e', 'v', 'a'):
+		return []Tag{MakeTag('d', 'e', 'v', '3'), MakeTag('d', 'e', 'v', '2')} // Devanagari
+	case MakeTag('b', 'e', 'n', 'g'):
+		return []Tag{MakeTag('b', 'n', 'g', '3'), MakeTag('b', 'n', 'g', '2')} // Bengali
+	case MakeTag('g', 'u', 'r', 'u'):
+		return []Tag{MakeTag('g', 'u', 'r', '3'), MakeTag('g', 'u', 'r', '2')} // Gurmukhi
+	case MakeTag('g', 'u', 'j', 'r'):
+		return []Tag{MakeTag('g', 'j', 'r', '3'), MakeTag('g', 'j', 'r', '2')} // Gujarati
+	case MakeTag('o', 'r', 'y', 'a'):
+		return []Tag{MakeTag('o', 'r', 'y', '3'), MakeTag('o', 'r', 'y', '2')} // Oriya
+	case MakeTag('t', 'a', 'm', 'l'):
+		return []Tag{MakeTag('t', 'm', 'l', '3'), MakeTag('t', 'm', 'l', '2')} // Tamil
+	case MakeTag('t', 'e', 'l', 'u'):
+		return []Tag{MakeTag('t', 'e', 'l', '3'), MakeTag('t', 'e', 'l', '2')} // Telugu
+	case MakeTag('k', 'n', 'd', 'a'):
+		return []Tag{MakeTag('k', 'n', 'd', '3'), MakeTag('k', 'n', 'd', '2')} // Kannada
+	case MakeTag('m', 'l', 'y', 'm'):
+		return []Tag{MakeTag('m', 'l', 'm', '3'), MakeTag('m', 'l', 'm', '2')} // Malayalam
+	case MakeTag('m', 'y', 'a', 'n'):
+		return []Tag{MakeTag('m', 'y', 'm', '3'), MakeTag('m', 'y', 'm', '2')} // Myanmar
+	default:
+		return nil
+	}
+}
+
+// parseScriptWithLanguage parses a Script table and returns the LangSys for the specified language.
+// If languageTag is 0 or not found, returns the default LangSys.
+func (sl *ScriptList) parseScriptWithLanguage(off int, languageTag Tag) *LangSys {
+	if off+4 > len(sl.data) {
+		return nil
+	}
+
+	defaultLangSysOff := int(binary.BigEndian.Uint16(sl.data[off:]))
+	langSysCount := int(binary.BigEndian.Uint16(sl.data[off+2:]))
+
+	// If no specific language requested, or no language systems available, use default
+	if languageTag == 0 || langSysCount == 0 {
+		if defaultLangSysOff == 0 {
+			return nil
+		}
+		return sl.parseLangSys(off + defaultLangSysOff)
+	}
+
+	// Search for the specific language
+	for i := 0; i < langSysCount; i++ {
+		recOff := off + 4 + i*6
+		if recOff+6 > len(sl.data) {
+			break
+		}
+		tag := Tag(binary.BigEndian.Uint32(sl.data[recOff:]))
+		if tag == languageTag {
+			langSysOff := int(binary.BigEndian.Uint16(sl.data[recOff+4:]))
+			return sl.parseLangSys(off + langSysOff)
+		}
+	}
+
+	// Language not found, fall back to default
+	if defaultLangSysOff == 0 {
+		return nil
+	}
+	return sl.parseLangSys(off + defaultLangSysOff)
+}
+
+// GetDefaultScript returns the default LangSys using HarfBuzz fallback order.
+// HarfBuzz equivalent: hb_ot_layout_table_select_script() in hb-ot-layout.cc:561-608
+// Tries: DFLT, dflt, latn in that order.
+func (sl *ScriptList) GetDefaultScript() *LangSys {
+	// Try DFLT first
+	// HarfBuzz: hb-ot-layout.cc:582-587
+	if langSys := sl.GetScript(MakeTag('D', 'F', 'L', 'T')); langSys != nil {
+		return langSys
+	}
+
+	// Try dflt (MS site had typos and many fonts use it)
+	// HarfBuzz: hb-ot-layout.cc:589-594
+	if langSys := sl.GetScript(MakeTag('d', 'f', 'l', 't')); langSys != nil {
+		return langSys
+	}
+
+	// Try latn (some old fonts put features there for non-Latin scripts)
+	// HarfBuzz: hb-ot-layout.cc:596-602
+	if langSys := sl.GetScript(MakeTag('l', 'a', 't', 'n')); langSys != nil {
+		return langSys
+	}
+
+	return nil
+}
+
+// parseScript parses a Script table and returns its default LangSys.
+func (sl *ScriptList) parseScript(off int) *LangSys {
+	if off+4 > len(sl.data) {
+		return nil
+	}
+
+	defaultLangSysOff := int(binary.BigEndian.Uint16(sl.data[off:]))
+	// langSysCount := int(binary.BigEndian.Uint16(sl.data[off+2:]))
+
+	if defaultLangSysOff == 0 {
+		// No default LangSys - unusual but possible
+		return nil
+	}
+
+	return sl.parseLangSys(off + defaultLangSysOff)
+}
+
+// parseLangSys parses a LangSys table.
+func (sl *ScriptList) parseLangSys(off int) *LangSys {
+	if off+6 > len(sl.data) {
+		return nil
+	}
+
+	// lookupOrder := binary.BigEndian.Uint16(sl.data[off:]) // reserved, always 0
+	reqFeatureIndex := int(binary.BigEndian.Uint16(sl.data[off+2:]))
+	featureIndexCount := int(binary.BigEndian.Uint16(sl.data[off+4:]))
+
+	if off+6+featureIndexCount*2 > len(sl.data) {
+		return nil
+	}
+
+	ls := &LangSys{
+		RequiredFeature: reqFeatureIndex,
+		FeatureIndices:  make([]uint16, featureIndexCount),
+	}
+
+	// 0xFFFF means no required feature
+	if reqFeatureIndex == 0xFFFF {
+		ls.RequiredFeature = -1
+	}
+
+	for i := 0; i < featureIndexCount; i++ {
+		ls.FeatureIndices[i] = binary.BigEndian.Uint16(sl.data[off+6+i*2:])
+	}
+
+	return ls
+}
+
+// --- Apply lookup ---
+
+// ApplyLookupWithMask applies a single lookup with mask-based filtering.
+// This is the HarfBuzz-style approach where each glyph has a mask, and
+// the lookup is only applied to glyphs where (mask & featureMask) != 0.
+//
+// HarfBuzz equivalent: The mask check in match_glyph() / may_match() in hb-ot-layout-gsubgpos.hh
+//
+// Parameters:
+//   - lookupIndex: The GSUB lookup index
+//   - glyphs: The current glyph sequence
+//   - masks: Mask for each glyph (must have same length as glyphs)
+//   - featureMask: The mask for the current feature
+//   - gdef: GDEF table for glyph classification (may be nil)
+//   - font: Font object for scaling information (may be nil)
+//
+// Returns the modified glyph sequence and updated masks.
+func (g *GSUB) ApplyLookupWithMask(lookupIndex int, glyphs []GlyphID, masks []uint32, featureMask uint32, gdef *GDEF, font *Font) ([]GlyphID, []uint32) {
 	lookup := g.GetLookup(lookupIndex)
 	if lookup == nil {
-		return glyphs
+		return glyphs, masks
 	}
 
 	// Determine mark filtering set index
@@ -1467,18 +2086,58 @@ func (g *GSUB) ApplyLookupWithGDEF(lookupIndex int, glyphs []GlyphID, gdef *GDEF
 		markFilteringSet = int(lookup.MarkFilter)
 	}
 
-	ctx := &GSUBContext{
-		Glyphs:           glyphs,
-		Index:            0,
+	// Create temporary buffer from glyphs
+	buf := &Buffer{
+		Info: make([]GlyphInfo, len(glyphs)),
+	}
+	for i, gid := range glyphs {
+		buf.Info[i] = GlyphInfo{
+			GlyphID: gid,
+			Cluster: i,
+		}
+		if masks != nil && i < len(masks) {
+			buf.Info[i].Mask = masks[i]
+		}
+	}
+
+	ctx := &OTApplyContext{
+		Buffer:           buf,
 		LookupFlag:       lookup.Flag,
 		GDEF:             gdef,
 		MarkFilteringSet: markFilteringSet,
+		FeatureMask:      featureMask,
+		Font:             font,
+	}
+	// Buffer.Idx starts at 0 by default
+
+	// Initialize output buffer (HarfBuzz pattern: clearOutput before GSUB)
+	// This is CRITICAL for Context/ChainContext lookups to work correctly!
+	buf.clearOutput()
+
+	// Type 8 (Reverse Chain Single Substitution) must be applied in reverse order
+	// Note: Reverse substitution doesn't use output buffer pattern
+	if lookup.Type == GSUBTypeReverseChainSingle {
+		for ctx.Buffer.Idx = len(ctx.Buffer.Info) - 1; ctx.Buffer.Idx >= 0; ctx.Buffer.Idx-- {
+			if ctx.ShouldSkipGlyph(ctx.Buffer.Idx) {
+				continue
+			}
+			for _, subtable := range lookup.subtables {
+				if subtable.Apply(ctx) > 0 {
+					break
+				}
+			}
+		}
+		return extractGlyphsAndMasks(buf)
 	}
 
-	for ctx.Index < len(ctx.Glyphs) {
-		// Skip glyphs that should be ignored based on LookupFlag and GDEF
-		if ctx.ShouldSkipGlyph(ctx.Index) {
-			ctx.Index++
+	// Normal forward iteration for all other lookup types
+	// HarfBuzz: When a glyph is not matched or skipped, next_glyph() is called
+	// to copy it to output and advance idx. If we only do Idx++, the glyph
+	// is lost when sync() is called.
+	for ctx.Buffer.Idx < len(ctx.Buffer.Info) {
+		if ctx.ShouldSkipGlyph(ctx.Buffer.Idx) {
+			// HarfBuzz: skipped glyphs are passed through via next_glyph()
+			buf.nextGlyph()
 			continue
 		}
 
@@ -1490,29 +2149,363 @@ func (g *GSUB) ApplyLookupWithGDEF(lookupIndex int, glyphs []GlyphID, gdef *GDEF
 			}
 		}
 		if !applied {
-			ctx.Index++
+			// HarfBuzz: non-matching glyphs are passed through via next_glyph()
+			buf.nextGlyph()
 		}
 	}
 
-	return ctx.Glyphs
+	// Sync output buffer back to main buffer (HarfBuzz pattern)
+	buf.sync()
+
+	return extractGlyphsAndMasks(buf)
 }
 
-// ApplyFeature applies all lookups for a feature to the glyph sequence.
-// This version does not use GDEF for glyph filtering.
-func (g *GSUB) ApplyFeature(tag Tag, glyphs []GlyphID) []GlyphID {
-	return g.ApplyFeatureWithGDEF(tag, glyphs, nil)
+// extractGlyphsAndMasks extracts GlyphIDs and Masks from a Buffer.
+func extractGlyphsAndMasks(buf *Buffer) ([]GlyphID, []uint32) {
+	glyphs := make([]GlyphID, len(buf.Info))
+	masks := make([]uint32, len(buf.Info))
+	for i, info := range buf.Info {
+		glyphs[i] = info.GlyphID
+		masks[i] = info.Mask
+	}
+	return glyphs, masks
 }
 
-// ApplyFeatureWithGDEF applies all lookups for a feature with GDEF-based glyph filtering.
-func (g *GSUB) ApplyFeatureWithGDEF(tag Tag, glyphs []GlyphID, gdef *GDEF) []GlyphID {
-	featureList, err := g.ParseFeatureList()
-	if err != nil {
+// ApplyLookupWithGDEF applies a single lookup with GDEF-based glyph filtering.
+func (g *GSUB) ApplyLookupWithGDEF(lookupIndex int, glyphs []GlyphID, gdef *GDEF, font *Font) []GlyphID {
+	lookup := g.GetLookup(lookupIndex)
+	if lookup == nil {
 		return glyphs
 	}
 
-	lookups := featureList.FindFeature(tag)
+	// Determine mark filtering set index
+	markFilteringSet := -1
+	if lookup.Flag&LookupFlagUseMarkFilteringSet != 0 {
+		markFilteringSet = int(lookup.MarkFilter)
+	}
+
+	// Create temporary buffer from glyphs
+	// HarfBuzz: All glyphs start with global_mask set
+	buf := &Buffer{
+		Info: make([]GlyphInfo, len(glyphs)),
+	}
+	for i, gid := range glyphs {
+		buf.Info[i] = GlyphInfo{
+			GlyphID: gid,
+			Cluster: i,
+			Mask:    MaskGlobal, // HarfBuzz: glyphs have global_mask
+		}
+	}
+
+	ctx := &OTApplyContext{
+		Buffer:           buf,
+		LookupFlag:       lookup.Flag,
+		GDEF:             gdef,
+		MarkFilteringSet: markFilteringSet,
+		FeatureMask:      MaskGlobal, // HarfBuzz: lookup_mask is never 0
+		Font:             font,
+	}
+	// Buffer.Idx starts at 0 by default
+
+	// Initialize output buffer (HarfBuzz pattern: clearOutput before GSUB)
+	buf.clearOutput()
+
+	// Type 8 (Reverse Chain Single Substitution) must be applied in reverse order
+	if lookup.Type == GSUBTypeReverseChainSingle {
+		for ctx.Buffer.Idx = len(ctx.Buffer.Info) - 1; ctx.Buffer.Idx >= 0; ctx.Buffer.Idx-- {
+			if ctx.ShouldSkipGlyph(ctx.Buffer.Idx) {
+				buf.nextGlyph()
+				continue
+			}
+			for _, subtable := range lookup.subtables {
+				if subtable.Apply(ctx) > 0 {
+					break
+				}
+			}
+		}
+		buf.sync()
+		return extractGlyphs(buf)
+	}
+
+	// Normal forward iteration for all other lookup types
+	for ctx.Buffer.Idx < len(ctx.Buffer.Info) {
+		if ctx.ShouldSkipGlyph(ctx.Buffer.Idx) {
+			buf.nextGlyph()
+			continue
+		}
+
+		applied := false
+		for _, subtable := range lookup.subtables {
+			if subtable.Apply(ctx) > 0 {
+				applied = true
+				break
+			}
+		}
+		if !applied {
+			buf.nextGlyph()
+		}
+	}
+
+	buf.sync()
+	return extractGlyphs(buf)
+}
+
+// extractGlyphs extracts GlyphIDs from a Buffer.
+func extractGlyphs(buf *Buffer) []GlyphID {
+	glyphs := make([]GlyphID, len(buf.Info))
+	for i, info := range buf.Info {
+		glyphs[i] = info.GlyphID
+	}
+	return glyphs
+}
+
+// ApplyLookupWithCodepoints applies a single lookup with GDEF-based filtering
+// and codepoint tracking for default ignorable handling.
+func (g *GSUB) ApplyLookupWithCodepoints(lookupIndex int, glyphs []GlyphID, codepoints []Codepoint, gdef *GDEF, font *Font) ([]GlyphID, []Codepoint) {
+	lookup := g.GetLookup(lookupIndex)
+	if lookup == nil {
+		return glyphs, codepoints
+	}
+
+	// Determine mark filtering set index
+	markFilteringSet := -1
+	if lookup.Flag&LookupFlagUseMarkFilteringSet != 0 {
+		markFilteringSet = int(lookup.MarkFilter)
+	}
+
+	// Create temporary buffer from glyphs and codepoints
+	// HarfBuzz: All glyphs start with global_mask set
+	buf := &Buffer{
+		Info: make([]GlyphInfo, len(glyphs)),
+	}
+	for i, gid := range glyphs {
+		buf.Info[i] = GlyphInfo{
+			GlyphID: gid,
+			Cluster: i,
+			Mask:    MaskGlobal, // HarfBuzz: glyphs have global_mask
+		}
+		if codepoints != nil && i < len(codepoints) {
+			buf.Info[i].Codepoint = codepoints[i]
+		}
+	}
+
+	ctx := &OTApplyContext{
+		Buffer:           buf,
+		LookupFlag:       lookup.Flag,
+		GDEF:             gdef,
+		MarkFilteringSet: markFilteringSet,
+		FeatureMask:      MaskGlobal, // HarfBuzz: lookup_mask is never 0
+		Font:             font,
+	}
+	// Buffer.Idx starts at 0 by default
+
+	// CRITICAL: Initialize output buffer before applying lookups
+	// HarfBuzz equivalent: clear_output() in hb-buffer.hh:232
+	// Context-lookups check haveOutput and return immediately if false!
+	buf.clearOutput()
+
+	// Type 8 (Reverse Chain Single Substitution) must be applied in reverse order
+	// Note: Reverse substitution doesn't use output buffer pattern
+	if lookup.Type == GSUBTypeReverseChainSingle {
+		for ctx.Buffer.Idx = len(ctx.Buffer.Info) - 1; ctx.Buffer.Idx >= 0; ctx.Buffer.Idx-- {
+			if ctx.ShouldSkipGlyph(ctx.Buffer.Idx) {
+				continue
+			}
+			for _, subtable := range lookup.subtables {
+				if subtable.Apply(ctx) > 0 {
+					break
+				}
+			}
+		}
+		// Sync output buffer back to input buffer
+		// HarfBuzz equivalent: sync() in hb-buffer.cc:416
+		buf.sync()
+		return extractGlyphsAndCodepoints(buf)
+	}
+
+	// Normal forward iteration for all other lookup types
+	// HarfBuzz: When a glyph is not matched or skipped, next_glyph() is called
+	// to copy it to output and advance idx.
+	for ctx.Buffer.Idx < len(ctx.Buffer.Info) {
+		if ctx.ShouldSkipGlyph(ctx.Buffer.Idx) {
+			buf.nextGlyph()
+			continue
+		}
+
+		applied := false
+		for _, subtable := range lookup.subtables {
+			if subtable.Apply(ctx) > 0 {
+				applied = true
+				break
+			}
+		}
+		if !applied {
+			buf.nextGlyph()
+		}
+	}
+
+	// Sync output buffer back to input buffer
+	// HarfBuzz equivalent: sync() in hb-buffer.cc:416
+	buf.sync()
+
+	return extractGlyphsAndCodepoints(buf)
+}
+
+// extractGlyphsAndCodepoints extracts GlyphIDs and Codepoints from a Buffer.
+func extractGlyphsAndCodepoints(buf *Buffer) ([]GlyphID, []Codepoint) {
+	glyphs := make([]GlyphID, len(buf.Info))
+	codepoints := make([]Codepoint, len(buf.Info))
+	for i, info := range buf.Info {
+		glyphs[i] = info.GlyphID
+		codepoints[i] = info.Codepoint
+	}
+	return glyphs, codepoints
+}
+
+// ApplyLookupToBuffer applies a single GSUB lookup directly to a Buffer.
+// HarfBuzz equivalent: hb_ot_layout_substitute_lookup() in hb-ot-layout.cc:2093-2098
+// Uses MaskGlobal so lookup applies to all glyphs (which have MaskGlobal by default).
+// This preserves cluster information during substitution.
+func (g *GSUB) ApplyLookupToBuffer(lookupIndex int, buf *Buffer, gdef *GDEF, font *Font) {
+	g.ApplyLookupToBufferWithMask(lookupIndex, buf, gdef, MaskGlobal, font)
+}
+
+// ApplyLookupToBufferWithMask applies a single GSUB lookup directly to a Buffer with mask-based filtering.
+//
+// HarfBuzz equivalent: Combines multiple HarfBuzz functions:
+//   - hb_ot_layout_substitute_lookup() in hb-ot-layout.cc:2093-2098
+//   - apply_string() / apply_forward() in hb-ot-layout.cc:1917-1947
+//   - Mask filtering: (info[j].mask & c->lookup_mask) in hb-ot-layout.cc:1930
+//
+// The featureMask parameter corresponds to lookup_mask in hb_ot_apply_context_t.
+// A glyph is skipped if (glyph.Mask & featureMask) == 0.
+// Use MaskGlobal to apply to all glyphs (which have MaskGlobal set by default).
+// This preserves cluster information during substitution (unlike array-based methods).
+func (g *GSUB) ApplyLookupToBufferWithMask(lookupIndex int, buf *Buffer, gdef *GDEF, featureMask uint32, font *Font) {
+	lookup := g.GetLookup(lookupIndex)
+	if lookup == nil {
+		return
+	}
+
+	// Determine mark filtering set index
+	markFilteringSet := -1
+	if lookup.Flag&LookupFlagUseMarkFilteringSet != 0 {
+		markFilteringSet = int(lookup.MarkFilter)
+	}
+
+	ctx := &OTApplyContext{
+		Buffer:           buf,
+		LookupFlag:       lookup.Flag,
+		GDEF:             gdef,
+		HasGlyphClasses:  gdef != nil && gdef.HasGlyphClasses(),
+		MarkFilteringSet: markFilteringSet,
+		FeatureMask:      featureMask,
+		TableType:        TableGSUB,
+		Font:             font,
+	}
+
+	// Type 8 (Reverse Chain Single Substitution) must be applied in reverse order
+	// HarfBuzz: Reverse lookups are always in-place (don't use output buffer)
+	if lookup.Type == GSUBTypeReverseChainSingle {
+		for buf.Idx = len(buf.Info) - 1; buf.Idx >= 0; buf.Idx-- {
+			if ctx.ShouldSkipGlyph(buf.Idx) {
+				continue
+			}
+			for _, subtable := range lookup.subtables {
+				if subtable.Apply(ctx) > 0 {
+					break
+				}
+			}
+		}
+		return
+	}
+
+	// Normal forward iteration for all other lookup types
+	// HarfBuzz equivalent: apply_string() with clear_output/sync pattern
+	// (hb-ot-layout.cc:1986-1996)
+	//
+	// GSUB uses output buffer to properly propagate cluster information:
+	// - clear_output() before substitution
+	// - outputGlyph() / nextGlyph() during substitution (copies all properties)
+	// - sync() after substitution
+	buf.clearOutput()
+
+	buf.Idx = 0
+	for buf.Idx < len(buf.Info) {
+		// Skip glyphs that should be ignored based on LookupFlag, GDEF, and FeatureMask
+		if ctx.ShouldSkipGlyph(buf.Idx) {
+			buf.nextGlyph()
+			continue
+		}
+
+		applied := false
+		for _, subtable := range lookup.subtables {
+			if subtable.Apply(ctx) > 0 {
+				applied = true
+				break
+			}
+		}
+		if !applied {
+			buf.nextGlyph()
+		}
+	}
+
+	buf.sync()
+}
+
+// ApplyFeatureToBuffer applies all lookups for a feature directly to a Buffer.
+// HarfBuzz equivalent: hb_ot_layout_substitute_lookup() loop
+// This preserves cluster information during substitution.
+func (g *GSUB) ApplyFeatureToBuffer(tag Tag, buf *Buffer, gdef *GDEF, font *Font) {
+	g.ApplyFeatureToBufferWithMaskAndVariations(tag, buf, gdef, MaskGlobal, font, VariationsNotFoundIndex)
+}
+
+// ApplyFeatureToBufferWithMask applies all lookups for a feature directly to a Buffer with mask filtering.
+// This preserves cluster information during substitution.
+// CRITICAL: Uses script/language-specific feature selection (like HarfBuzz)
+func (g *GSUB) ApplyFeatureToBufferWithMask(tag Tag, buf *Buffer, gdef *GDEF, featureMask uint32, font *Font) {
+	g.ApplyFeatureToBufferWithMaskAndVariations(tag, buf, gdef, featureMask, font, VariationsNotFoundIndex)
+}
+
+// ApplyFeatureToBufferWithMaskAndVariations applies all lookups for a feature directly to a Buffer
+// with mask filtering and FeatureVariations support.
+// variationsIndex should be obtained from FindVariationsIndex() or VariationsNotFoundIndex if not applicable.
+// HarfBuzz: hb_ot_layout_substitute_lookup() with feature_substitutes_map
+func (g *GSUB) ApplyFeatureToBufferWithMaskAndVariations(tag Tag, buf *Buffer, gdef *GDEF, featureMask uint32, font *Font, variationsIndex uint32) {
+	featureList, err := g.ParseFeatureList()
+	if err != nil {
+		return
+	}
+
+	// Get script/language-specific feature indices
+	// HarfBuzz: hb_ot_layout_collect_features_map() in hb-ot-map.cc:244-248
+	//   const OT::LangSys &l = g.get_script (script_index).get_lang_sys (language_index);
+	var lookups []uint16
+	scriptList, err := g.ParseScriptList()
+	if err == nil && scriptList != nil {
+		// CRITICAL FIX: Use GetLangSys() instead of GetScript() to respect both Script AND Language
+		// This ensures we only use features from the correct Script/Language combination
+		langSys := scriptList.GetLangSys(buf.Script, buf.Language)
+		if langSys != nil {
+			// Use script/language-specific search with FeatureVariations support
+			lookups = featureList.FindFeatureByIndicesWithVariations(tag, langSys.FeatureIndices, g.featureVariations, variationsIndex)
+		} else {
+			// Try default script as fallback
+			langSys = scriptList.GetDefaultScript()
+			if langSys != nil {
+				lookups = featureList.FindFeatureByIndicesWithVariations(tag, langSys.FeatureIndices, g.featureVariations, variationsIndex)
+			}
+		}
+	}
+
+	// Fallback to global search if no script/language found
+	// Also apply FeatureVariations substitution for global features
 	if lookups == nil {
-		return glyphs
+		lookups = featureList.FindFeatureWithVariations(tag, g.featureVariations, variationsIndex)
+	}
+
+	if lookups == nil {
+		return
 	}
 
 	// Sort lookups by index (they should be applied in order)
@@ -1523,10 +2516,220 @@ func (g *GSUB) ApplyFeatureWithGDEF(tag Tag, glyphs []GlyphID, gdef *GDEF) []Gly
 	sort.Ints(sorted)
 
 	for _, lookupIdx := range sorted {
-		glyphs = g.ApplyLookupWithGDEF(lookupIdx, glyphs, gdef)
+		g.ApplyLookupToBufferWithMask(lookupIdx, buf, gdef, featureMask, font)
+	}
+}
+
+// ApplyFeatureToBufferRangeWithMask applies all lookups for a feature to a range of the Buffer.
+// This is used for per-syllable feature application (F_PER_SYLLABLE in HarfBuzz).
+// Only glyphs in the range [start, end) are considered for substitution.
+// HarfBuzz equivalent: per_syllable flag in hb_ot_apply_context_t
+func (g *GSUB) ApplyFeatureToBufferRangeWithMask(tag Tag, buf *Buffer, gdef *GDEF, featureMask uint32, font *Font, start, end int) {
+	if start >= end || start < 0 || end > len(buf.Info) {
+		return
 	}
 
-	return glyphs
+	featureList, err := g.ParseFeatureList()
+	if err != nil {
+		return
+	}
+
+	// Get script/language-specific feature indices
+	var lookups []uint16
+	scriptList, err := g.ParseScriptList()
+	if err == nil && scriptList != nil {
+		langSys := scriptList.GetLangSys(buf.Script, buf.Language)
+		if langSys != nil {
+			lookups = featureList.FindFeatureByIndicesWithVariations(tag, langSys.FeatureIndices, g.featureVariations, VariationsNotFoundIndex)
+		} else {
+			langSys = scriptList.GetDefaultScript()
+			if langSys != nil {
+				lookups = featureList.FindFeatureByIndicesWithVariations(tag, langSys.FeatureIndices, g.featureVariations, VariationsNotFoundIndex)
+			}
+		}
+	}
+
+	if lookups == nil {
+		lookups = featureList.FindFeatureWithVariations(tag, g.featureVariations, VariationsNotFoundIndex)
+	}
+
+	if lookups == nil {
+		return
+	}
+
+	// Sort lookups by index
+	sorted := make([]int, len(lookups))
+	for i, l := range lookups {
+		sorted[i] = int(l)
+	}
+	sort.Ints(sorted)
+
+	for _, lookupIdx := range sorted {
+		g.ApplyLookupToBufferRangeWithMask(lookupIdx, buf, gdef, featureMask, font, start, end)
+		// Update end if buffer length changed (e.g., ligature or multiple substitution)
+		// We need to find where this syllable ends now
+		if start < len(buf.Info) {
+			syllable := buf.Info[start].Syllable
+			end = start
+			for end < len(buf.Info) && buf.Info[end].Syllable == syllable {
+				end++
+			}
+		}
+	}
+}
+
+// ApplyLookupToBufferRangeWithMask applies a single lookup to a range of the Buffer.
+// Only positions in [start, end) are considered as starting positions for matches.
+// This implements per-syllable GSUB application.
+func (g *GSUB) ApplyLookupToBufferRangeWithMask(lookupIndex int, buf *Buffer, gdef *GDEF, featureMask uint32, font *Font, start, end int) {
+	lookup := g.GetLookup(lookupIndex)
+	if lookup == nil {
+		return
+	}
+
+	// Determine mark filtering set index
+	markFilteringSet := -1
+	if lookup.Flag&LookupFlagUseMarkFilteringSet != 0 {
+		markFilteringSet = int(lookup.MarkFilter)
+	}
+
+	ctx := &OTApplyContext{
+		Buffer:           buf,
+		LookupFlag:       lookup.Flag,
+		GDEF:             gdef,
+		HasGlyphClasses:  gdef != nil && gdef.HasGlyphClasses(),
+		MarkFilteringSet: markFilteringSet,
+		FeatureMask:      featureMask,
+		TableType:        TableGSUB,
+		Font:             font,
+		// Per-syllable range constraints
+		RangeStart: start,
+		RangeEnd:   end,
+		PerSyllable: true,
+	}
+
+	// Type 8 (Reverse Chain Single Substitution) must be applied in reverse order
+	if lookup.Type == GSUBTypeReverseChainSingle {
+		// For per-syllable, only iterate within the range
+		for buf.Idx = end - 1; buf.Idx >= start; buf.Idx-- {
+			if ctx.ShouldSkipGlyph(buf.Idx) {
+				continue
+			}
+			for _, subtable := range lookup.subtables {
+				if subtable.Apply(ctx) > 0 {
+					break
+				}
+			}
+		}
+		return
+	}
+
+	// Normal forward iteration - but only for the specified range
+	// We use a modified approach: iterate through all but only apply within range
+	buf.clearOutput()
+
+	buf.Idx = 0
+	for buf.Idx < len(buf.Info) {
+		// Skip glyphs that should be ignored
+		if ctx.ShouldSkipGlyph(buf.Idx) {
+			buf.nextGlyph()
+			continue
+		}
+
+		// For per-syllable: only apply substitutions if current position is within range
+		// and all context glyphs are within the same syllable
+		inRange := buf.Idx >= start && buf.Idx < end
+
+		applied := false
+		if inRange {
+			for _, subtable := range lookup.subtables {
+				if subtable.Apply(ctx) > 0 {
+					applied = true
+					break
+				}
+			}
+		}
+		if !applied {
+			buf.nextGlyph()
+		}
+	}
+
+	buf.sync()
+}
+
+// ApplyFeatureWithGDEF applies all lookups for a feature with GDEF-based glyph filtering.
+// Note: This unions all features with the matching tag, which may not be correct for fonts
+// with multiple features for different scripts/languages.
+func (g *GSUB) ApplyFeatureWithGDEF(tag Tag, glyphs []GlyphID, gdef *GDEF, font *Font) []GlyphID {
+	result, _ := g.ApplyFeatureWithCodepoints(tag, glyphs, nil, gdef, font)
+	return result
+}
+
+// ApplyFeatureWithCodepoints applies all lookups for a feature with GDEF-based filtering
+// and support for default ignorable handling (like Variation Selectors).
+// The codepoints slice should match glyphs in length, or can be nil if not needed.
+func (g *GSUB) ApplyFeatureWithCodepoints(tag Tag, glyphs []GlyphID, codepoints []Codepoint, gdef *GDEF, font *Font) ([]GlyphID, []Codepoint) {
+	featureList, err := g.ParseFeatureList()
+	if err != nil {
+		return glyphs, codepoints
+	}
+
+	lookups := featureList.FindFeature(tag)
+	if lookups == nil {
+		return glyphs, codepoints
+	}
+
+	// Sort lookups by index (they should be applied in order)
+	sorted := make([]int, len(lookups))
+	for i, l := range lookups {
+		sorted[i] = int(l)
+	}
+	sort.Ints(sorted)
+
+	for _, lookupIdx := range sorted {
+		glyphs, codepoints = g.ApplyLookupWithCodepoints(lookupIdx, glyphs, codepoints, gdef, font)
+	}
+
+	return glyphs, codepoints
+}
+
+// ApplyFeatureWithMask applies all lookups for a feature with mask-based filtering.
+// This is the HarfBuzz-style approach where each glyph has a mask, and
+// the lookup is only applied to glyphs where (mask & featureMask) != 0.
+//
+// HarfBuzz equivalent: The mask check in hb-ot-layout-gsubgpos.hh
+//
+// Parameters:
+//   - tag: The feature tag (e.g., 'isol', 'init', 'medi', 'fina')
+//   - glyphs: The current glyph sequence
+//   - masks: Mask for each glyph (must have same length as glyphs)
+//   - featureMask: The mask for this feature (used to filter which glyphs are affected)
+//   - gdef: GDEF table for glyph classification (may be nil)
+//
+// Returns the modified glyph sequence and updated masks.
+func (g *GSUB) ApplyFeatureWithMask(tag Tag, glyphs []GlyphID, masks []uint32, featureMask uint32, gdef *GDEF, font *Font) ([]GlyphID, []uint32) {
+	featureList, err := g.ParseFeatureList()
+	if err != nil {
+		return glyphs, masks
+	}
+
+	lookups := featureList.FindFeature(tag)
+	if lookups == nil {
+		return glyphs, masks
+	}
+
+	// Sort lookups by index (they should be applied in order)
+	sorted := make([]int, len(lookups))
+	for i, l := range lookups {
+		sorted[i] = int(l)
+	}
+	sort.Ints(sorted)
+
+	for _, lookupIdx := range sorted {
+		glyphs, masks = g.ApplyLookupWithMask(lookupIdx, glyphs, masks, featureMask, gdef, font)
+	}
+
+	return glyphs, masks
 }
 
 // Common feature tags
@@ -1896,7 +3099,7 @@ func parseChainContextFormat3(data []byte, offset int, gsub *GSUB) (*ChainContex
 }
 
 // Apply applies the chaining context substitution.
-func (ccs *ChainContextSubst) Apply(ctx *GSUBContext) int {
+func (ccs *ChainContextSubst) Apply(ctx *OTApplyContext) int {
 	switch ccs.format {
 	case 1:
 		return ccs.applyFormat1(ctx)
@@ -1909,9 +3112,134 @@ func (ccs *ChainContextSubst) Apply(ctx *GSUBContext) int {
 	}
 }
 
+// wouldApply checks if this ChainContextSubst would apply to the given glyph sequence.
+// HarfBuzz equivalent: chain_context_would_apply_lookup() in hb-ot-layout-gsubgpos.hh:3126-3141
+//
+// For zeroContext=true: only matches if there's no backtrack AND no lookahead context.
+// This is used by consonant_position_from_face() to determine consonant positions.
+func (ccs *ChainContextSubst) wouldApply(glyphs []GlyphID, zeroContext bool) bool {
+	switch ccs.format {
+	case 1:
+		return ccs.wouldApplyFormat1(glyphs, zeroContext)
+	case 2:
+		return ccs.wouldApplyFormat2(glyphs, zeroContext)
+	case 3:
+		return ccs.wouldApplyFormat3(glyphs, zeroContext)
+	default:
+		return false
+	}
+}
+
+// wouldApplyFormat1 checks if format 1 (simple glyph context) would apply.
+func (ccs *ChainContextSubst) wouldApplyFormat1(glyphs []GlyphID, zeroContext bool) bool {
+	if len(glyphs) == 0 {
+		return false
+	}
+
+	coverageIndex := ccs.coverage.GetCoverage(glyphs[0])
+	if coverageIndex == NotCovered {
+		return false
+	}
+
+	if int(coverageIndex) >= len(ccs.chainRuleSets) {
+		return false
+	}
+
+	ruleSet := ccs.chainRuleSets[coverageIndex]
+	for _, rule := range ruleSet {
+		// HarfBuzz: For zero_context, require no backtrack and no lookahead
+		if zeroContext && (len(rule.Backtrack) > 0 || len(rule.Lookahead) > 0) {
+			continue
+		}
+
+		// Check if input matches
+		// Input array includes first glyph implicitly (covered by coverage)
+		// So we need len(glyphs) == len(rule.Input) + 1
+		if len(glyphs) != len(rule.Input)+1 {
+			continue
+		}
+
+		match := true
+		for i, inputGlyph := range rule.Input {
+			if glyphs[i+1] != inputGlyph {
+				match = false
+				break
+			}
+		}
+		if match {
+			return true
+		}
+	}
+	return false
+}
+
+// wouldApplyFormat2 checks if format 2 (class-based context) would apply.
+func (ccs *ChainContextSubst) wouldApplyFormat2(glyphs []GlyphID, zeroContext bool) bool {
+	if len(glyphs) == 0 || ccs.inputClassDef == nil {
+		return false
+	}
+
+	coverageIndex := ccs.coverage.GetCoverage(glyphs[0])
+	if coverageIndex == NotCovered {
+		return false
+	}
+
+	firstClass := ccs.inputClassDef.GetClass(glyphs[0])
+	if int(firstClass) >= len(ccs.chainRuleSets) {
+		return false
+	}
+
+	ruleSet := ccs.chainRuleSets[firstClass]
+	for _, rule := range ruleSet {
+		// HarfBuzz: For zero_context, require no backtrack and no lookahead
+		if zeroContext && (len(rule.Backtrack) > 0 || len(rule.Lookahead) > 0) {
+			continue
+		}
+
+		// Check if input classes match
+		if len(glyphs) != len(rule.Input)+1 {
+			continue
+		}
+
+		match := true
+		for i, inputClass := range rule.Input {
+			// rule.Input contains class IDs stored as GlyphID
+			if ccs.inputClassDef.GetClass(glyphs[i+1]) != int(inputClass) {
+				match = false
+				break
+			}
+		}
+		if match {
+			return true
+		}
+	}
+	return false
+}
+
+// wouldApplyFormat3 checks if format 3 (coverage-based context) would apply.
+func (ccs *ChainContextSubst) wouldApplyFormat3(glyphs []GlyphID, zeroContext bool) bool {
+	// HarfBuzz: For zero_context, require no backtrack and no lookahead
+	if zeroContext && (len(ccs.backtrackCoverages) > 0 || len(ccs.lookaheadCoverages) > 0) {
+		return false
+	}
+
+	// Check if input coverages match
+	if len(glyphs) != len(ccs.inputCoverages) {
+		return false
+	}
+
+	for i, cov := range ccs.inputCoverages {
+		if cov.GetCoverage(glyphs[i]) == NotCovered {
+			return false
+		}
+	}
+
+	return true
+}
+
 // applyFormat1 applies ChainContextSubstFormat1 (simple glyph context).
-func (ccs *ChainContextSubst) applyFormat1(ctx *GSUBContext) int {
-	glyph := ctx.Glyphs[ctx.Index]
+func (ccs *ChainContextSubst) applyFormat1(ctx *OTApplyContext) int {
+	glyph := ctx.Buffer.Info[ctx.Buffer.Idx].GlyphID
 	coverageIndex := ccs.coverage.GetCoverage(glyph)
 	if coverageIndex == NotCovered {
 		return 0
@@ -1933,48 +3261,55 @@ func (ccs *ChainContextSubst) applyFormat1(ctx *GSUBContext) int {
 }
 
 // matchRuleFormat1 checks if a ChainRule matches at the current position (Format 1).
-func (ccs *ChainContextSubst) matchRuleFormat1(ctx *GSUBContext, rule *ChainRule) bool {
+func (ccs *ChainContextSubst) matchRuleFormat1(ctx *OTApplyContext, rule *ChainRule) bool {
 	// Check if enough glyphs for input sequence
 	inputLen := len(rule.Input) + 1 // +1 for first glyph (covered by coverage)
-	if ctx.Index+inputLen > len(ctx.Glyphs) {
+	if ctx.Buffer.Idx+inputLen > len(ctx.Buffer.Info) {
 		return false
 	}
 
 	// Match input sequence (starting from second glyph)
 	for i, g := range rule.Input {
-		if ctx.Glyphs[ctx.Index+1+i] != g {
+		if ctx.Buffer.Info[ctx.Buffer.Idx+1+i].GlyphID != g {
 			return false
 		}
 	}
 
 	// Check lookahead
-	lookaheadStart := ctx.Index + inputLen
-	if lookaheadStart+len(rule.Lookahead) > len(ctx.Glyphs) {
+	lookaheadStart := ctx.Buffer.Idx + inputLen
+	if lookaheadStart+len(rule.Lookahead) > len(ctx.Buffer.Info) {
 		return false
 	}
 	for i, g := range rule.Lookahead {
-		if ctx.Glyphs[lookaheadStart+i] != g {
+		if ctx.Buffer.Info[lookaheadStart+i].GlyphID != g {
 			return false
 		}
 	}
 
 	// Check backtrack (in reverse order)
-	if ctx.Index < len(rule.Backtrack) {
+	if ctx.Buffer.Idx < len(rule.Backtrack) {
 		return false
 	}
 	for i, g := range rule.Backtrack {
 		// Backtrack[0] is immediately before current position
-		if ctx.Glyphs[ctx.Index-1-i] != g {
+		if ctx.Buffer.Info[ctx.Buffer.Idx-1-i].GlyphID != g {
 			return false
 		}
+	}
+
+	// Store match positions for use in applyLookups
+	// Format 1 uses consecutive positions (no skippy-iteration)
+	ctx.MatchPositions = make([]int, inputLen)
+	for i := 0; i < inputLen; i++ {
+		ctx.MatchPositions[i] = ctx.Buffer.Idx + i
 	}
 
 	return true
 }
 
 // applyFormat2 applies ChainContextSubstFormat2 (class-based context).
-func (ccs *ChainContextSubst) applyFormat2(ctx *GSUBContext) int {
-	glyph := ctx.Glyphs[ctx.Index]
+func (ccs *ChainContextSubst) applyFormat2(ctx *OTApplyContext) int {
+	glyph := ctx.Buffer.Info[ctx.Buffer.Idx].GlyphID
 	if ccs.coverage.GetCoverage(glyph) == NotCovered {
 		return 0
 	}
@@ -1998,104 +3333,252 @@ func (ccs *ChainContextSubst) applyFormat2(ctx *GSUBContext) int {
 
 // matchRuleFormat2 checks if a ChainRule matches at the current position (Format 2).
 // In Format 2, rule values are class IDs, not glyph IDs.
-func (ccs *ChainContextSubst) matchRuleFormat2(ctx *GSUBContext, rule *ChainRule) bool {
-	// Check if enough glyphs for input sequence
+// This function uses skippy-iteration to skip glyphs according to LookupFlag (e.g., IgnoreMarks).
+func (ccs *ChainContextSubst) matchRuleFormat2(ctx *OTApplyContext, rule *ChainRule) bool {
 	inputLen := len(rule.Input) + 1
-	if ctx.Index+inputLen > len(ctx.Glyphs) {
-		return false
-	}
+
+	// Build array of match positions using skippy-iteration
+	// MatchPositions[0] = ctx.Buffer.Idx (current position)
+	// MatchPositions[1..] = positions of subsequent input glyphs (skipping marks if needed)
+	matchPositions := make([]int, inputLen)
+	matchPositions[0] = ctx.Buffer.Idx
 
 	// Match input sequence by class (starting from second glyph)
+	// NextGlyph(pos) searches from pos+1, so we pass the current position
+	pos := ctx.Buffer.Idx
 	for i, classID := range rule.Input {
-		glyphClass := ccs.inputClassDef.GetClass(ctx.Glyphs[ctx.Index+1+i])
+		pos = ctx.NextGlyph(pos)
+		if pos < 0 {
+			return false
+		}
+		glyphClass := ccs.inputClassDef.GetClass(ctx.Buffer.Info[pos].GlyphID)
+		if glyphClass != int(classID) {
+			return false
+		}
+		matchPositions[i+1] = pos
+	}
+
+	// Check lookahead by class (continue from last input position)
+	// HarfBuzz: uses iter_context (context_match=true) - mask is NOT checked!
+	lookaheadPos := pos
+	for _, classID := range rule.Lookahead {
+		lookaheadPos = ctx.NextContextGlyph(lookaheadPos) // context_match=true
+		if lookaheadPos < 0 {
+			return false
+		}
+		glyphClass := ccs.lookaheadClassDef.GetClass(ctx.Buffer.Info[lookaheadPos].GlyphID)
 		if glyphClass != int(classID) {
 			return false
 		}
 	}
 
-	// Check lookahead by class
-	lookaheadStart := ctx.Index + inputLen
-	if lookaheadStart+len(rule.Lookahead) > len(ctx.Glyphs) {
-		return false
-	}
-	for i, classID := range rule.Lookahead {
-		glyphClass := ccs.lookaheadClassDef.GetClass(ctx.Glyphs[lookaheadStart+i])
+	// Check backtrack by class (in reverse order, starting before current position)
+	// HarfBuzz: uses iter_context (context_match=true) - mask is NOT checked!
+	backtrackPos := ctx.Buffer.Idx
+	for _, classID := range rule.Backtrack {
+		backtrackPos = ctx.PrevContextGlyph(backtrackPos) // context_match=true
+		if backtrackPos < 0 {
+			return false
+		}
+		glyphClass := ccs.backtrackClassDef.GetClass(ctx.Buffer.Info[backtrackPos].GlyphID)
 		if glyphClass != int(classID) {
 			return false
 		}
 	}
 
-	// Check backtrack by class (in reverse order)
-	if ctx.Index < len(rule.Backtrack) {
-		return false
-	}
-	for i, classID := range rule.Backtrack {
-		glyphClass := ccs.backtrackClassDef.GetClass(ctx.Glyphs[ctx.Index-1-i])
-		if glyphClass != int(classID) {
-			return false
-		}
-	}
-
+	// Store match positions for use in applyLookups
+	ctx.MatchPositions = matchPositions
 	return true
 }
 
 // applyFormat3 applies ChainContextSubstFormat3 (coverage-based context).
-func (ccs *ChainContextSubst) applyFormat3(ctx *GSUBContext) int {
+// HarfBuzz equivalent: ChainContextFormat3::apply() in hb-ot-layout-gsubgpos.hh:4218-4237
+// which calls chain_context_apply_lookup() -> match_input() for skippy-iteration.
+func (ccs *ChainContextSubst) applyFormat3(ctx *OTApplyContext) int {
 	inputLen := len(ccs.inputCoverages)
 	if inputLen == 0 {
 		return 0
 	}
 
-	// Check if enough glyphs for input sequence
-	if ctx.Index+inputLen > len(ctx.Glyphs) {
+	// Check first coverage (current glyph)
+	if ccs.inputCoverages[0].GetCoverage(ctx.Buffer.Info[ctx.Buffer.Idx].GlyphID) == NotCovered {
 		return 0
 	}
 
-	// Match input sequence by coverage
-	for i, cov := range ccs.inputCoverages {
-		if cov.GetCoverage(ctx.Glyphs[ctx.Index+i]) == NotCovered {
+	// Build match positions using skippy-iteration (like HarfBuzz match_input)
+	// MatchPositions[0] = ctx.Buffer.Idx (current position)
+	// MatchPositions[1..] = positions of subsequent input glyphs (skipping marks if needed)
+	matchPositions := make([]int, inputLen)
+	matchPositions[0] = ctx.Buffer.Idx
+
+	// Match remaining input sequence by coverage using skippy-iteration
+	pos := ctx.Buffer.Idx
+	for i := 1; i < inputLen; i++ {
+		pos = ctx.NextGlyph(pos)
+		if pos < 0 {
+			return 0
+		}
+		if ccs.inputCoverages[i].GetCoverage(ctx.Buffer.Info[pos].GlyphID) == NotCovered {
+			return 0
+		}
+		matchPositions[i] = pos
+	}
+
+	// Check lookahead by coverage (continue from last input position)
+	// HarfBuzz: uses iter_context (context_match=true) with coverage matching
+	// HarfBuzz: hb-ot-layout-gsubgpos.hh:1603-1635 (match_lookahead)
+	//
+	// HarfBuzz logic in skipping_iterator_t::next():
+	// 1. may_skip == SKIP_YES -> continue (definitely skip)
+	// 2. may_match != MATCH_NO -> return true (this glyph is potential match)
+	// 3. may_skip == SKIP_MAYBE -> continue (skip if no match)
+	// 4. else -> fail (glyph doesn't match and can't be skipped)
+	//
+	// Then match_func checks coverage. If not in coverage -> fail.
+	//
+	// SPECIAL CASE: In HarfBuzz, CGJ (U+034F) is marked as "continuation" and has
+	// mask=0 set in the Arabic shaper, causing may_match to return MATCH_NO.
+	// This allows CGJ to be skipped (with SKIP_MAYBE) during context matching.
+	// We handle this by checking if the glyph is a "transparent" default ignorable
+	// before checking may_match.
+	bufLen := len(ctx.Buffer.Info)
+	lookaheadPos := pos
+	for _, cov := range ccs.lookaheadCoverages {
+		found := false
+		for lookaheadPos < bufLen-1 {
+			lookaheadPos++
+			skip := ctx.MaySkip(lookaheadPos, true) // context_match=true
+			if skip == SkipYes {
+				continue // Definitely skip
+			}
+			glyph := ctx.Buffer.Info[lookaheadPos].GlyphID
+			// First check if glyph is in coverage
+			if cov.GetCoverage(glyph) != NotCovered {
+				found = true
+				break // Found matching glyph in coverage
+			}
+			// Not in coverage - can we skip it?
+			if skip == SkipMaybe {
+				continue // Skip default ignorables (like CGJ) if not in coverage
+			}
+			// Not in coverage and can't skip -> fail
+			return 0
+		}
+		if !found {
 			return 0
 		}
 	}
 
-	// Check lookahead
-	lookaheadStart := ctx.Index + inputLen
-	if lookaheadStart+len(ccs.lookaheadCoverages) > len(ctx.Glyphs) {
-		return 0
-	}
-	for i, cov := range ccs.lookaheadCoverages {
-		if cov.GetCoverage(ctx.Glyphs[lookaheadStart+i]) == NotCovered {
+	// Check backtrack by coverage (in reverse order, starting before current position)
+	// HarfBuzz: uses iter_context (context_match=true) with coverage matching
+	// HarfBuzz: hb-ot-layout-gsubgpos.hh:1569-1601 (match_backtrack)
+	//
+	// IMPORTANT: HarfBuzz uses out_info (output buffer) for backtrack matching!
+	// HarfBuzz: backtrack_len() returns out_len when have_output is true
+	// HarfBuzz: prev() iterates over out_info, not info
+	//
+	// When have_output is true:
+	// - out_info[0:out_len] contains already-processed glyphs
+	// - info[idx:] contains not-yet-processed glyphs
+	// Backtrack matching should use out_info, not info!
+	backtrackPos := ctx.Buffer.BacktrackLen()
+	for _, cov := range ccs.backtrackCoverages {
+		found := false
+		for backtrackPos > 0 {
+			backtrackPos--
+			// Get glyph info from the correct buffer (output for backtrack)
+			info := ctx.Buffer.BacktrackInfo(backtrackPos)
+			if info == nil {
+				return 0
+			}
+			skip := ctx.MaySkipInfo(info, true) // context_match=true
+			if skip == SkipYes {
+				continue // Definitely skip (e.g., ignored by LookupFlag)
+			}
+			// First check if glyph is in coverage
+			if cov.GetCoverage(info.GlyphID) != NotCovered {
+				found = true
+				break // Found matching glyph in coverage
+			}
+			// Not in coverage - can we skip it?
+			if skip == SkipMaybe {
+				continue // Skip default ignorables (like CGJ) if not in coverage
+			}
+			// Not in coverage and can't skip -> fail
+			return 0
+		}
+		if !found {
 			return 0
 		}
 	}
 
-	// Check backtrack (in reverse order)
-	if ctx.Index < len(ccs.backtrackCoverages) {
-		return 0
-	}
-	for i, cov := range ccs.backtrackCoverages {
-		if cov.GetCoverage(ctx.Glyphs[ctx.Index-1-i]) == NotCovered {
-			return 0
-		}
-	}
+	// Store match positions for use in applyLookups
+	ctx.MatchPositions = matchPositions
 
 	// Apply lookups
 	ccs.applyLookups(ctx, ccs.lookupRecords, inputLen)
 	return 1
 }
 
-// applyLookups applies the nested lookups specified in the lookup records.
-func (ccs *ChainContextSubst) applyLookups(ctx *GSUBContext, lookupRecords []LookupRecord, inputLen int) {
+// applyLookups applies lookup records to matched input positions.
+// HarfBuzz equivalent: apply_lookup() in hb-ot-layout-gsubgpos.hh:1772-1912
+func (ccs *ChainContextSubst) applyLookups(ctx *OTApplyContext, lookupRecords []LookupRecord, count int) {
 	if ccs.gsub == nil {
+		ctx.Buffer.Idx += count
 		return
 	}
 
-	// Apply lookups in order
-	// Note: We need to track position shifts as glyphs may be added/removed
+	// Check recursion limit
+	if ctx.NestingLevel >= MaxNestingLevel {
+		ctx.Buffer.Idx += count
+		return
+	}
+
+	buffer := ctx.Buffer
+	if !buffer.haveOutput {
+		buffer.Idx += count
+		return
+	}
+
+	// Validate MatchPositions
+	if ctx.MatchPositions == nil || len(ctx.MatchPositions) < count {
+		// Fallback: create consecutive positions
+		ctx.MatchPositions = make([]int, count)
+		for i := 0; i < count; i++ {
+			ctx.MatchPositions[i] = buffer.Idx + i
+		}
+	}
+
+	// HarfBuzz: apply_lookup() lines 1781-1791
+	// "All positions are distance from beginning of *output* buffer. Adjust."
+	bl := buffer.outLen // backtrack_len()
+	matchEnd := ctx.MatchPositions[count-1] + 1
+	end := bl + matchEnd - buffer.Idx
+
+	delta := bl - buffer.Idx
+	// Convert positions to new indexing (in-place modification like HarfBuzz)
+	for j := 0; j < count; j++ {
+		ctx.MatchPositions[j] += delta
+	}
+
+	// Apply each lookup record
 	for _, record := range lookupRecords {
-		seqIdx := int(record.SequenceIndex)
-		if seqIdx >= inputLen {
+		idx := int(record.SequenceIndex)
+		if idx >= count {
 			continue
+		}
+
+		// HarfBuzz: orig_len = backtrack_len() + lookahead_len()
+		origLen := buffer.outLen + (len(buffer.Info) - buffer.Idx)
+
+		// HarfBuzz: "This can happen if earlier recursed lookups deleted many entries."
+		if ctx.MatchPositions[idx] >= origLen {
+			continue
+		}
+
+		// Move to the target position
+		if !buffer.moveTo(ctx.MatchPositions[idx]) {
+			break
 		}
 
 		lookup := ccs.gsub.GetLookup(int(record.LookupIndex))
@@ -2109,32 +3592,93 @@ func (ccs *ChainContextSubst) applyLookups(ctx *GSUBContext, lookupRecords []Loo
 			nestedMarkFilteringSet = int(lookup.MarkFilter)
 		}
 
-		// Create context for nested lookup with its own flags
-		nestedCtx := &GSUBContext{
-			Glyphs:           ctx.Glyphs,
-			Index:            ctx.Index + seqIdx,
+		// Apply nested lookup
+		nestedCtx := &OTApplyContext{
+			Buffer:           buffer,
 			LookupFlag:       lookup.Flag,
 			GDEF:             ctx.GDEF,
+			HasGlyphClasses:  ctx.HasGlyphClasses,
 			MarkFilteringSet: nestedMarkFilteringSet,
-			OnReplace:        ctx.OnReplace,
-			OnReplaces:       ctx.OnReplaces,
-			OnDelete:         ctx.OnDelete,
-			OnLigate:         ctx.OnLigate,
+			NestingLevel:     ctx.NestingLevel + 1,
+			FeatureMask:      ctx.FeatureMask,
+			Font:             ctx.Font,
 		}
 
-		if nestedCtx.Index < len(nestedCtx.Glyphs) {
-			for _, subtable := range lookup.subtables {
-				if subtable.Apply(nestedCtx) > 0 {
-					// Update the main context's Glyphs if they changed
-					ctx.Glyphs = nestedCtx.Glyphs
-					break
-				}
+		applied := false
+		for _, subtable := range lookup.subtables {
+			if subtable.Apply(nestedCtx) > 0 {
+				applied = true
+				break
 			}
+		}
+
+		if !applied {
+			continue
+		}
+
+		// HarfBuzz: new_len = backtrack_len() + lookahead_len()
+		newLen := buffer.outLen + (len(buffer.Info) - buffer.Idx)
+		delta := newLen - origLen
+
+		if delta == 0 {
+			continue
+		}
+
+		// HarfBuzz: "Recursed lookup changed buffer len. Adjust."
+		end += delta
+		if end < ctx.MatchPositions[idx] {
+			// HarfBuzz: "End might end up being smaller than match_positions[idx]..."
+			delta += ctx.MatchPositions[idx] - end
+			end = ctx.MatchPositions[idx]
+		}
+
+		next := idx + 1 // next now is the position after the recursed lookup
+
+		if delta > 0 {
+			// Ensure MatchPositions has enough capacity
+			if count+delta > len(ctx.MatchPositions) {
+				newPositions := make([]int, count+delta)
+				copy(newPositions, ctx.MatchPositions)
+				ctx.MatchPositions = newPositions
+			}
+		} else {
+			// NOTE: delta is non-positive
+			if next-count > delta {
+				delta = next - count
+			}
+			next -= delta
+		}
+
+		// Shift subsequent positions
+		if next < count {
+			copy(ctx.MatchPositions[next+delta:], ctx.MatchPositions[next:count])
+		}
+		next += delta
+		count += delta
+
+		// Fill in new entries
+		for j := idx + 1; j < next; j++ {
+			ctx.MatchPositions[j] = ctx.MatchPositions[j-1] + 1
+		}
+
+		// Fixup the rest
+		for ; next < count; next++ {
+			ctx.MatchPositions[next] += delta
 		}
 	}
 
-	// Advance past the input sequence
-	ctx.Index += inputLen
+	if end < 0 {
+		end = 0
+	}
+	// Ensure end doesn't exceed the virtual buffer length
+	maxEnd := buffer.outLen + (len(buffer.Info) - buffer.Idx)
+	if end > maxEnd {
+		end = maxEnd
+	}
+	if !buffer.moveTo(end) {
+		// moveTo failed - advance Idx by count to prevent infinite loop
+		buffer.Idx += count
+	}
 }
 
 // --- Reverse Chain Single Substitution ---
@@ -2238,8 +3782,8 @@ func parseReverseChainSingleSubst(data []byte, offset int) (*ReverseChainSingleS
 // Apply applies the reverse chaining context single substitution.
 // This lookup is intended to be applied in reverse (from end to beginning of buffer).
 // It replaces the current glyph if it matches the coverage and context.
-func (r *ReverseChainSingleSubst) Apply(ctx *GSUBContext) int {
-	glyph := ctx.Glyphs[ctx.Index]
+func (r *ReverseChainSingleSubst) Apply(ctx *OTApplyContext) int {
+	glyph := ctx.Buffer.Info[ctx.Buffer.Idx].GlyphID
 	coverageIndex := r.coverage.GetCoverage(glyph)
 	if coverageIndex == NotCovered {
 		return 0
@@ -2250,40 +3794,34 @@ func (r *ReverseChainSingleSubst) Apply(ctx *GSUBContext) int {
 	}
 
 	// Match backtrack (in reverse order, looking backwards from current position)
-	if ctx.Index < len(r.backtrackCoverages) {
+	if ctx.Buffer.Idx < len(r.backtrackCoverages) {
 		return 0
 	}
 	for i, cov := range r.backtrackCoverages {
-		if cov.GetCoverage(ctx.Glyphs[ctx.Index-1-i]) == NotCovered {
+		if cov.GetCoverage(ctx.Buffer.Info[ctx.Buffer.Idx-1-i].GlyphID) == NotCovered {
 			return 0
 		}
 	}
 
 	// Match lookahead (looking forward from current position)
-	lookaheadStart := ctx.Index + 1
-	if lookaheadStart+len(r.lookaheadCoverages) > len(ctx.Glyphs) {
+	lookaheadStart := ctx.Buffer.Idx + 1
+	if lookaheadStart+len(r.lookaheadCoverages) > len(ctx.Buffer.Info) {
 		return 0
 	}
 	for i, cov := range r.lookaheadCoverages {
-		if cov.GetCoverage(ctx.Glyphs[lookaheadStart+i]) == NotCovered {
+		if cov.GetCoverage(ctx.Buffer.Info[lookaheadStart+i].GlyphID) == NotCovered {
 			return 0
 		}
 	}
 
 	// Replace glyph in place (don't advance index - reverse lookup handles this)
-	ctx.Glyphs[ctx.Index] = r.substitutes[coverageIndex]
+	ctx.Buffer.Info[ctx.Buffer.Idx].GlyphID = r.substitutes[coverageIndex]
 	return 1
 }
 
-// ApplyLookupReverse applies this lookup in reverse order through the glyph buffer.
-// This is the intended way to use ReverseChainSingleSubst.
-// This version does not use GDEF for glyph filtering.
-func (g *GSUB) ApplyLookupReverse(lookupIndex int, glyphs []GlyphID) []GlyphID {
-	return g.ApplyLookupReverseWithGDEF(lookupIndex, glyphs, nil)
-}
-
 // ApplyLookupReverseWithGDEF applies this lookup in reverse order with GDEF-based glyph filtering.
-func (g *GSUB) ApplyLookupReverseWithGDEF(lookupIndex int, glyphs []GlyphID, gdef *GDEF) []GlyphID {
+// This is the intended way to use ReverseChainSingleSubst (GSUB Type 8).
+func (g *GSUB) ApplyLookupReverseWithGDEF(lookupIndex int, glyphs []GlyphID, gdef *GDEF, font *Font) []GlyphID {
 	lookup := g.GetLookup(lookupIndex)
 	if lookup == nil {
 		return glyphs
@@ -2291,7 +3829,7 @@ func (g *GSUB) ApplyLookupReverseWithGDEF(lookupIndex int, glyphs []GlyphID, gde
 
 	// Only Type 8 should be applied in reverse
 	if lookup.Type != GSUBTypeReverseChainSingle {
-		return g.ApplyLookupWithGDEF(lookupIndex, glyphs, gdef)
+		return g.ApplyLookupWithGDEF(lookupIndex, glyphs, gdef, font)
 	}
 
 	// Determine mark filtering set index
@@ -2300,20 +3838,33 @@ func (g *GSUB) ApplyLookupReverseWithGDEF(lookupIndex int, glyphs []GlyphID, gde
 		markFilteringSet = int(lookup.MarkFilter)
 	}
 
-	ctx := &GSUBContext{
-		Glyphs:           glyphs,
+	// Create temporary buffer from glyphs
+	// HarfBuzz: All glyphs start with global_mask set
+	buf := &Buffer{
+		Info: make([]GlyphInfo, len(glyphs)),
+	}
+	for i, gid := range glyphs {
+		buf.Info[i] = GlyphInfo{
+			GlyphID: gid,
+			Cluster: i,
+			Mask:    MaskGlobal, // HarfBuzz: glyphs have global_mask
+		}
+	}
+
+	ctx := &OTApplyContext{
+		Buffer:           buf,
 		LookupFlag:       lookup.Flag,
 		GDEF:             gdef,
 		MarkFilteringSet: markFilteringSet,
+		FeatureMask:      MaskGlobal, // HarfBuzz: lookup_mask is never 0
+		Font:             font,
 	}
 
 	// Apply in reverse order
-	for ctx.Index = len(ctx.Glyphs) - 1; ctx.Index >= 0; ctx.Index-- {
-		// Skip glyphs that should be ignored based on LookupFlag and GDEF
-		if ctx.ShouldSkipGlyph(ctx.Index) {
+	for ctx.Buffer.Idx = len(ctx.Buffer.Info) - 1; ctx.Buffer.Idx >= 0; ctx.Buffer.Idx-- {
+		if ctx.ShouldSkipGlyph(ctx.Buffer.Idx) {
 			continue
 		}
-
 		for _, subtable := range lookup.subtables {
 			if subtable.Apply(ctx) > 0 {
 				break
@@ -2321,5 +3872,124 @@ func (g *GSUB) ApplyLookupReverseWithGDEF(lookupIndex int, glyphs []GlyphID, gde
 		}
 	}
 
-	return ctx.Glyphs
+	return extractGlyphs(buf)
+}
+
+// WouldSubstitute checks if a lookup would apply to the given glyph sequence.
+// HarfBuzz equivalent: hb_ot_layout_lookup_would_substitute() in hb-ot-layout.cc:1547-1560
+//
+// Parameters:
+// - glyphs: The sequence of glyph IDs to test
+// - zeroContext: If true, ignore context rules (only match direct substitutions)
+//
+// Returns true if any subtable in the lookup would match the input sequence.
+func (l *GSUBLookup) WouldSubstitute(glyphs []GlyphID, zeroContext bool) bool {
+	if len(glyphs) == 0 {
+		return false
+	}
+
+	for _, subtable := range l.subtables {
+		if wouldApply(subtable, glyphs, zeroContext) {
+			return true
+		}
+	}
+	return false
+}
+
+// wouldApply checks if a single subtable would apply to the glyph sequence.
+// HarfBuzz equivalent: would_apply() methods in hb-ot-layout-gsubgpos.hh
+func wouldApply(subtable GSUBSubtable, glyphs []GlyphID, zeroContext bool) bool {
+	switch st := subtable.(type) {
+	case *SingleSubst:
+		// SingleSub: matches if first glyph is in coverage
+		if len(glyphs) == 1 {
+			return st.coverage.GetCoverage(glyphs[0]) != NotCovered
+		}
+		return false
+
+	case *LigatureSubst:
+		// LigatureSub: matches if first glyph is in coverage AND
+		// remaining glyphs match ligature components
+		if len(glyphs) < 2 {
+			return false
+		}
+		covIdx := st.Coverage().GetCoverage(glyphs[0])
+		if covIdx == NotCovered {
+			return false
+		}
+		// Check if any ligature in the set matches
+		ligSets := st.LigatureSets()
+		if int(covIdx) >= len(ligSets) {
+			return false
+		}
+		for _, lig := range ligSets[covIdx] {
+			if wouldMatchLigature(glyphs[1:], lig.Components) {
+				return true
+			}
+		}
+		return false
+
+	case *MultipleSubst:
+		// MultipleSub: matches if first glyph is in coverage
+		if len(glyphs) == 1 {
+			return st.coverage.GetCoverage(glyphs[0]) != NotCovered
+		}
+		return false
+
+	case *ContextSubst:
+		// Context: for now, if zeroContext is true, don't match contextual rules
+		if zeroContext {
+			return false
+		}
+		// TODO: implement full context matching
+		return false
+
+	case *ChainContextSubst:
+		// ChainContext: HarfBuzz chain_context_would_apply_lookup()
+		// For zero_context: only match if no backtrack AND no lookahead context
+		// Then check if input glyphs match
+		return st.wouldApply(glyphs, zeroContext)
+
+	default:
+		return false
+	}
+}
+
+// wouldMatchLigature checks if the input glyphs match the ligature components.
+// HarfBuzz equivalent: would_match_input() in hb-ot-layout-gsubgpos.hh:1288-1306
+func wouldMatchLigature(input []GlyphID, components []GlyphID) bool {
+	if len(input) != len(components) {
+		return false
+	}
+	for i, comp := range components {
+		if input[i] != comp {
+			return false
+		}
+	}
+	return true
+}
+
+// WouldSubstituteFeature checks if a feature would substitute the given glyph sequence.
+// HarfBuzz equivalent: hb_indic_would_substitute_feature_t::would_substitute() in hb-ot-shaper-indic.cc:99-107
+func (g *GSUB) WouldSubstituteFeature(featureTag Tag, glyphs []GlyphID, zeroContext bool) bool {
+	featureList, err := g.ParseFeatureList()
+	if err != nil {
+		return false
+	}
+
+	lookupIndices := featureList.FindFeature(featureTag)
+	if lookupIndices == nil {
+		return false
+	}
+
+	for _, lookupIdx := range lookupIndices {
+		lookup := g.GetLookup(int(lookupIdx))
+		if lookup == nil {
+			continue
+		}
+		if lookup.WouldSubstitute(glyphs, zeroContext) {
+			return true
+		}
+	}
+	return false
 }

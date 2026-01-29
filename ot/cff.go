@@ -583,18 +583,80 @@ func (c *CFF) GetString(sid int) string {
 	return ""
 }
 
-// Standard CFF strings (first few for common use)
-var cffStdStrings = []string{
-	".notdef", "space", "exclam", "quotedbl", "numbersign", "dollar",
-	"percent", "ampersand", "quoteright", "parenleft", "parenright",
-	"asterisk", "plus", "comma", "hyphen", "period", "slash",
-	"zero", "one", "two", "three", "four", "five", "six", "seven",
-	"eight", "nine", "colon", "semicolon", "less", "equal", "greater",
-}
-
+// getStdString returns the CFF Standard String for a given SID (0-390).
+// HarfBuzz equivalent: cff1_std_strings() in hb-ot-cff1-std-str.hh
 func getStdString(sid int) string {
 	if sid >= 0 && sid < len(cffStdStrings) {
 		return cffStdStrings[sid]
 	}
 	return fmt.Sprintf("sid%d", sid)
+}
+
+// GetGlyphName returns the glyph name for a given glyph ID.
+// Returns empty string if the glyph has no name (CID fonts or invalid glyph).
+// HarfBuzz equivalent: hb_ot_cff1_table_t::get_glyph_name() in hb-ot-cff1-table.hh:1379-1406
+func (c *CFF) GetGlyphName(glyph GlyphID) string {
+	// CID fonts have no glyph names
+	if c.IsCID {
+		return ""
+	}
+
+	// Check glyph range
+	if int(glyph) >= len(c.Charset) {
+		return ""
+	}
+
+	// Get SID from charset
+	// Note: Charset is typed as []GlyphID but actually contains SIDs
+	sid := int(c.Charset[glyph])
+
+	// Get string for SID
+	if sid < cffStdStringCount {
+		return getStdString(sid)
+	}
+
+	idx := sid - cffStdStringCount
+	if idx >= 0 && idx < len(c.Strings) {
+		return c.Strings[idx]
+	}
+
+	return ""
+}
+
+// GetGlyphFromName returns the glyph ID for a given glyph name.
+// Returns (0, false) if the name cannot be found.
+// HarfBuzz equivalent: hb_ot_cff1_table_t::get_glyph_from_name() in hb-ot-cff1-table.hh:1408-1464
+func (c *CFF) GetGlyphFromName(name string) (GlyphID, bool) {
+	// CID fonts have no glyph names
+	if c.IsCID {
+		return 0, false
+	}
+
+	if name == "" {
+		return 0, false
+	}
+
+	// Linear search through all glyphs
+	// HarfBuzz does binary search on a sorted array, but for simplicity
+	// we do linear search. Can be optimized later with caching if needed.
+	for gid := 0; gid < len(c.Charset); gid++ {
+		sid := int(c.Charset[gid])
+
+		// Get string for this SID
+		var str string
+		if sid < cffStdStringCount {
+			str = getStdString(sid)
+		} else {
+			idx := sid - cffStdStringCount
+			if idx >= 0 && idx < len(c.Strings) {
+				str = c.Strings[idx]
+			}
+		}
+
+		if str == name {
+			return GlyphID(gid), true
+		}
+	}
+
+	return 0, false
 }

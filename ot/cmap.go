@@ -10,6 +10,10 @@ type Cmap struct {
 	data     []byte
 	subtable cmapSubtable
 	format14 *cmapFormat14 // For variation selectors (optional)
+
+	// Symbol font support (Platform 3, Encoding 0)
+	isSymbol bool
+	fontPage uint16 // From OS/2 table (version 0: fsSelection & 0xFF00)
 }
 
 // cmapSubtable is the interface for different cmap subtable formats.
@@ -51,6 +55,8 @@ func ParseCmap(data []byte) (*Cmap, error) {
 			if err == nil && st != nil {
 				bestSubtable = st
 				bestPriority = priority
+				// Track if this is a symbol font (Platform 3, Encoding 0)
+				cmap.isSymbol = (platformID == 3 && encodingID == 0)
 			}
 		}
 
@@ -131,25 +137,63 @@ func parseCmapSubtable(data []byte, offset int) (cmapSubtable, error) {
 	}
 }
 
+// SetFontPage sets the font page from OS/2 table for Arabic PUA mapping.
+// For OS/2 version 0, this is fsSelection & 0xFF00.
+// Source: HarfBuzz hb-ot-os2-table.hh:333-342
+func (c *Cmap) SetFontPage(fontPage uint16) {
+	c.fontPage = fontPage
+}
+
+// IsSymbol returns true if this is a Symbol-encoded font (Platform 3, Encoding 0).
+func (c *Cmap) IsSymbol() bool {
+	return c.isSymbol
+}
+
 // Lookup returns the glyph ID for a codepoint.
+// For Symbol fonts, applies PUA mapping based on font page.
+// Source: HarfBuzz hb-ot-cmap-table.hh accelerator_t constructor
 func (c *Cmap) Lookup(cp Codepoint) (GlyphID, bool) {
+	if c.isSymbol {
+		// Apply PUA mapping for symbol fonts
+		var mapped Codepoint
+		switch c.fontPage {
+		case FontPageNone:
+			// Standard Symbol font - use simple PUA mapping
+			mapped = SymbolPUAMap(cp)
+		case FontPageSimpArabic:
+			mapped = ArabicPUASimpMap(cp)
+		case FontPageTradArabic:
+			mapped = ArabicPUATradMap(cp)
+		default:
+			// Other font pages (Hebrew, Farsi, Thai, etc.) - no PUA mapping
+			// Fall through to direct lookup
+		}
+		if mapped != 0 {
+			return c.subtable.Lookup(mapped)
+		}
+		// Fall through to try direct lookup
+	}
 	return c.subtable.Lookup(cp)
 }
 
 // LookupVariation returns the glyph ID for a codepoint with variation selector.
-// Returns the glyph ID and whether a specific variant was found.
-// If no variant is found, falls back to the base codepoint lookup.
+// Returns the glyph ID and true ONLY if a specific variant was found in cmap format 14.
+// If no variant is found (or no format 14 table), returns (0, false).
+// The caller should fall back to GSUB for combining base + VS when this returns false.
 func (c *Cmap) LookupVariation(cp Codepoint, vs Codepoint) (GlyphID, bool) {
 	if c.format14 != nil {
+		// Check for non-default UVS (specific variant glyph)
 		if gid, found := c.format14.lookup(cp, vs); found {
 			return gid, true
 		}
-		// Check if we should use default
+		// Check for default UVS (use base glyph, variation is valid)
 		if c.format14.hasDefaultVariant(cp, vs) {
-			return c.subtable.Lookup(cp)
+			gid, _ := c.subtable.Lookup(cp)
+			return gid, true
 		}
 	}
-	return c.subtable.Lookup(cp)
+	// No format 14 or no variant found - let GSUB handle it
+	return 0, false
 }
 
 // --- Format 0: Byte encoding table (legacy, 8-bit only) ---

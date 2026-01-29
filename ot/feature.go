@@ -227,17 +227,26 @@ func ParseFeatures(s string) []Feature {
 }
 
 // DefaultFeatures returns the default features for shaping.
+// Note: 'locl' (Localized Forms) is NOT included here because it should only
+// be applied when the font has it registered for the current script/language.
+// HarfBuzz applies features based on script/language registration, which
+// textshape doesn't fully implement yet.
 func DefaultFeatures() []Feature {
 	return []Feature{
 		// GSUB features
 		NewFeatureOn(TagCcmp), // Glyph Composition/Decomposition
-		NewFeatureOn(TagLocl), // Localized Forms
 		NewFeatureOn(TagRlig), // Required Ligatures
+		NewFeatureOn(TagCalt), // Contextual Alternates
 		NewFeatureOn(TagLiga), // Standard Ligatures
 		NewFeatureOn(TagClig), // Contextual Ligatures
-		// GPOS features
-		NewFeatureOn(TagKern), // Kerning
+		// GPOS features - HarfBuzz common_features[] and horizontal_features[]
+		// See hb-ot-shape.cc:295-318
+		NewFeatureOn(TagAbvm), // Above-base Mark Positioning
+		NewFeatureOn(TagBlwm), // Below-base Mark Positioning
 		NewFeatureOn(TagMark), // Mark Positioning
 		NewFeatureOn(TagMkmk), // Mark to Mark Positioning
+		NewFeatureOn(TagCurs), // Cursive Positioning (for Arabic, etc.)
+		NewFeatureOn(TagDist), // Distances
+		NewFeatureOn(TagKern), // Kerning
 	}
 }

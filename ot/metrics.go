@@ -356,6 +356,10 @@ func NewFace(font *Font) (*Face, error) {
 	// Parse cmap
 	if data, err := font.TableData(TagCmap); err == nil {
 		f.cmap, _ = ParseCmap(data)
+		// For Symbol fonts, set font page from OS/2 for Arabic PUA mapping
+		if f.cmap != nil && f.cmap.IsSymbol() && f.os2 != nil && f.os2.Version == 0 {
+			f.cmap.SetFontPage(f.os2.FsSelection & 0xFF00)
+		}
 	}
 
 	// Check if CFF font

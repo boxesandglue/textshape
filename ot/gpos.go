@@ -1,9 +1,38 @@
 package ot
 
+// GPOS (Glyph Positioning) Table Implementation
+//
+// This file implements OpenType GPOS table parsing and application.
+// HarfBuzz equivalent files:
+//   - hb-ot-layout-gpos-table.hh (Table definitions, positioning logic)
+//   - hb-ot-layout-gsubgpos.hh (Shared lookup application logic)
+//
+// GPOS Lookup Types implemented:
+//   Type 1: SinglePos (Lines ~50-200)
+//   Type 2: PairPos (Lines ~200-600)
+//   Type 3: CursivePos (Lines ~600-800)
+//   Type 4: MarkBasePos (Lines ~800-1200)
+//   Type 5: MarkLigPos (Lines ~1200-1600)
+//   Type 6: MarkMarkPos (Lines ~1600-1900)
+//
+// Key functions:
+//   - PropagateAttachmentOffsets: Propagate cursive/mark offsets (Line ~2270)
+//   - ApplyGPOS: Main GPOS application (Line ~1950)
+//
+// Direction types:
+//   - Direction, DirectionLTR, DirectionRTL (Lines ~20-40)
+
 import (
 	"encoding/binary"
+	"math"
 	"sort"
 )
+
+// roundAnchor rounds an anchor coordinate value.
+// HarfBuzz equivalent: roundf() in AnchorFormat*.get_anchor()
+func roundAnchor(v float64) float64 {
+	return math.Round(v)
+}
 
 // GPOS lookup types
 const (
@@ -107,6 +136,10 @@ type GPOS struct {
 	lookupList  uint16
 
 	lookups []*GPOSLookup
+
+	// FeatureVariations (GPOS version 1.1+ only)
+	// HarfBuzz: hb-ot-layout-common.hh - struct GSUBGPOS
+	featureVariations *FeatureVariations
 }
 
 // ParseGPOS parses a GPOS table from data.
@@ -139,6 +172,15 @@ func ParseGPOS(data []byte) (*GPOS, error) {
 
 	if err := gpos.parseLookupList(); err != nil {
 		return nil, err
+	}
+
+	// Parse FeatureVariations for version 1.1+
+	// HarfBuzz: hb-ot-layout-common.hh - GSUBGPOS::get_feature_variations()
+	if version >= 0x00010001 && len(data) >= 14 {
+		fvOffset := binary.BigEndian.Uint32(data[10:])
+		if fvOffset != 0 && int(fvOffset) < len(data) {
+			gpos.featureVariations, _ = ParseFeatureVariations(data, int(fvOffset))
+		}
 	}
 
 	return gpos, nil
@@ -182,6 +224,22 @@ func (g *GPOS) GetLookup(index int) *GPOSLookup {
 	return g.lookups[index]
 }
 
+// FindVariationsIndex finds the matching FeatureVariations record index for the
+// given normalized coordinates (in F2DOT14 format).
+// Returns VariationsNotFoundIndex if no record matches or no FeatureVariations table exists.
+// HarfBuzz: hb_ot_layout_table_find_feature_variations() in hb-ot-layout.cc
+func (g *GPOS) FindVariationsIndex(coords []int) uint32 {
+	if g.featureVariations == nil {
+		return VariationsNotFoundIndex
+	}
+	return g.featureVariations.FindIndex(coords)
+}
+
+// GetFeatureVariations returns the FeatureVariations table, or nil if not present.
+func (g *GPOS) GetFeatureVariations() *FeatureVariations {
+	return g.featureVariations
+}
+
 // GPOSLookup represents a GPOS lookup table.
 type GPOSLookup struct {
 	Type       uint16
@@ -194,7 +252,7 @@ type GPOSLookup struct {
 type GPOSSubtable interface {
 	// Apply applies the positioning to the glyphs at the current position.
 	// Returns true if positioning was applied.
-	Apply(ctx *GPOSContext) bool
+	Apply(ctx *OTApplyContext) bool
 }
 
 // Subtables returns the subtables for this lookup.
@@ -262,10 +320,6 @@ func parseGPOSLookup(data []byte, offset int) (*GPOSLookup, error) {
 }
 
 func parseGPOSSubtable(data []byte, offset int, lookupType uint16) (GPOSSubtable, error) {
-	return parseGPOSSubtableWithGPOS(data, offset, lookupType, nil)
-}
-
-func parseGPOSSubtableWithGPOS(data []byte, offset int, lookupType uint16, gpos *GPOS) (GPOSSubtable, error) {
 	if offset+2 > len(data) {
 		return nil, ErrInvalidOffset
 	}
@@ -284,9 +338,9 @@ func parseGPOSSubtableWithGPOS(data []byte, offset int, lookupType uint16, gpos 
 	case GPOSTypeMarkMark:
 		return parseMarkMarkPos(data, offset)
 	case GPOSTypeContext:
-		return parseContextPos(data, offset, gpos)
+		return parseContextPos(data, offset)
 	case GPOSTypeChainContext:
-		return parseChainContextPos(data, offset, gpos)
+		return parseChainContextPos(data, offset)
 	default:
 		return nil, nil
 	}
@@ -353,8 +407,8 @@ func parseSinglePos(data []byte, offset int) (*SinglePos, error) {
 }
 
 // Apply applies single positioning.
-func (sp *SinglePos) Apply(ctx *GPOSContext) bool {
-	glyph := ctx.Glyphs[ctx.Index]
+func (sp *SinglePos) Apply(ctx *OTApplyContext) bool {
+	glyph := ctx.Buffer.Info[ctx.Buffer.Idx].GlyphID
 	coverageIndex := sp.coverage.GetCoverage(glyph)
 	if coverageIndex == NotCovered {
 		return false
@@ -373,8 +427,8 @@ func (sp *SinglePos) Apply(ctx *GPOSContext) bool {
 		return false
 	}
 
-	ctx.AdjustPosition(ctx.Index, vr)
-	ctx.Index++
+	ctx.AdjustPosition(ctx.Buffer.Idx, vr)
+	ctx.Buffer.Idx++
 	return true
 }
 
@@ -557,18 +611,18 @@ func parsePairPosFormat2(data []byte, offset int, pp *PairPos) (*PairPos, error)
 }
 
 // Apply applies pair positioning (kerning).
-func (pp *PairPos) Apply(ctx *GPOSContext) bool {
-	if ctx.Index+1 >= len(ctx.Glyphs) {
+func (pp *PairPos) Apply(ctx *OTApplyContext) bool {
+	if ctx.Buffer.Idx+1 >= len(ctx.Buffer.Info) {
 		return false
 	}
 
-	glyph := ctx.Glyphs[ctx.Index]
+	glyph := ctx.Buffer.Info[ctx.Buffer.Idx].GlyphID
 	coverageIndex := pp.coverage.GetCoverage(glyph)
 	if coverageIndex == NotCovered {
 		return false
 	}
 
-	nextGlyph := ctx.Glyphs[ctx.Index+1]
+	nextGlyph := ctx.Buffer.Info[ctx.Buffer.Idx+1].GlyphID
 
 	switch pp.format {
 	case 1:
@@ -580,7 +634,7 @@ func (pp *PairPos) Apply(ctx *GPOSContext) bool {
 	}
 }
 
-func (pp *PairPos) applyFormat1(ctx *GPOSContext, coverageIndex uint32, nextGlyph GlyphID) bool {
+func (pp *PairPos) applyFormat1(ctx *OTApplyContext, coverageIndex uint32, nextGlyph GlyphID) bool {
 	if int(coverageIndex) >= len(pp.pairSets) {
 		return false
 	}
@@ -597,19 +651,19 @@ func (pp *PairPos) applyFormat1(ctx *GPOSContext, coverageIndex uint32, nextGlyp
 	}
 
 	record := &pairSet[idx]
-	ctx.AdjustPosition(ctx.Index, &record.Value1)
-	ctx.AdjustPosition(ctx.Index+1, &record.Value2)
+	ctx.AdjustPosition(ctx.Buffer.Idx, &record.Value1)
+	ctx.AdjustPosition(ctx.Buffer.Idx+1, &record.Value2)
 
 	// Advance based on valueFormat2
 	if pp.valueFormat2 != 0 {
-		ctx.Index += 2
+		ctx.Buffer.Idx += 2
 	} else {
-		ctx.Index++
+		ctx.Buffer.Idx++
 	}
 	return true
 }
 
-func (pp *PairPos) applyFormat2(ctx *GPOSContext, glyph, nextGlyph GlyphID) bool {
+func (pp *PairPos) applyFormat2(ctx *OTApplyContext, glyph, nextGlyph GlyphID) bool {
 	class1 := pp.classDef1.GetClass(glyph)
 	class2 := pp.classDef2.GetClass(nextGlyph)
 
@@ -618,14 +672,14 @@ func (pp *PairPos) applyFormat2(ctx *GPOSContext, glyph, nextGlyph GlyphID) bool
 	}
 
 	record := &pp.classMatrix[class1][class2]
-	ctx.AdjustPosition(ctx.Index, &record.Value1)
-	ctx.AdjustPosition(ctx.Index+1, &record.Value2)
+	ctx.AdjustPosition(ctx.Buffer.Idx, &record.Value1)
+	ctx.AdjustPosition(ctx.Buffer.Idx+1, &record.Value2)
 
 	// Advance based on valueFormat2
 	if pp.valueFormat2 != 0 {
-		ctx.Index += 2
+		ctx.Buffer.Idx += 2
 	} else {
-		ctx.Index++
+		ctx.Buffer.Idx++
 	}
 	return true
 }
@@ -763,11 +817,51 @@ func parseCursivePos(data []byte, offset int) (*CursivePos, error) {
 	return cp, nil
 }
 
+// reverseCursiveMinorOffset reverses the attachment chain when a child is
+// reconnected to a new parent.
+// HarfBuzz equivalent: reverse_cursive_minor_offset() in CursivePosFormat1.hh:53-77
+//
+// When child was already connected to someone else, this walks through its old
+// chain and reverses the link direction, such that the whole tree of its
+// previous connection now attaches to new parent.
+func reverseCursiveMinorOffset(pos []GlyphPos, i int, direction Direction, newParent int) {
+	chain := pos[i].AttachChain
+	attachType := pos[i].AttachType
+	if chain == 0 || (attachType&AttachTypeCursive) == 0 {
+		return
+	}
+
+	pos[i].AttachChain = 0
+
+	j := i + int(chain)
+	if j < 0 || j >= len(pos) {
+		return
+	}
+
+	// Stop if we see new parent in the chain
+	if j == newParent {
+		return
+	}
+
+	reverseCursiveMinorOffset(pos, j, direction, newParent)
+
+	// Reverse the offset direction
+	if direction.IsHorizontal() {
+		pos[j].YOffset = -pos[i].YOffset
+	} else {
+		pos[j].XOffset = -pos[i].XOffset
+	}
+
+	// Reverse the chain direction
+	pos[j].AttachChain = -chain
+	pos[j].AttachType = attachType
+}
+
 // Apply applies cursive positioning.
 // It connects the current glyph's entry anchor to the previous glyph's exit anchor.
-func (cp *CursivePos) Apply(ctx *GPOSContext) bool {
+func (cp *CursivePos) Apply(ctx *OTApplyContext) bool {
 	// Check if current glyph is in coverage
-	thisIndex := cp.coverage.GetCoverage(ctx.Glyphs[ctx.Index])
+	thisIndex := cp.coverage.GetCoverage(ctx.Buffer.Info[ctx.Buffer.Idx].GlyphID)
 	if thisIndex == NotCovered {
 		return false
 	}
@@ -783,29 +877,27 @@ func (cp *CursivePos) Apply(ctx *GPOSContext) bool {
 		return false
 	}
 
-	// Search backwards for a glyph with an exit anchor
-	prevIdx := -1
-	for j := ctx.Index - 1; j >= 0; j-- {
-		prevCovIdx := cp.coverage.GetCoverage(ctx.Glyphs[j])
-		if prevCovIdx != NotCovered && int(prevCovIdx) < len(cp.entryExitRecords) {
-			if cp.entryExitRecords[prevCovIdx].ExitAnchor != nil {
-				prevIdx = j
-				break
-			}
-		}
-		// In a full implementation, we'd skip marks based on GDEF
-		break // For simplicity, only check immediately preceding glyph
-	}
-
+	// Go to the immediately previous glyph (skip according to LookupFlag)
+	// HarfBuzz: skippy_iter.prev() - only ONE step back, no loop!
+	// CursivePosFormat1.hh:134-141
+	prevIdx := ctx.PrevGlyph(ctx.Buffer.Idx)
 	if prevIdx < 0 {
 		return false
 	}
 
-	prevCovIndex := cp.coverage.GetCoverage(ctx.Glyphs[prevIdx])
+	// Check if previous glyph is in coverage and has an exit anchor
+	// HarfBuzz: CursivePosFormat1.hh:143-149
+	prevCovIndex := cp.coverage.GetCoverage(ctx.Buffer.Info[prevIdx].GlyphID)
+	if prevCovIndex == NotCovered || int(prevCovIndex) >= len(cp.entryExitRecords) {
+		return false
+	}
+	if cp.entryExitRecords[prevCovIndex].ExitAnchor == nil {
+		return false
+	}
 	prevRecord := &cp.entryExitRecords[prevCovIndex]
 
 	i := prevIdx
-	j := ctx.Index
+	j := ctx.Buffer.Idx
 
 	// Get anchor coordinates
 	entryX := int32(thisRecord.EntryAnchor.X)
@@ -814,42 +906,42 @@ func (cp *CursivePos) Apply(ctx *GPOSContext) bool {
 	exitY := int32(prevRecord.ExitAnchor.Y)
 
 	// Main-direction adjustment (affects advance widths)
-	switch ctx.Direction {
+	switch ctx.Buffer.Direction {
 	case DirectionLTR:
 		// In LTR, previous glyph's advance is set to exit anchor X
-		ctx.Positions[i].XAdvance = int16(exitX) + ctx.Positions[i].XOffset
+		ctx.Buffer.Pos[i].XAdvance = int16(exitX) + ctx.Buffer.Pos[i].XOffset
 
 		// Current glyph's advance and offset are adjusted by entry anchor X
-		d := int16(entryX) + ctx.Positions[j].XOffset
-		ctx.Positions[j].XAdvance -= d
-		ctx.Positions[j].XOffset -= d
+		d := int16(entryX) + ctx.Buffer.Pos[j].XOffset
+		ctx.Buffer.Pos[j].XAdvance -= d
+		ctx.Buffer.Pos[j].XOffset -= d
 
 	case DirectionRTL:
 		// In RTL, previous glyph's advance and offset are adjusted by exit anchor X
-		d := int16(exitX) + ctx.Positions[i].XOffset
-		ctx.Positions[i].XAdvance -= d
-		ctx.Positions[i].XOffset -= d
+		d := int16(exitX) + ctx.Buffer.Pos[i].XOffset
+		ctx.Buffer.Pos[i].XAdvance -= d
+		ctx.Buffer.Pos[i].XOffset -= d
 
 		// Current glyph's advance is set to entry anchor X
-		ctx.Positions[j].XAdvance = int16(entryX) + ctx.Positions[j].XOffset
+		ctx.Buffer.Pos[j].XAdvance = int16(entryX) + ctx.Buffer.Pos[j].XOffset
 
 	case DirectionTTB:
 		// In TTB, previous glyph's advance is set to exit anchor Y
-		ctx.Positions[i].YAdvance = int16(exitY) + ctx.Positions[i].YOffset
+		ctx.Buffer.Pos[i].YAdvance = int16(exitY) + ctx.Buffer.Pos[i].YOffset
 
 		// Current glyph's advance and offset are adjusted by entry anchor Y
-		d := int16(entryY) + ctx.Positions[j].YOffset
-		ctx.Positions[j].YAdvance -= d
-		ctx.Positions[j].YOffset -= d
+		d := int16(entryY) + ctx.Buffer.Pos[j].YOffset
+		ctx.Buffer.Pos[j].YAdvance -= d
+		ctx.Buffer.Pos[j].YOffset -= d
 
 	case DirectionBTT:
 		// In BTT, previous glyph's advance and offset are adjusted by exit anchor Y
-		d := int16(exitY) + ctx.Positions[i].YOffset
-		ctx.Positions[i].YAdvance -= d
-		ctx.Positions[i].YOffset -= d
+		d := int16(exitY) + ctx.Buffer.Pos[i].YOffset
+		ctx.Buffer.Pos[i].YAdvance -= d
+		ctx.Buffer.Pos[i].YOffset -= d
 
 		// Current glyph's advance is set to entry anchor Y
-		ctx.Positions[j].YAdvance = int16(entryY)
+		ctx.Buffer.Pos[j].YAdvance = int16(entryY)
 	}
 
 	// Cross-direction adjustment
@@ -867,28 +959,33 @@ func (cp *CursivePos) Apply(ctx *GPOSContext) bool {
 		yOffset = -yOffset
 	}
 
+	// If child was already connected to someone else (i.e., it has a prior
+	// attachment chain), reverse that chain so the whole tree attaches to
+	// the new parent. HarfBuzz: reverse_cursive_minor_offset()
+	reverseCursiveMinorOffset(ctx.Buffer.Pos, child, ctx.Buffer.Direction, parent)
+
 	// Set up the attachment chain
-	ctx.Positions[child].AttachChain = int16(parent - child)
-	ctx.Positions[child].AttachType = AttachTypeCursive
+	ctx.Buffer.Pos[child].AttachChain = int16(parent - child)
+	ctx.Buffer.Pos[child].AttachType = AttachTypeCursive
 
 	// Apply cross-direction offset
-	if ctx.Direction.IsHorizontal() {
-		ctx.Positions[child].YOffset = yOffset
+	if ctx.Buffer.Direction.IsHorizontal() {
+		ctx.Buffer.Pos[child].YOffset = yOffset
 	} else {
-		ctx.Positions[child].XOffset = xOffset
+		ctx.Buffer.Pos[child].XOffset = xOffset
 	}
 
 	// If parent was attached to child, break that attachment
-	if ctx.Positions[parent].AttachChain == -ctx.Positions[child].AttachChain {
-		ctx.Positions[parent].AttachChain = 0
-		if ctx.Direction.IsHorizontal() {
-			ctx.Positions[parent].YOffset = 0
+	if ctx.Buffer.Pos[parent].AttachChain == -ctx.Buffer.Pos[child].AttachChain {
+		ctx.Buffer.Pos[parent].AttachChain = 0
+		if ctx.Buffer.Direction.IsHorizontal() {
+			ctx.Buffer.Pos[parent].YOffset = 0
 		} else {
-			ctx.Positions[parent].XOffset = 0
+			ctx.Buffer.Pos[parent].XOffset = 0
 		}
 	}
 
-	ctx.Index++
+	ctx.Buffer.Idx++
 	return true
 }
 
@@ -1032,87 +1129,55 @@ func (cd *ClassDef) Mapping() map[GlyphID]uint16 {
 // --- Direction ---
 
 // Direction represents text direction.
+// HarfBuzz: hb_direction_t in hb-common.h:238-242
+// Values use bit-encoding for fast checks:
+//   - Bit 2 (0x04): always set for valid directions
+//   - Bit 1 (0x02): vertical (0=horizontal, 1=vertical)
+//   - Bit 0 (0x01): backward (0=forward, 1=backward)
 type Direction int
 
 const (
-	DirectionInvalid Direction = 0
-	DirectionLTR     Direction = 1
-	DirectionRTL     Direction = 2
-	DirectionTTB     Direction = 3
-	DirectionBTT     Direction = 4
+	DirectionInvalid Direction = 0 // HB_DIRECTION_INVALID
+	DirectionLTR     Direction = 4 // HB_DIRECTION_LTR (horizontal, forward)
+	DirectionRTL     Direction = 5 // HB_DIRECTION_RTL (horizontal, backward)
+	DirectionTTB     Direction = 6 // HB_DIRECTION_TTB (vertical, forward)
+	DirectionBTT     Direction = 7 // HB_DIRECTION_BTT (vertical, backward)
 )
 
+// IsValid returns true if the direction is valid (LTR, RTL, TTB, or BTT).
+// HarfBuzz: HB_DIRECTION_IS_VALID(dir) = ((dir & ~3U) == 4)
+func (d Direction) IsValid() bool {
+	return (int(d) & ^3) == 4
+}
+
 // IsHorizontal returns true if the direction is horizontal (LTR or RTL).
+// HarfBuzz: HB_DIRECTION_IS_HORIZONTAL(dir) = ((dir & ~1U) == 4)
 func (d Direction) IsHorizontal() bool {
-	return d == DirectionLTR || d == DirectionRTL
+	return (int(d) & ^1) == 4
 }
 
-// --- GPOSContext ---
-
-// GPOSContext provides context for GPOS application.
-type GPOSContext struct {
-	Glyphs           []GlyphID
-	Positions        []GlyphPosition
-	Index            int
-	Direction        Direction
-	LookupFlag       uint16 // Current lookup flag
-	GDEF             *GDEF  // GDEF table for glyph classification (may be nil)
-	MarkFilteringSet int    // Mark filtering set index (-1 if not used)
+// IsVertical returns true if the direction is vertical (TTB or BTT).
+// HarfBuzz: HB_DIRECTION_IS_VERTICAL(dir) = ((dir & ~1U) == 6)
+func (d Direction) IsVertical() bool {
+	return (int(d) & ^1) == 6
 }
 
-// GlyphPosition holds positioning information for a glyph.
-type GlyphPosition struct {
-	XPlacement int16
-	YPlacement int16
-	XAdvance   int16
-	YAdvance   int16
-	// For mark attachment
-	XOffset     int16 // Additional X offset (for marks)
-	YOffset     int16 // Additional Y offset (for marks)
-	AttachType  uint8 // Type of attachment (0=none, 1=mark, 2=cursive)
-	AttachChain int16 // Offset to attached glyph (negative = before)
+// IsForward returns true if the direction is forward (LTR or TTB).
+// HarfBuzz: HB_DIRECTION_IS_FORWARD(dir) = ((dir & ~2U) == 4)
+func (d Direction) IsForward() bool {
+	return (int(d) & ^2) == 4
 }
 
-// AdjustPosition adjusts the position at the given index.
-func (ctx *GPOSContext) AdjustPosition(index int, vr *ValueRecord) {
-	if index < 0 || index >= len(ctx.Positions) {
-		return
-	}
-	ctx.Positions[index].XPlacement += vr.XPlacement
-	ctx.Positions[index].YPlacement += vr.YPlacement
-	ctx.Positions[index].XAdvance += vr.XAdvance
-	ctx.Positions[index].YAdvance += vr.YAdvance
+// IsBackward returns true if the direction is backward (RTL or BTT).
+// HarfBuzz: HB_DIRECTION_IS_BACKWARD(dir) = ((dir & ~2U) == 5)
+func (d Direction) IsBackward() bool {
+	return (int(d) & ^2) == 5
 }
 
-// ShouldSkipGlyph returns true if the glyph at the given index should be skipped
-// based on the current LookupFlag and GDEF glyph classification.
-func (ctx *GPOSContext) ShouldSkipGlyph(index int) bool {
-	if index < 0 || index >= len(ctx.Glyphs) {
-		return true
-	}
-	return shouldSkipGlyph(ctx.Glyphs[index], ctx.LookupFlag, ctx.GDEF, ctx.MarkFilteringSet)
-}
-
-// NextGlyph returns the index of the next glyph that should not be skipped,
-// starting from startIndex. Returns -1 if no such glyph exists.
-func (ctx *GPOSContext) NextGlyph(startIndex int) int {
-	for i := startIndex; i < len(ctx.Glyphs); i++ {
-		if !ctx.ShouldSkipGlyph(i) {
-			return i
-		}
-	}
-	return -1
-}
-
-// PrevGlyph returns the index of the previous glyph that should not be skipped,
-// starting from startIndex (exclusive). Returns -1 if no such glyph exists.
-func (ctx *GPOSContext) PrevGlyph(startIndex int) int {
-	for i := startIndex - 1; i >= 0; i-- {
-		if !ctx.ShouldSkipGlyph(i) {
-			return i
-		}
-	}
-	return -1
+// Reverse returns the opposite direction (LTR↔RTL, TTB↔BTT).
+// HarfBuzz: HB_DIRECTION_REVERSE(dir) = (dir ^ 1)
+func (d Direction) Reverse() Direction {
+	return Direction(int(d) ^ 1)
 }
 
 // shouldSkipGlyph is the core logic for determining if a glyph should be skipped.
@@ -1163,20 +1228,20 @@ func shouldSkipGlyph(glyph GlyphID, lookupFlag uint16, gdef *GDEF, markFiltering
 
 // --- Apply lookup ---
 
-// ApplyLookup applies a single lookup to the glyph/position arrays.
-// This version does not use GDEF for glyph filtering.
-func (g *GPOS) ApplyLookup(lookupIndex int, glyphs []GlyphID, positions []GlyphPosition) {
-	g.ApplyLookupWithGDEF(lookupIndex, glyphs, positions, DirectionLTR, nil)
+// ApplyLookupToBuffer applies a single lookup directly to a Buffer.
+// HarfBuzz equivalent: apply() in hb-ot-layout-gsubgpos.hh
+// Uses MaskGlobal so lookup applies to all glyphs (which have MaskGlobal by default).
+func (g *GPOS) ApplyLookupToBuffer(lookupIndex int, buf *Buffer, gdef *GDEF, font *Font) {
+	g.ApplyLookupToBufferWithMask(lookupIndex, buf, gdef, MaskGlobal, font)
 }
 
-// ApplyLookupWithDirection applies a single lookup with the specified direction.
-// This version does not use GDEF for glyph filtering.
-func (g *GPOS) ApplyLookupWithDirection(lookupIndex int, glyphs []GlyphID, positions []GlyphPosition, direction Direction) {
-	g.ApplyLookupWithGDEF(lookupIndex, glyphs, positions, direction, nil)
-}
-
-// ApplyLookupWithGDEF applies a single lookup with GDEF-based glyph filtering.
-func (g *GPOS) ApplyLookupWithGDEF(lookupIndex int, glyphs []GlyphID, positions []GlyphPosition, direction Direction, gdef *GDEF) {
+// ApplyLookupToBufferWithMask applies a single lookup directly to a Buffer with mask-based filtering.
+// HarfBuzz equivalent: apply() in hb-ot-layout-gsubgpos.hh with mask check in may_match()
+//
+// The featureMask parameter specifies which glyphs this lookup should apply to.
+// A glyph is skipped if (glyph.Mask & featureMask) == 0.
+// Use MaskGlobal to apply to all glyphs (which have MaskGlobal set by default).
+func (g *GPOS) ApplyLookupToBufferWithMask(lookupIndex int, buf *Buffer, gdef *GDEF, featureMask uint32, font *Font) {
 	lookup := g.GetLookup(lookupIndex)
 	if lookup == nil {
 		return
@@ -1188,20 +1253,21 @@ func (g *GPOS) ApplyLookupWithGDEF(lookupIndex int, glyphs []GlyphID, positions 
 		markFilteringSet = int(lookup.MarkFilter)
 	}
 
-	ctx := &GPOSContext{
-		Glyphs:           glyphs,
-		Positions:        positions,
-		Index:            0,
-		Direction:        direction,
+	ctx := &OTApplyContext{
+		Buffer:           buf,
 		LookupFlag:       lookup.Flag,
 		GDEF:             gdef,
+		HasGlyphClasses:  gdef != nil && gdef.HasGlyphClasses(),
 		MarkFilteringSet: markFilteringSet,
+		FeatureMask:      featureMask,
+		Font:             font,
 	}
 
-	for ctx.Index < len(ctx.Glyphs) {
-		// Skip glyphs that should be ignored based on LookupFlag and GDEF
-		if ctx.ShouldSkipGlyph(ctx.Index) {
-			ctx.Index++
+	buf.Idx = 0
+	for buf.Idx < len(buf.Info) {
+		// Skip glyphs that should be ignored based on LookupFlag, GDEF, and FeatureMask
+		if ctx.ShouldSkipGlyph(buf.Idx) {
+			buf.Idx++
 			continue
 		}
 
@@ -1213,20 +1279,56 @@ func (g *GPOS) ApplyLookupWithGDEF(lookupIndex int, glyphs []GlyphID, positions 
 			}
 		}
 		if !applied {
-			ctx.Index++
+			buf.Idx++
 		}
 	}
 }
 
-// ApplyKerning is a convenience method to apply pair positioning (kerning).
+// ApplyLookup applies a single lookup to the glyph/position arrays.
+// DEPRECATED: Use ApplyLookupToBuffer for new code.
 // This version does not use GDEF for glyph filtering.
-func (g *GPOS) ApplyKerning(glyphs []GlyphID) []GlyphPosition {
+func (g *GPOS) ApplyLookup(lookupIndex int, glyphs []GlyphID, positions []GlyphPos) {
+	g.ApplyLookupWithGDEF(lookupIndex, glyphs, positions, DirectionLTR, nil)
+}
+
+// ApplyLookupWithDirection applies a single lookup with the specified direction.
+// DEPRECATED: Use ApplyLookupToBuffer for new code.
+// This version does not use GDEF for glyph filtering.
+func (g *GPOS) ApplyLookupWithDirection(lookupIndex int, glyphs []GlyphID, positions []GlyphPos, direction Direction) {
+	g.ApplyLookupWithGDEF(lookupIndex, glyphs, positions, direction, nil)
+}
+
+// ApplyLookupWithGDEF applies a single lookup with GDEF-based glyph filtering.
+// DEPRECATED: Use ApplyLookupToBuffer for new code.
+func (g *GPOS) ApplyLookupWithGDEF(lookupIndex int, glyphs []GlyphID, positions []GlyphPos, direction Direction, gdef *GDEF) {
+	// Create a temporary buffer for the operation
+	buf := &Buffer{
+		Info:      make([]GlyphInfo, len(glyphs)),
+		Pos:       positions,
+		Direction: direction,
+	}
+	for i, gid := range glyphs {
+		buf.Info[i] = GlyphInfo{
+			GlyphID: gid,
+			Cluster: i,
+			Mask:    MaskGlobal, // HarfBuzz: glyphs have global_mask
+		}
+	}
+
+	g.ApplyLookupToBuffer(lookupIndex, buf, gdef, nil)
+}
+
+// ApplyKerning is a convenience method to apply pair positioning (kerning).
+// DEPRECATED: Use ApplyLookupToBuffer for new code.
+// This version does not use GDEF for glyph filtering.
+func (g *GPOS) ApplyKerning(glyphs []GlyphID) []GlyphPos {
 	return g.ApplyKerningWithGDEF(glyphs, nil)
 }
 
 // ApplyKerningWithGDEF applies pair positioning with GDEF-based glyph filtering.
-func (g *GPOS) ApplyKerningWithGDEF(glyphs []GlyphID, gdef *GDEF) []GlyphPosition {
-	positions := make([]GlyphPosition, len(glyphs))
+// DEPRECATED: Use ApplyLookupToBuffer for new code.
+func (g *GPOS) ApplyKerningWithGDEF(glyphs []GlyphID, gdef *GDEF) []GlyphPos {
+	positions := make([]GlyphPos, len(glyphs))
 
 	// Find and apply all PairPos lookups
 	for i := 0; i < g.NumLookups(); i++ {
@@ -1258,11 +1360,34 @@ func (g *GPOS) ParseFeatureList() (*FeatureList, error) {
 	}, nil
 }
 
+// ParseScriptList parses the ScriptList from a GPOS table.
+func (g *GPOS) ParseScriptList() (*ScriptList, error) {
+	off := int(g.scriptList)
+	if off+2 > len(g.data) {
+		return nil, ErrInvalidOffset
+	}
+
+	count := int(binary.BigEndian.Uint16(g.data[off:]))
+	if off+2+count*6 > len(g.data) {
+		return nil, ErrInvalidOffset
+	}
+
+	return &ScriptList{
+		data:   g.data,
+		offset: off,
+		count:  count,
+	}, nil
+}
+
 // Common GPOS feature tags
 var (
 	TagKern = MakeTag('k', 'e', 'r', 'n') // Kerning
+	TagCurs = MakeTag('c', 'u', 'r', 's') // Cursive Positioning
 	TagMark = MakeTag('m', 'a', 'r', 'k') // Mark Positioning
 	TagMkmk = MakeTag('m', 'k', 'm', 'k') // Mark-to-Mark Positioning
+	TagAbvm = MakeTag('a', 'b', 'v', 'm') // Above-base Mark Positioning
+	TagBlwm = MakeTag('b', 'l', 'w', 'm') // Below-base Mark Positioning
+	TagDist = MakeTag('d', 'i', 's', 't') // Distances
 )
 
 // --- Anchor ---
@@ -1479,11 +1604,64 @@ func parseMarkBasePos(data []byte, offset int) (*MarkBasePos, error) {
 
 // Apply applies the mark-to-base positioning.
 // It finds the preceding base glyph and positions the current mark relative to it.
-func (m *MarkBasePos) Apply(ctx *GPOSContext) bool {
-	glyph := ctx.Glyphs[ctx.Index]
+// acceptMarkBase checks if a glyph is acceptable as a base for mark attachment.
+// HarfBuzz equivalent: MarkBasePosFormat1_2::accept() in OT/Layout/GPOS/MarkBasePosFormat1.hh:93-110
+//
+// We only want to attach to the first of a MultipleSubst sequence.
+// https://github.com/harfbuzz/harfbuzz/issues/740
+// Reject others... but stop if we find a mark in the MultipleSubst sequence:
+// https://github.com/harfbuzz/harfbuzz/issues/1020
+func acceptMarkBase(buf *Buffer, idx int) bool {
+	info := &buf.Info[idx]
+
+	// Not multiplied → accept
+	if !info.IsMultiplied() {
+		return true
+	}
+
+	// Multiplied but lig_comp == 0 → accept (first of sequence)
+	if info.GetLigComp() == 0 {
+		return true
+	}
+
+	// Check for sequence break conditions
+	if idx == 0 {
+		return true
+	}
+
+	prevInfo := &buf.Info[idx-1]
+
+	// Previous is a mark → accept (sequence interrupted)
+	if prevInfo.IsMark() {
+		return true
+	}
+
+	// Previous is not multiplied → accept (sequence interrupted)
+	if !prevInfo.IsMultiplied() {
+		return true
+	}
+
+	// Different lig_id → accept (different sequence)
+	if info.GetLigID() != prevInfo.GetLigID() {
+		return true
+	}
+
+	// Not consecutive lig_comp → accept (sequence interrupted)
+	if info.GetLigComp() != prevInfo.GetLigComp()+1 {
+		return true
+	}
+
+	// All checks failed - this is a non-first glyph in an uninterrupted MultipleSubst sequence
+	return false
+}
+
+// HarfBuzz equivalent: MarkBasePosFormat1_2::apply in OT/Layout/GPOS/MarkBasePosFormat1.hh
+func (m *MarkBasePos) Apply(ctx *OTApplyContext) bool {
+	glyph := ctx.Buffer.Info[ctx.Buffer.Idx].GlyphID
 
 	// Check if current glyph is a mark
 	markIndex := m.markCoverage.GetCoverage(glyph)
+
 	if markIndex == NotCovered {
 		return false
 	}
@@ -1492,23 +1670,83 @@ func (m *MarkBasePos) Apply(ctx *GPOSContext) bool {
 		return false
 	}
 
-	// Search backwards for a base glyph (non-mark)
-	baseIdx := -1
-	for j := ctx.Index - 1; j >= 0; j-- {
-		// Check if this glyph is a base (in baseCoverage)
-		if m.baseCoverage.GetCoverage(ctx.Glyphs[j]) != NotCovered {
-			baseIdx = j
-			break
-		}
-		// Skip other marks (they might also need to be attached to the same base)
-		// In a full implementation, we'd check GDEF to determine if it's a mark
+	// Search backwards for a non-mark glyph.
+	// HarfBuzz equivalent: MarkBasePosFormat1.hh lines 119-152
+	// Uses last_base/last_base_until cache to avoid O(n^2) behavior.
+
+	// Reset cache if we've moved backwards in buffer
+	// HarfBuzz: lines 125-129
+	if ctx.LastBaseUntil > ctx.Buffer.Idx {
+		ctx.LastBaseUntil = 0
+		ctx.LastBase = -1
 	}
 
-	if baseIdx < 0 {
+	// Search from current position down to last_base_until
+	// HarfBuzz: lines 130-146
+	for j := ctx.Buffer.Idx; j > ctx.LastBaseUntil; j-- {
+		info := &ctx.Buffer.Info[j-1]
+		candidateGlyph := info.GlyphID
+
+		// Check if this glyph should be skipped
+		// HarfBuzz equivalent: skippy_iter.match() which calls may_skip()
+		skip := false
+
+		// 1. Skip marks (GDEF class 3)
+		// HarfBuzz: check_glyph_property with LookupFlag::IgnoreMarks
+		if ctx.GDEF != nil {
+			glyphClass := ctx.GDEF.GetGlyphClass(candidateGlyph)
+			if glyphClass == 3 { // Mark
+				skip = true
+			}
+		}
+
+		// 2. Skip ALL default ignorables (not just hidden ones) for GPOS
+		// HarfBuzz equivalent: may_skip() in hb-ot-layout-gsubgpos.hh:463-467
+		// For GPOS: ignore_hidden=true, so (ignore_hidden || !is_hidden) is ALWAYS true
+		// This means ALL default ignorables are skipped, regardless of hidden flag
+		// Note: ZWNJ/ZWJ are handled separately via GlyphProps flags
+		if !skip && (info.GlyphProps&GlyphPropsDefaultIgnorable) != 0 &&
+			(info.GlyphProps&GlyphPropsSubstituted) == 0 &&
+			(info.GlyphProps&GlyphPropsZWNJ) == 0 &&
+			(info.GlyphProps&GlyphPropsZWJ) == 0 {
+			skip = true
+		}
+
+		if !skip {
+			// Found a non-mark, non-ignorable glyph - check accept() and coverage
+			// HarfBuzz: if (!accept(buffer, j-1) && NOT_COVERED == baseCoverage.get_coverage(...))
+			//           then treat as SKIP
+			// https://github.com/harfbuzz/harfbuzz/issues/4124
+			if !acceptMarkBase(ctx.Buffer, j-1) {
+				if m.baseCoverage.GetCoverage(candidateGlyph) == NotCovered {
+					skip = true
+				}
+			}
+		}
+
+		if !skip {
+			// This is our base candidate
+			ctx.LastBase = j - 1
+			break
+		}
+	}
+
+	// Update cache: we've searched up to current index
+	// HarfBuzz: line 147
+	ctx.LastBaseUntil = ctx.Buffer.Idx
+
+	// Check if we found a base
+	// HarfBuzz: lines 148-152
+	if ctx.LastBase == -1 {
 		return false
 	}
 
-	baseGlyph := ctx.Glyphs[baseIdx]
+	baseIdx := ctx.LastBase
+
+	// Check if the candidate base is in baseCoverage
+	// CRITICAL: If not in coverage, return false - DO NOT keep searching!
+	// This matches HarfBuzz behavior (lines 159-164 of MarkBasePosFormat1.hh)
+	baseGlyph := ctx.Buffer.Info[baseIdx].GlyphID
 	baseIndex := m.baseCoverage.GetCoverage(baseGlyph)
 	if baseIndex == NotCovered {
 		return false
@@ -1526,18 +1764,23 @@ func (m *MarkBasePos) Apply(ctx *GPOSContext) bool {
 	}
 
 	// Calculate position offset: mark should be placed at baseAnchor - markAnchor
-	xOffset := int16(baseAnchor.X - markAnchor.X)
-	yOffset := int16(baseAnchor.Y - markAnchor.Y)
+	// HarfBuzz: Scales anchor coordinates with em_fscale_x/y then rounds
+	// For now, we assume scale = upem (1:1) and just round the coordinates
+	// TODO: Implement proper scaling when Font has scale information
 
-	// Apply the positioning
-	ctx.Positions[ctx.Index].XOffset += xOffset
-	ctx.Positions[ctx.Index].YOffset += yOffset
+	xOffset := int16(roundAnchor(float64(baseAnchor.X) - float64(markAnchor.X)))
+	yOffset := int16(roundAnchor(float64(baseAnchor.Y) - float64(markAnchor.Y)))
+
+	// Apply the positioning - use = not += to match HarfBuzz behavior
+	// When multiple lookups position the same mark, later lookups override earlier ones
+	ctx.Buffer.Pos[ctx.Buffer.Idx].XOffset = xOffset
+	ctx.Buffer.Pos[ctx.Buffer.Idx].YOffset = yOffset
 
 	// Store attachment info
-	ctx.Positions[ctx.Index].AttachType = AttachTypeMark
-	ctx.Positions[ctx.Index].AttachChain = int16(baseIdx - ctx.Index)
+	ctx.Buffer.Pos[ctx.Buffer.Idx].AttachType = AttachTypeMark
+	ctx.Buffer.Pos[ctx.Buffer.Idx].AttachChain = int16(baseIdx - ctx.Buffer.Idx)
 
-	ctx.Index++
+	ctx.Buffer.Idx++
 	return true
 }
 
@@ -1572,6 +1815,99 @@ const (
 	AttachTypeMark    = 1
 	AttachTypeCursive = 2
 )
+
+// PropagateAttachmentOffsets propagates positioning offsets along the attachment chain.
+// This must be called after all GPOS lookups have been applied.
+// It handles both mark attachments (marks inherit base offsets) and cursive attachments
+// (cursive children inherit parent's cross-direction offset).
+func PropagateAttachmentOffsets(positions []GlyphPos, direction Direction) {
+	// Process order depends on direction (matches HarfBuzz behavior)
+	// See https://github.com/harfbuzz/harfbuzz/issues/5514
+	if direction.IsForward() {
+		for i := 0; i < len(positions); i++ {
+			if positions[i].AttachChain != 0 {
+				propagateAttachmentOffsetsRecursive(positions, i, direction)
+			}
+		}
+	} else {
+		for i := len(positions) - 1; i >= 0; i-- {
+			if positions[i].AttachChain != 0 {
+				propagateAttachmentOffsetsRecursive(positions, i, direction)
+			}
+		}
+	}
+}
+
+// propagateAttachmentOffsetsRecursive recursively propagates offsets from parent to child.
+// This matches HarfBuzz's propagate_attachment_offsets in GPOS.hh
+func propagateAttachmentOffsetsRecursive(positions []GlyphPos, i int, direction Direction) {
+	chain := positions[i].AttachChain
+	attachType := positions[i].AttachType
+	if chain == 0 {
+		return
+	}
+
+	// Clear the chain to mark as processed and prevent infinite loops
+	positions[i].AttachChain = 0
+
+	// Find parent index
+	j := i + int(chain)
+	if j < 0 || j >= len(positions) {
+		return
+	}
+
+	// First, recursively process the parent
+	propagateAttachmentOffsetsRecursive(positions, j, direction)
+
+	// Cursive and mark attachments are handled differently:
+	// - Cursive: only cross-direction offset is inherited
+	// - Mark: both offsets are inherited, plus advance adjustments
+	if attachType == AttachTypeCursive {
+		// For cursive, only inherit cross-direction offset
+		if direction.IsHorizontal() {
+			positions[i].YOffset += positions[j].YOffset
+		} else {
+			positions[i].XOffset += positions[j].XOffset
+		}
+	} else {
+		// For mark attachments, inherit both offsets
+		positions[i].XOffset += positions[j].XOffset
+		positions[i].YOffset += positions[j].YOffset
+
+		// Marks also need advance adjustments based on position relative to base.
+		// This compensates for cursor movement between mark and base positions.
+		// Note: Mark advances are already zeroed by zero_mark_widths_by_gdef()
+		// before this function is called, matching HarfBuzz behavior.
+		if j < i {
+			// Mark follows base (common case in OpenType)
+			if direction.IsForward() {
+				for k := j; k < i; k++ {
+					positions[i].XOffset -= positions[k].XAdvance
+					positions[i].YOffset -= positions[k].YAdvance
+				}
+			} else {
+				for k := j + 1; k < i+1; k++ {
+					positions[i].XOffset += positions[k].XAdvance
+					positions[i].YOffset += positions[k].YAdvance
+				}
+			}
+		} else if j > i {
+			// Mark precedes base (rare, can happen with kerx)
+			// Note: k starts at i+1 to skip including glyph i itself
+			if direction.IsForward() {
+				for k := i + 1; k < j; k++ {
+					positions[i].XOffset += positions[k].XAdvance
+					positions[i].YOffset += positions[k].YAdvance
+				}
+			} else {
+				for k := i + 1; k < j+1; k++ {
+					positions[i].XOffset -= positions[k].XAdvance
+					positions[i].YOffset -= positions[k].YAdvance
+				}
+			}
+		}
+	}
+}
 
 // --- MarkLigPos ---
 
@@ -1733,14 +2069,14 @@ func parseMarkLigPos(data []byte, offset int) (*MarkLigPos, error) {
 // Apply applies the mark-to-ligature positioning.
 // It finds the preceding ligature glyph and positions the current mark relative to the
 // appropriate ligature component.
-func (m *MarkLigPos) Apply(ctx *GPOSContext) bool {
+func (m *MarkLigPos) Apply(ctx *OTApplyContext) bool {
 	return m.ApplyWithComponent(ctx, -1)
 }
 
 // ApplyWithComponent applies the mark-to-ligature positioning with a specific component.
 // If componentIndex is -1, it defaults to the last component.
-func (m *MarkLigPos) ApplyWithComponent(ctx *GPOSContext, componentIndex int) bool {
-	glyph := ctx.Glyphs[ctx.Index]
+func (m *MarkLigPos) ApplyWithComponent(ctx *OTApplyContext, componentIndex int) bool {
+	glyph := ctx.Buffer.Info[ctx.Buffer.Idx].GlyphID
 
 	// Check if current glyph is a mark
 	markIndex := m.markCoverage.GetCoverage(glyph)
@@ -1754,8 +2090,8 @@ func (m *MarkLigPos) ApplyWithComponent(ctx *GPOSContext, componentIndex int) bo
 
 	// Search backwards for a ligature glyph (non-mark)
 	ligIdx := -1
-	for j := ctx.Index - 1; j >= 0; j-- {
-		if m.ligatureCoverage.GetCoverage(ctx.Glyphs[j]) != NotCovered {
+	for j := ctx.Buffer.Idx - 1; j >= 0; j-- {
+		if m.ligatureCoverage.GetCoverage(ctx.Buffer.Info[j].GlyphID) != NotCovered {
 			ligIdx = j
 			break
 		}
@@ -1766,7 +2102,7 @@ func (m *MarkLigPos) ApplyWithComponent(ctx *GPOSContext, componentIndex int) bo
 		return false
 	}
 
-	ligGlyph := ctx.Glyphs[ligIdx]
+	ligGlyph := ctx.Buffer.Info[ligIdx].GlyphID
 	ligIndex := m.ligatureCoverage.GetCoverage(ligGlyph)
 	if ligIndex == NotCovered {
 		return false
@@ -1800,18 +2136,20 @@ func (m *MarkLigPos) ApplyWithComponent(ctx *GPOSContext, componentIndex int) bo
 	}
 
 	// Calculate position offset
-	xOffset := int16(ligAnchor.X - markAnchor.X)
-	yOffset := int16(ligAnchor.Y - markAnchor.Y)
+	// HarfBuzz: Scales anchor coordinates with em_fscale_x/y then rounds
+	xOffset := int16(roundAnchor(float64(ligAnchor.X) - float64(markAnchor.X)))
+	yOffset := int16(roundAnchor(float64(ligAnchor.Y) - float64(markAnchor.Y)))
 
-	// Apply the positioning
-	ctx.Positions[ctx.Index].XOffset += xOffset
-	ctx.Positions[ctx.Index].YOffset += yOffset
+	// Apply the positioning - use = not += to match HarfBuzz behavior
+	// When multiple lookups position the same mark, later lookups override earlier ones
+	ctx.Buffer.Pos[ctx.Buffer.Idx].XOffset = xOffset
+	ctx.Buffer.Pos[ctx.Buffer.Idx].YOffset = yOffset
 
 	// Store attachment info
-	ctx.Positions[ctx.Index].AttachType = AttachTypeMark
-	ctx.Positions[ctx.Index].AttachChain = int16(ligIdx - ctx.Index)
+	ctx.Buffer.Pos[ctx.Buffer.Idx].AttachType = AttachTypeMark
+	ctx.Buffer.Pos[ctx.Buffer.Idx].AttachChain = int16(ligIdx - ctx.Buffer.Idx)
 
-	ctx.Index++
+	ctx.Buffer.Idx++
 	return true
 }
 
@@ -1902,8 +2240,8 @@ func parseMarkMarkPos(data []byte, offset int) (*MarkMarkPos, error) {
 
 // Apply applies the mark-to-mark positioning.
 // It finds the preceding mark glyph (mark2) and positions the current mark (mark1) relative to it.
-func (m *MarkMarkPos) Apply(ctx *GPOSContext) bool {
-	glyph := ctx.Glyphs[ctx.Index]
+func (m *MarkMarkPos) Apply(ctx *OTApplyContext) bool {
+	glyph := ctx.Buffer.Info[ctx.Buffer.Idx].GlyphID
 
 	// Check if current glyph is mark1
 	mark1Index := m.mark1Coverage.GetCoverage(glyph)
@@ -1917,24 +2255,43 @@ func (m *MarkMarkPos) Apply(ctx *GPOSContext) bool {
 
 	// Search backwards for a mark2 glyph
 	// Unlike MarkBasePos, we're looking for another mark, not a base glyph
+	// HarfBuzz equivalent: MarkMarkPosFormat1.hh lines 97-130
 	mark2Idx := -1
-	for j := ctx.Index - 1; j >= 0; j-- {
+	for j := ctx.Buffer.Idx - 1; j >= 0; j-- {
+		info := &ctx.Buffer.Info[j]
+
+		// Skip ALL default ignorables (not just hidden ones) for GPOS
+		// HarfBuzz: may_skip() with ignore_hidden=true (GPOS table)
+		// See hb-ot-layout-gsubgpos.hh lines 463-467
+		// For GPOS: ignore_hidden=true, so (ignore_hidden || !is_hidden) is ALWAYS true
+		// This means ALL default ignorables are skipped, regardless of hidden flag
+		// Note: ZWNJ/ZWJ are handled separately via GlyphProps flags
+		if (info.GlyphProps&GlyphPropsDefaultIgnorable) != 0 &&
+			(info.GlyphProps&GlyphPropsSubstituted) == 0 &&
+			(info.GlyphProps&GlyphPropsZWNJ) == 0 &&
+			(info.GlyphProps&GlyphPropsZWJ) == 0 {
+			continue
+		}
+
 		// Check if this glyph is a mark2 (in mark2Coverage)
-		if m.mark2Coverage.GetCoverage(ctx.Glyphs[j]) != NotCovered {
+		if m.mark2Coverage.GetCoverage(info.GlyphID) != NotCovered {
 			mark2Idx = j
 			break
 		}
-		// In a full implementation, we'd check if we hit a non-mark and stop
-		// For simplicity, we only look at the immediately preceding glyph
-		// that is in mark2Coverage
-		break
+
+		// Stop if we hit a non-mark glyph (base or ligature)
+		// HarfBuzz: _hb_glyph_info_is_mark() in hb-ot-layout.hh:547-550
+		// Uses GlyphProps which works even without GDEF (props are set from coverage)
+		if !info.IsMark() {
+			break
+		}
 	}
 
 	if mark2Idx < 0 {
 		return false
 	}
 
-	mark2Glyph := ctx.Glyphs[mark2Idx]
+	mark2Glyph := ctx.Buffer.Info[mark2Idx].GlyphID
 	mark2Index := m.mark2Coverage.GetCoverage(mark2Glyph)
 	if mark2Index == NotCovered {
 		return false
@@ -1952,18 +2309,20 @@ func (m *MarkMarkPos) Apply(ctx *GPOSContext) bool {
 	}
 
 	// Calculate position offset: mark1 should be placed at mark2Anchor - mark1Anchor
-	xOffset := int16(mark2Anchor.X - mark1Anchor.X)
-	yOffset := int16(mark2Anchor.Y - mark1Anchor.Y)
+	// HarfBuzz: Scales anchor coordinates with em_fscale_x/y then rounds
+	xOffset := int16(roundAnchor(float64(mark2Anchor.X) - float64(mark1Anchor.X)))
+	yOffset := int16(roundAnchor(float64(mark2Anchor.Y) - float64(mark1Anchor.Y)))
 
-	// Apply the positioning
-	ctx.Positions[ctx.Index].XOffset += xOffset
-	ctx.Positions[ctx.Index].YOffset += yOffset
+	// Apply the positioning - use = not += to match HarfBuzz behavior
+	// When multiple lookups position the same mark, later lookups override earlier ones
+	ctx.Buffer.Pos[ctx.Buffer.Idx].XOffset = xOffset
+	ctx.Buffer.Pos[ctx.Buffer.Idx].YOffset = yOffset
 
 	// Store attachment info
-	ctx.Positions[ctx.Index].AttachType = AttachTypeMark
-	ctx.Positions[ctx.Index].AttachChain = int16(mark2Idx - ctx.Index)
+	ctx.Buffer.Pos[ctx.Buffer.Idx].AttachType = AttachTypeMark
+	ctx.Buffer.Pos[ctx.Buffer.Idx].AttachChain = int16(mark2Idx - ctx.Buffer.Idx)
 
-	ctx.Index++
+	ctx.Buffer.Idx++
 	return true
 }
 
@@ -2008,9 +2367,9 @@ type GPOSContextRule struct {
 
 // ContextPos represents a Context Positioning subtable (GPOS Type 7).
 // It matches input sequences and applies nested positioning lookups.
+// HarfBuzz equivalent: ContextPos in OT/Layout/GPOS/ContextPos.hh
 type ContextPos struct {
 	format uint16
-	gpos   *GPOS
 
 	// Format 1: Simple glyph contexts
 	coverage *Coverage
@@ -2024,7 +2383,7 @@ type ContextPos struct {
 	lookupRecords  []GPOSLookupRecord
 }
 
-func parseContextPos(data []byte, offset int, gpos *GPOS) (*ContextPos, error) {
+func parseContextPos(data []byte, offset int) (*ContextPos, error) {
 	if offset+2 > len(data) {
 		return nil, ErrInvalidOffset
 	}
@@ -2033,18 +2392,18 @@ func parseContextPos(data []byte, offset int, gpos *GPOS) (*ContextPos, error) {
 
 	switch format {
 	case 1:
-		return parseContextPosFormat1(data, offset, gpos)
+		return parseContextPosFormat1(data, offset)
 	case 2:
-		return parseContextPosFormat2(data, offset, gpos)
+		return parseContextPosFormat2(data, offset)
 	case 3:
-		return parseContextPosFormat3(data, offset, gpos)
+		return parseContextPosFormat3(data, offset)
 	default:
 		return nil, ErrInvalidFormat
 	}
 }
 
 // parseContextPosFormat1 parses ContextPosFormat1 (simple glyph context).
-func parseContextPosFormat1(data []byte, offset int, gpos *GPOS) (*ContextPos, error) {
+func parseContextPosFormat1(data []byte, offset int) (*ContextPos, error) {
 	if offset+6 > len(data) {
 		return nil, ErrInvalidOffset
 	}
@@ -2063,7 +2422,6 @@ func parseContextPosFormat1(data []byte, offset int, gpos *GPOS) (*ContextPos, e
 
 	cp := &ContextPos{
 		format:   1,
-		gpos:     gpos,
 		coverage: coverage,
 		ruleSets: make([][]GPOSContextRule, ruleSetCount),
 	}
@@ -2130,7 +2488,7 @@ func parseContextPosFormat1(data []byte, offset int, gpos *GPOS) (*ContextPos, e
 }
 
 // parseContextPosFormat2 parses ContextPosFormat2 (class-based context).
-func parseContextPosFormat2(data []byte, offset int, gpos *GPOS) (*ContextPos, error) {
+func parseContextPosFormat2(data []byte, offset int) (*ContextPos, error) {
 	if offset+8 > len(data) {
 		return nil, ErrInvalidOffset
 	}
@@ -2155,7 +2513,6 @@ func parseContextPosFormat2(data []byte, offset int, gpos *GPOS) (*ContextPos, e
 
 	cp := &ContextPos{
 		format:   2,
-		gpos:     gpos,
 		coverage: coverage,
 		classDef: classDef,
 		ruleSets: make([][]GPOSContextRule, ruleSetCount),
@@ -2224,7 +2581,7 @@ func parseContextPosFormat2(data []byte, offset int, gpos *GPOS) (*ContextPos, e
 }
 
 // parseContextPosFormat3 parses ContextPosFormat3 (coverage-based context).
-func parseContextPosFormat3(data []byte, offset int, gpos *GPOS) (*ContextPos, error) {
+func parseContextPosFormat3(data []byte, offset int) (*ContextPos, error) {
 	if offset+6 > len(data) {
 		return nil, ErrInvalidOffset
 	}
@@ -2261,14 +2618,13 @@ func parseContextPosFormat3(data []byte, offset int, gpos *GPOS) (*ContextPos, e
 
 	return &ContextPos{
 		format:         3,
-		gpos:           gpos,
 		inputCoverages: inputCoverages,
 		lookupRecords:  lookupRecords,
 	}, nil
 }
 
 // Apply applies context positioning.
-func (cp *ContextPos) Apply(ctx *GPOSContext) bool {
+func (cp *ContextPos) Apply(ctx *OTApplyContext) bool {
 	switch cp.format {
 	case 1:
 		return cp.applyFormat1(ctx)
@@ -2282,8 +2638,8 @@ func (cp *ContextPos) Apply(ctx *GPOSContext) bool {
 }
 
 // applyFormat1 applies ContextPosFormat1 (simple glyph context).
-func (cp *ContextPos) applyFormat1(ctx *GPOSContext) bool {
-	glyph := ctx.Glyphs[ctx.Index]
+func (cp *ContextPos) applyFormat1(ctx *OTApplyContext) bool {
+	glyph := ctx.Buffer.Info[ctx.Buffer.Idx].GlyphID
 	coverageIndex := cp.coverage.GetCoverage(glyph)
 	if coverageIndex == NotCovered {
 		return false
@@ -2298,7 +2654,7 @@ func (cp *ContextPos) applyFormat1(ctx *GPOSContext) bool {
 		if cp.matchRuleFormat1(ctx, &rule) {
 			inputLen := len(rule.Input) + 1
 			cp.applyLookups(ctx, rule.LookupRecords, inputLen)
-			ctx.Index += inputLen
+			ctx.Buffer.Idx += inputLen
 			return true
 		}
 	}
@@ -2306,14 +2662,14 @@ func (cp *ContextPos) applyFormat1(ctx *GPOSContext) bool {
 	return false
 }
 
-func (cp *ContextPos) matchRuleFormat1(ctx *GPOSContext, rule *GPOSContextRule) bool {
+func (cp *ContextPos) matchRuleFormat1(ctx *OTApplyContext, rule *GPOSContextRule) bool {
 	inputLen := len(rule.Input) + 1
-	if ctx.Index+inputLen > len(ctx.Glyphs) {
+	if ctx.Buffer.Idx+inputLen > len(ctx.Buffer.Info) {
 		return false
 	}
 
 	for i, glyph := range rule.Input {
-		if ctx.Glyphs[ctx.Index+1+i] != glyph {
+		if ctx.Buffer.Info[ctx.Buffer.Idx+1+i].GlyphID != glyph {
 			return false
 		}
 	}
@@ -2322,8 +2678,8 @@ func (cp *ContextPos) matchRuleFormat1(ctx *GPOSContext, rule *GPOSContextRule) 
 }
 
 // applyFormat2 applies ContextPosFormat2 (class-based context).
-func (cp *ContextPos) applyFormat2(ctx *GPOSContext) bool {
-	glyph := ctx.Glyphs[ctx.Index]
+func (cp *ContextPos) applyFormat2(ctx *OTApplyContext) bool {
+	glyph := ctx.Buffer.Info[ctx.Buffer.Idx].GlyphID
 	if cp.coverage.GetCoverage(glyph) == NotCovered {
 		return false
 	}
@@ -2338,7 +2694,7 @@ func (cp *ContextPos) applyFormat2(ctx *GPOSContext) bool {
 		if cp.matchRuleFormat2(ctx, &rule) {
 			inputLen := len(rule.Input) + 1
 			cp.applyLookups(ctx, rule.LookupRecords, inputLen)
-			ctx.Index += inputLen
+			ctx.Buffer.Idx += inputLen
 			return true
 		}
 	}
@@ -2346,14 +2702,14 @@ func (cp *ContextPos) applyFormat2(ctx *GPOSContext) bool {
 	return false
 }
 
-func (cp *ContextPos) matchRuleFormat2(ctx *GPOSContext, rule *GPOSContextRule) bool {
+func (cp *ContextPos) matchRuleFormat2(ctx *OTApplyContext, rule *GPOSContextRule) bool {
 	inputLen := len(rule.Input) + 1
-	if ctx.Index+inputLen > len(ctx.Glyphs) {
+	if ctx.Buffer.Idx+inputLen > len(ctx.Buffer.Info) {
 		return false
 	}
 
 	for i, classValue := range rule.Input {
-		glyphClass := cp.classDef.GetClass(ctx.Glyphs[ctx.Index+1+i])
+		glyphClass := cp.classDef.GetClass(ctx.Buffer.Info[ctx.Buffer.Idx+1+i].GlyphID)
 		if glyphClass != int(classValue) {
 			return false
 		}
@@ -2363,68 +2719,52 @@ func (cp *ContextPos) matchRuleFormat2(ctx *GPOSContext, rule *GPOSContextRule) 
 }
 
 // applyFormat3 applies ContextPosFormat3 (coverage-based context).
-func (cp *ContextPos) applyFormat3(ctx *GPOSContext) bool {
+func (cp *ContextPos) applyFormat3(ctx *OTApplyContext) bool {
 	inputLen := len(cp.inputCoverages)
 	if inputLen == 0 {
 		return false
 	}
 
-	if ctx.Index+inputLen > len(ctx.Glyphs) {
+	if ctx.Buffer.Idx+inputLen > len(ctx.Buffer.Info) {
 		return false
 	}
 
 	// Check all input coverages
 	for i, cov := range cp.inputCoverages {
-		if cov.GetCoverage(ctx.Glyphs[ctx.Index+i]) == NotCovered {
+		if cov.GetCoverage(ctx.Buffer.Info[ctx.Buffer.Idx+i].GlyphID) == NotCovered {
 			return false
 		}
 	}
 
 	cp.applyLookups(ctx, cp.lookupRecords, inputLen)
-	ctx.Index += inputLen
+	ctx.Buffer.Idx += inputLen
 	return true
 }
 
-func (cp *ContextPos) applyLookups(ctx *GPOSContext, lookupRecords []GPOSLookupRecord, inputLen int) {
-	if cp.gpos == nil {
-		return
-	}
+// applyLookups applies nested lookups for ContextPos.
+// HarfBuzz equivalent: apply_lookup() in hb-ot-layout-gsubgpos.hh:1788-1909
+// Uses ctx.Recurse() for HarfBuzz-conformant nested lookup application.
+func (cp *ContextPos) applyLookups(ctx *OTApplyContext, lookupRecords []GPOSLookupRecord, inputLen int) {
+	// Save original buffer index
+	originalIdx := ctx.Buffer.Idx
 
-	// Apply lookups in order
 	for _, record := range lookupRecords {
-		if int(record.SequenceIndex) >= inputLen {
+		idx := int(record.SequenceIndex)
+		if idx >= inputLen {
 			continue
 		}
 
-		lookup := cp.gpos.GetLookup(int(record.LookupIndex))
-		if lookup == nil {
-			continue
-		}
+		// HarfBuzz: buffer->move_to(c->match_positions.arrayZ[idx])
+		// For Format1/2, match positions are consecutive
+		ctx.Buffer.Idx = originalIdx + idx
 
-		// Determine mark filtering set for nested lookup
-		nestedMarkFilteringSet := -1
-		if lookup.Flag&LookupFlagUseMarkFilteringSet != 0 {
-			nestedMarkFilteringSet = int(lookup.MarkFilter)
-		}
-
-		// Create a sub-context for the nested lookup
-		subCtx := &GPOSContext{
-			Glyphs:           ctx.Glyphs,
-			Positions:        ctx.Positions,
-			Index:            ctx.Index + int(record.SequenceIndex),
-			Direction:        ctx.Direction,
-			LookupFlag:       lookup.Flag,
-			GDEF:             ctx.GDEF,
-			MarkFilteringSet: nestedMarkFilteringSet,
-		}
-
-		// Apply all subtables until one matches
-		for _, subtable := range lookup.subtables {
-			if subtable.Apply(subCtx) {
-				break
-			}
-		}
+		// Apply nested lookup using ctx.Recurse()
+		// HarfBuzz equivalent: recurse(r.lookupListIndex)
+		ctx.Recurse(int(record.LookupIndex))
 	}
+
+	// Restore original buffer index
+	ctx.Buffer.Idx = originalIdx
 }
 
 // --- Chaining Context Positioning (Type 8) ---
@@ -2439,9 +2779,9 @@ type GPOSChainRule struct {
 
 // ChainContextPos represents a Chaining Context Positioning subtable (GPOS Type 8).
 // It matches backtrack, input, and lookahead sequences, then applies nested lookups.
+// HarfBuzz equivalent: ChainContextPos in OT/Layout/GPOS/ChainContextPos.hh
 type ChainContextPos struct {
 	format uint16
-	gpos   *GPOS
 
 	// Format 1: Simple glyph contexts
 	coverage      *Coverage
@@ -2460,7 +2800,7 @@ type ChainContextPos struct {
 	lookupRecords      []GPOSLookupRecord
 }
 
-func parseChainContextPos(data []byte, offset int, gpos *GPOS) (*ChainContextPos, error) {
+func parseChainContextPos(data []byte, offset int) (*ChainContextPos, error) {
 	if offset+2 > len(data) {
 		return nil, ErrInvalidOffset
 	}
@@ -2469,18 +2809,18 @@ func parseChainContextPos(data []byte, offset int, gpos *GPOS) (*ChainContextPos
 
 	switch format {
 	case 1:
-		return parseChainContextPosFormat1(data, offset, gpos)
+		return parseChainContextPosFormat1(data, offset)
 	case 2:
-		return parseChainContextPosFormat2(data, offset, gpos)
+		return parseChainContextPosFormat2(data, offset)
 	case 3:
-		return parseChainContextPosFormat3(data, offset, gpos)
+		return parseChainContextPosFormat3(data, offset)
 	default:
 		return nil, ErrInvalidFormat
 	}
 }
 
 // parseChainContextPosFormat1 parses ChainContextPosFormat1 (simple glyph context).
-func parseChainContextPosFormat1(data []byte, offset int, gpos *GPOS) (*ChainContextPos, error) {
+func parseChainContextPosFormat1(data []byte, offset int) (*ChainContextPos, error) {
 	if offset+6 > len(data) {
 		return nil, ErrInvalidOffset
 	}
@@ -2499,7 +2839,6 @@ func parseChainContextPosFormat1(data []byte, offset int, gpos *GPOS) (*ChainCon
 
 	ccp := &ChainContextPos{
 		format:        1,
-		gpos:          gpos,
 		coverage:      coverage,
 		chainRuleSets: make([][]GPOSChainRule, chainRuleSetCount),
 	}
@@ -2620,7 +2959,7 @@ func parseGPOSChainRule(data []byte, offset int) (*GPOSChainRule, error) {
 }
 
 // parseChainContextPosFormat2 parses ChainContextPosFormat2 (class-based context).
-func parseChainContextPosFormat2(data []byte, offset int, gpos *GPOS) (*ChainContextPos, error) {
+func parseChainContextPosFormat2(data []byte, offset int) (*ChainContextPos, error) {
 	if offset+12 > len(data) {
 		return nil, ErrInvalidOffset
 	}
@@ -2657,7 +2996,6 @@ func parseChainContextPosFormat2(data []byte, offset int, gpos *GPOS) (*ChainCon
 
 	ccp := &ChainContextPos{
 		format:            2,
-		gpos:              gpos,
 		coverage:          coverage,
 		backtrackClassDef: backtrackClassDef,
 		inputClassDef:     inputClassDef,
@@ -2701,7 +3039,7 @@ func parseChainContextPosFormat2(data []byte, offset int, gpos *GPOS) (*ChainCon
 }
 
 // parseChainContextPosFormat3 parses ChainContextPosFormat3 (coverage-based context).
-func parseChainContextPosFormat3(data []byte, offset int, gpos *GPOS) (*ChainContextPos, error) {
+func parseChainContextPosFormat3(data []byte, offset int) (*ChainContextPos, error) {
 	off := offset + 2 // Skip format
 
 	if off+2 > len(data) {
@@ -2791,7 +3129,6 @@ func parseChainContextPosFormat3(data []byte, offset int, gpos *GPOS) (*ChainCon
 
 	return &ChainContextPos{
 		format:             3,
-		gpos:               gpos,
 		backtrackCoverages: backtrackCoverages,
 		inputCoverages:     inputCoverages,
 		lookaheadCoverages: lookaheadCoverages,
@@ -2800,7 +3137,7 @@ func parseChainContextPosFormat3(data []byte, offset int, gpos *GPOS) (*ChainCon
 }
 
 // Apply applies chaining context positioning.
-func (ccp *ChainContextPos) Apply(ctx *GPOSContext) bool {
+func (ccp *ChainContextPos) Apply(ctx *OTApplyContext) bool {
 	switch ccp.format {
 	case 1:
 		return ccp.applyFormat1(ctx)
@@ -2814,8 +3151,8 @@ func (ccp *ChainContextPos) Apply(ctx *GPOSContext) bool {
 }
 
 // applyFormat1 applies ChainContextPosFormat1 (simple glyph context).
-func (ccp *ChainContextPos) applyFormat1(ctx *GPOSContext) bool {
-	glyph := ctx.Glyphs[ctx.Index]
+func (ccp *ChainContextPos) applyFormat1(ctx *OTApplyContext) bool {
+	glyph := ctx.Buffer.Info[ctx.Buffer.Idx].GlyphID
 	coverageIndex := ccp.coverage.GetCoverage(glyph)
 	if coverageIndex == NotCovered {
 		return false
@@ -2830,7 +3167,7 @@ func (ccp *ChainContextPos) applyFormat1(ctx *GPOSContext) bool {
 		if ccp.matchRuleFormat1(ctx, &rule) {
 			inputLen := len(rule.Input) + 1
 			ccp.applyLookups(ctx, rule.LookupRecords, inputLen)
-			ctx.Index += inputLen
+			ctx.Buffer.Idx += inputLen
 			return true
 		}
 	}
@@ -2838,40 +3175,40 @@ func (ccp *ChainContextPos) applyFormat1(ctx *GPOSContext) bool {
 	return false
 }
 
-func (ccp *ChainContextPos) matchRuleFormat1(ctx *GPOSContext, rule *GPOSChainRule) bool {
+func (ccp *ChainContextPos) matchRuleFormat1(ctx *OTApplyContext, rule *GPOSChainRule) bool {
 	inputLen := len(rule.Input) + 1
 
 	// Check if enough glyphs for input sequence
-	if ctx.Index+inputLen > len(ctx.Glyphs) {
+	if ctx.Buffer.Idx+inputLen > len(ctx.Buffer.Info) {
 		return false
 	}
 
 	// Check backtrack (glyphs before current position, in reverse order)
 	for i, glyph := range rule.Backtrack {
-		backIdx := ctx.Index - 1 - i
+		backIdx := ctx.Buffer.Idx - 1 - i
 		if backIdx < 0 {
 			return false
 		}
-		if ctx.Glyphs[backIdx] != glyph {
+		if ctx.Buffer.Info[backIdx].GlyphID != glyph {
 			return false
 		}
 	}
 
 	// Check input sequence (starting from second glyph)
 	for i, glyph := range rule.Input {
-		if ctx.Glyphs[ctx.Index+1+i] != glyph {
+		if ctx.Buffer.Info[ctx.Buffer.Idx+1+i].GlyphID != glyph {
 			return false
 		}
 	}
 
 	// Check lookahead (glyphs after input sequence)
-	lookaheadStart := ctx.Index + inputLen
+	lookaheadStart := ctx.Buffer.Idx + inputLen
 	for i, glyph := range rule.Lookahead {
 		lookaheadIdx := lookaheadStart + i
-		if lookaheadIdx >= len(ctx.Glyphs) {
+		if lookaheadIdx >= len(ctx.Buffer.Info) {
 			return false
 		}
-		if ctx.Glyphs[lookaheadIdx] != glyph {
+		if ctx.Buffer.Info[lookaheadIdx].GlyphID != glyph {
 			return false
 		}
 	}
@@ -2880,8 +3217,8 @@ func (ccp *ChainContextPos) matchRuleFormat1(ctx *GPOSContext, rule *GPOSChainRu
 }
 
 // applyFormat2 applies ChainContextPosFormat2 (class-based context).
-func (ccp *ChainContextPos) applyFormat2(ctx *GPOSContext) bool {
-	glyph := ctx.Glyphs[ctx.Index]
+func (ccp *ChainContextPos) applyFormat2(ctx *OTApplyContext) bool {
+	glyph := ctx.Buffer.Info[ctx.Buffer.Idx].GlyphID
 	if ccp.coverage.GetCoverage(glyph) == NotCovered {
 		return false
 	}
@@ -2896,7 +3233,7 @@ func (ccp *ChainContextPos) applyFormat2(ctx *GPOSContext) bool {
 		if ccp.matchRuleFormat2(ctx, &rule) {
 			inputLen := len(rule.Input) + 1
 			ccp.applyLookups(ctx, rule.LookupRecords, inputLen)
-			ctx.Index += inputLen
+			ctx.Buffer.Idx += inputLen
 			return true
 		}
 	}
@@ -2904,21 +3241,21 @@ func (ccp *ChainContextPos) applyFormat2(ctx *GPOSContext) bool {
 	return false
 }
 
-func (ccp *ChainContextPos) matchRuleFormat2(ctx *GPOSContext, rule *GPOSChainRule) bool {
+func (ccp *ChainContextPos) matchRuleFormat2(ctx *OTApplyContext, rule *GPOSChainRule) bool {
 	inputLen := len(rule.Input) + 1
 
 	// Check if enough glyphs for input sequence
-	if ctx.Index+inputLen > len(ctx.Glyphs) {
+	if ctx.Buffer.Idx+inputLen > len(ctx.Buffer.Info) {
 		return false
 	}
 
 	// Check backtrack classes (in reverse order)
 	for i, classValue := range rule.Backtrack {
-		backIdx := ctx.Index - 1 - i
+		backIdx := ctx.Buffer.Idx - 1 - i
 		if backIdx < 0 {
 			return false
 		}
-		glyphClass := ccp.backtrackClassDef.GetClass(ctx.Glyphs[backIdx])
+		glyphClass := ccp.backtrackClassDef.GetClass(ctx.Buffer.Info[backIdx].GlyphID)
 		if glyphClass != int(classValue) {
 			return false
 		}
@@ -2926,20 +3263,20 @@ func (ccp *ChainContextPos) matchRuleFormat2(ctx *GPOSContext, rule *GPOSChainRu
 
 	// Check input classes (starting from second glyph)
 	for i, classValue := range rule.Input {
-		glyphClass := ccp.inputClassDef.GetClass(ctx.Glyphs[ctx.Index+1+i])
+		glyphClass := ccp.inputClassDef.GetClass(ctx.Buffer.Info[ctx.Buffer.Idx+1+i].GlyphID)
 		if glyphClass != int(classValue) {
 			return false
 		}
 	}
 
 	// Check lookahead classes
-	lookaheadStart := ctx.Index + inputLen
+	lookaheadStart := ctx.Buffer.Idx + inputLen
 	for i, classValue := range rule.Lookahead {
 		lookaheadIdx := lookaheadStart + i
-		if lookaheadIdx >= len(ctx.Glyphs) {
+		if lookaheadIdx >= len(ctx.Buffer.Info) {
 			return false
 		}
-		glyphClass := ccp.lookaheadClassDef.GetClass(ctx.Glyphs[lookaheadIdx])
+		glyphClass := ccp.lookaheadClassDef.GetClass(ctx.Buffer.Info[lookaheadIdx].GlyphID)
 		if glyphClass != int(classValue) {
 			return false
 		}
@@ -2949,87 +3286,171 @@ func (ccp *ChainContextPos) matchRuleFormat2(ctx *GPOSContext, rule *GPOSChainRu
 }
 
 // applyFormat3 applies ChainContextPosFormat3 (coverage-based context).
-func (ccp *ChainContextPos) applyFormat3(ctx *GPOSContext) bool {
+// HarfBuzz equivalent: ChainContextFormat3::apply() in hb-ot-layout-gsubgpos.hh
+// Uses skippy-iteration for matching (skips marks/default ignorables per LookupFlag).
+func (ccp *ChainContextPos) applyFormat3(ctx *OTApplyContext) bool {
 	inputLen := len(ccp.inputCoverages)
 	if inputLen == 0 {
 		return false
 	}
 
-	// Check if enough glyphs for input sequence
-	if ctx.Index+inputLen > len(ctx.Glyphs) {
+	// Check first coverage (current glyph)
+	if ccp.inputCoverages[0].GetCoverage(ctx.Buffer.Info[ctx.Buffer.Idx].GlyphID) == NotCovered {
 		return false
 	}
 
-	// Check backtrack coverages (in reverse order)
-	for i, cov := range ccp.backtrackCoverages {
-		backIdx := ctx.Index - 1 - i
-		if backIdx < 0 {
+	// Build match positions using skippy-iteration (like HarfBuzz match_input)
+	// HarfBuzz: hb-ot-layout-gsubgpos.hh:1311-1400 (match_input)
+	// MatchPositions[0] = ctx.Buffer.Idx (current position)
+	// MatchPositions[1..] = positions of subsequent input glyphs (skipping marks if needed)
+	//
+	// HarfBuzz match() logic:
+	// 1. may_skip == SKIP_YES -> continue (skip)
+	// 2. may_match (coverage check) == YES -> return MATCH
+	// 3. may_match == MAYBE && may_skip == SKIP_NO -> return MATCH
+	// 4. may_skip == SKIP_NO -> return NOT_MATCH (fail)
+	// 5. else (SKIP_MAYBE with non-match) -> continue (skip)
+	matchPositions := make([]int, inputLen)
+	matchPositions[0] = ctx.Buffer.Idx
+
+	// Match remaining input sequence by coverage using skippy-iteration
+	// HarfBuzz: uses iter_input (context_match=false) with coverage matching
+	bufLen := len(ctx.Buffer.Info)
+	pos := ctx.Buffer.Idx
+	for i := 1; i < inputLen; i++ {
+		cov := ccp.inputCoverages[i]
+		found := false
+		for pos < bufLen-1 {
+			pos++
+			skip := ctx.MaySkip(pos, false) // context_match=false for input matching
+			if skip == SkipYes {
+				continue // Definitely skip (e.g., ignored by LookupFlag)
+			}
+			glyph := ctx.Buffer.Info[pos].GlyphID
+			// Check if glyph is in coverage
+			if cov.GetCoverage(glyph) != NotCovered {
+				found = true
+				break // Found matching glyph in coverage
+			}
+			// Not in coverage - can we skip it?
+			if skip == SkipMaybe {
+				continue // Skip default ignorables if not in coverage
+			}
+			// Not in coverage and can't skip -> fail
 			return false
 		}
-		if cov.GetCoverage(ctx.Glyphs[backIdx]) == NotCovered {
+		if !found {
+			return false
+		}
+		matchPositions[i] = pos
+	}
+	matchEnd := pos + 1 // End position after last matched input glyph
+
+	// Check lookahead by coverage (continue from last input position)
+	// HarfBuzz: hb-ot-layout-gsubgpos.hh:1607-1637 (match_lookahead)
+	// HarfBuzz: uses iter_context (context_match=true) with coverage matching
+	//
+	// For GPOS: ignore_hidden=true, so CGJ and other hidden default ignorables
+	// are skipped automatically via MaySkip with contextMatch=true.
+	lookaheadPos := pos
+	for _, cov := range ccp.lookaheadCoverages {
+		found := false
+		for lookaheadPos < bufLen-1 {
+			lookaheadPos++
+			skip := ctx.MaySkip(lookaheadPos, true) // context_match=true
+			if skip == SkipYes {
+				continue // Definitely skip (e.g., ignored by LookupFlag)
+			}
+			glyph := ctx.Buffer.Info[lookaheadPos].GlyphID
+			// First check if glyph is in coverage
+			if cov.GetCoverage(glyph) != NotCovered {
+				found = true
+				break // Found matching glyph in coverage
+			}
+			// Not in coverage - can we skip it?
+			if skip == SkipMaybe {
+				continue // Skip default ignorables (like CGJ) if not in coverage
+			}
+			// Not in coverage and can't skip -> fail
+			return false
+		}
+		if !found {
 			return false
 		}
 	}
 
-	// Check input coverages
-	for i, cov := range ccp.inputCoverages {
-		if cov.GetCoverage(ctx.Glyphs[ctx.Index+i]) == NotCovered {
+	// Check backtrack by coverage (in reverse order, starting before current position)
+	// HarfBuzz: hb-ot-layout-gsubgpos.hh:1569-1601 (match_backtrack)
+	// HarfBuzz: uses iter_context (context_match=true) with coverage matching
+	//
+	// Note: For GPOS, we use input buffer (not output buffer like GSUB)
+	// because GPOS doesn't modify glyphs, only positions.
+	backtrackPos := ctx.Buffer.Idx
+	for _, cov := range ccp.backtrackCoverages {
+		found := false
+		for backtrackPos > 0 {
+			backtrackPos--
+			info := &ctx.Buffer.Info[backtrackPos]
+			skip := ctx.MaySkipInfo(info, true) // context_match=true
+			if skip == SkipYes {
+				continue // Definitely skip (e.g., ignored by LookupFlag)
+			}
+			// First check if glyph is in coverage
+			if cov.GetCoverage(info.GlyphID) != NotCovered {
+				found = true
+				break // Found matching glyph in coverage
+			}
+			// Not in coverage - can we skip it?
+			if skip == SkipMaybe {
+				continue // Skip default ignorables (like CGJ) if not in coverage
+			}
+			// Not in coverage and can't skip -> fail
+			return false
+		}
+		if !found {
 			return false
 		}
 	}
 
-	// Check lookahead coverages
-	lookaheadStart := ctx.Index + inputLen
-	for i, cov := range ccp.lookaheadCoverages {
-		lookaheadIdx := lookaheadStart + i
-		if lookaheadIdx >= len(ctx.Glyphs) {
-			return false
-		}
-		if cov.GetCoverage(ctx.Glyphs[lookaheadIdx]) == NotCovered {
-			return false
-		}
-	}
+	// Store match positions for use in applyLookups
+	ctx.MatchPositions = matchPositions
 
 	ccp.applyLookups(ctx, ccp.lookupRecords, inputLen)
-	ctx.Index += inputLen
+
+	// Clear match positions to avoid side effects on subsequent lookups
+	ctx.MatchPositions = nil
+
+	ctx.Buffer.Idx = matchEnd
 	return true
 }
 
-func (ccp *ChainContextPos) applyLookups(ctx *GPOSContext, lookupRecords []GPOSLookupRecord, inputLen int) {
-	if ccp.gpos == nil {
-		return
-	}
+// applyLookups applies nested lookups for ChainContextPos.
+// HarfBuzz equivalent: apply_lookup() in hb-ot-layout-gsubgpos.hh:1788-1909
+// Uses ctx.Recurse() for HarfBuzz-conformant nested lookup application.
+func (ccp *ChainContextPos) applyLookups(ctx *OTApplyContext, lookupRecords []GPOSLookupRecord, inputLen int) {
+	// Save original buffer index
+	originalIdx := ctx.Buffer.Idx
 
 	for _, record := range lookupRecords {
-		if int(record.SequenceIndex) >= inputLen {
+		idx := int(record.SequenceIndex)
+		if idx >= inputLen {
 			continue
 		}
 
-		lookup := ccp.gpos.GetLookup(int(record.LookupIndex))
-		if lookup == nil {
-			continue
+		// HarfBuzz: buffer->move_to(c->match_positions.arrayZ[idx])
+		// Use stored match positions from context matching (accounts for skipped glyphs)
+		if ctx.MatchPositions != nil && idx < len(ctx.MatchPositions) {
+			ctx.Buffer.Idx = ctx.MatchPositions[idx]
+		} else {
+			// Fallback for Format1/2 where match positions may not be stored
+			ctx.Buffer.Idx = originalIdx + idx
 		}
 
-		// Determine mark filtering set for nested lookup
-		nestedMarkFilteringSet := -1
-		if lookup.Flag&LookupFlagUseMarkFilteringSet != 0 {
-			nestedMarkFilteringSet = int(lookup.MarkFilter)
-		}
-
-		subCtx := &GPOSContext{
-			Glyphs:           ctx.Glyphs,
-			Positions:        ctx.Positions,
-			Index:            ctx.Index + int(record.SequenceIndex),
-			Direction:        ctx.Direction,
-			LookupFlag:       lookup.Flag,
-			GDEF:             ctx.GDEF,
-			MarkFilteringSet: nestedMarkFilteringSet,
-		}
-
-		for _, subtable := range lookup.subtables {
-			if subtable.Apply(subCtx) {
-				break
-			}
-		}
+		// Apply nested lookup using ctx.Recurse()
+		// HarfBuzz equivalent: recurse(r.lookupListIndex)
+		ctx.Recurse(int(record.LookupIndex))
 	}
+
+	// Restore original buffer index
+	ctx.Buffer.Idx = originalIdx
 }
