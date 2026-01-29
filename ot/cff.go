@@ -64,7 +64,9 @@ type PrivateDict struct {
 	FamilyOtherBlues []int
 	StdHW            int
 	StdVW            int
-	Subrs            int // Offset to Local Subrs (relative to Private DICT)
+	StemSnapH        []int // Stem snap widths (horizontal)
+	StemSnapV        []int // Stem snap widths (vertical)
+	Subrs            int   // Offset to Local Subrs (relative to Private DICT)
 	DefaultWidthX    int
 	NominalWidthX    int
 	BlueScale        float64
@@ -418,6 +420,10 @@ func parsePrivateDict(data []byte) (PrivateDict, error) {
 			if len(operands) > 0 {
 				dict.BlueFuzz = operands[len(operands)-1]
 			}
+		case dictStemSnapH:
+			dict.StemSnapH = append([]int{}, operands...)
+		case dictStemSnapV:
+			dict.StemSnapV = append([]int{}, operands...)
 		}
 
 		operands = operands[:0]

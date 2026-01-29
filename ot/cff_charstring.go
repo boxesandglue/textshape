@@ -219,36 +219,82 @@ func decodeCSOperand(data []byte) (int, int) {
 	return 0, 1
 }
 
-// RemapCharString rewrites a CharString with remapped subroutine numbers.
-func RemapCharString(cs []byte, globalMap, localMap map[int]int, oldGlobalBias, oldLocalBias, newGlobalBias, newLocalBias int) []byte {
-	result := make([]byte, 0, len(cs))
-	stack := make([]struct {
-		val   int
-		start int
-		end   int
-	}, 0, 48)
+// csElementType represents the type of a parsed CharString element.
+// HarfBuzz equivalent: parsed_cs_op_t in hb-subset-cff-common.hh
+type csElementType int
+
+const (
+	// csElemBytes represents a sequence of raw bytes to copy (operands + operators)
+	csElemBytes csElementType = iota
+	// csElemCallSubr represents a callsubr operator (needs subroutine remapping)
+	csElemCallSubr
+	// csElemCallGSubr represents a callgsubr operator (needs subroutine remapping)
+	csElemCallGSubr
+)
+
+// parsedCSElement represents a single parsed element from a CharString.
+// This mirrors HarfBuzz's parsed_cs_op_t structure which stores pointers to original bytes.
+//
+// Key insight from HarfBuzz (hb-cff-interp-common.hh:483):
+// - op_str_t stores ptr + length pointing to original bytes
+// - For normal operators: copy original bytes directly
+// - For callsubr/callgsubr: encode new biased number, then copy operator byte
+type parsedCSElement struct {
+	elemType csElementType
+	// For csElemBytes: the raw bytes to copy (operands and/or operators)
+	rawBytes []byte
+	// For callsubr/callgsubr: the actual subroutine number (after adding bias)
+	subrNum int
+}
+
+// parsedCharString holds a fully parsed CharString.
+// HarfBuzz equivalent: parsed_cs_str_t in hb-subset-cff-common.hh
+type parsedCharString struct {
+	elements []parsedCSElement
+	// Reference to original data for slicing
+	original []byte
+}
+
+// parseCharString parses a CharString into a list of elements.
+// This is the first phase of HarfBuzz's two-phase approach:
+// 1. Parse completely into structured data
+// 2. Serialize with remapped values
+//
+// Key insight from HarfBuzz (hb-subset-cff-common.hh):
+// - Store pointers to original bytes, don't decode operand values
+// - Only subroutine calls need special handling (to remap the subr number)
+// - All other bytes are copied verbatim
+func parseCharString(cs []byte, globalBias, localBias int) *parsedCharString {
+	parsed := &parsedCharString{
+		elements: make([]parsedCSElement, 0, 16),
+		original: cs,
+	}
+
 	pos := 0
+	opStart := 0 // Start of current operator + its operands (like HarfBuzz's opStart)
 	hintCount := 0
+
+	// Track operand positions to know where the subroutine number starts
+	type operandPos struct {
+		start int
+		value int
+	}
+	operandStack := make([]operandPos, 0, 48)
 
 	for pos < len(cs) {
 		b := cs[pos]
 
-		// Number operand - track position for potential rewriting
+		// Number operand - track position but don't add element yet
 		if b >= 32 || b == 28 || b == 255 {
-			start := pos
+			operandStart := pos
 			val, consumed := decodeCSOperand(cs[pos:])
-			stack = append(stack, struct {
-				val   int
-				start int
-				end   int
-			}{val, start, pos + consumed})
+			operandStack = append(operandStack, operandPos{start: operandStart, value: val})
 			pos += consumed
 			continue
 		}
 
 		// Operator
 		op := int(b)
-		opStart := pos
 		pos++
 
 		// Two-byte operator
@@ -259,73 +305,153 @@ func RemapCharString(cs []byte, globalMap, localMap map[int]int, oldGlobalBias, 
 
 		switch op {
 		case csCallsubr:
-			// Remap local subroutine call
-			if len(stack) > 0 {
-				entry := stack[len(stack)-1]
-				stack = stack[:len(stack)-1]
+			if len(operandStack) > 0 {
+				// Get the subroutine number
+				subrOp := operandStack[len(operandStack)-1]
+				operandStack = operandStack[:len(operandStack)-1]
 
-				oldSubrNum := entry.val + oldLocalBias
-				if newNum, ok := localMap[oldSubrNum]; ok {
-					// Write everything before this operand
-					result = append(result, cs[:entry.start]...)
-					// Write remapped operand
-					newBiasedNum := newNum - newLocalBias
-					result = append(result, encodeCSInt(newBiasedNum)...)
-					// Write operator
-					result = append(result, cs[opStart:pos]...)
-					// Continue from here
-					cs = cs[pos:]
-					pos = 0
-					continue
+				// Add raw bytes from opStart to just before the subr number operand
+				if subrOp.start > opStart {
+					parsed.elements = append(parsed.elements, parsedCSElement{
+						elemType: csElemBytes,
+						rawBytes: cs[opStart:subrOp.start],
+					})
 				}
+
+				// Add callsubr element with actual subroutine number
+				parsed.elements = append(parsed.elements, parsedCSElement{
+					elemType: csElemCallSubr,
+					subrNum:  subrOp.value + localBias,
+				})
+
+				opStart = pos
 			}
 
 		case csCallgsubr:
-			// Remap global subroutine call
-			if len(stack) > 0 {
-				entry := stack[len(stack)-1]
-				stack = stack[:len(stack)-1]
+			if len(operandStack) > 0 {
+				// Get the subroutine number
+				subrOp := operandStack[len(operandStack)-1]
+				operandStack = operandStack[:len(operandStack)-1]
 
-				oldSubrNum := entry.val + oldGlobalBias
-				if newNum, ok := globalMap[oldSubrNum]; ok {
-					// Write everything before this operand
-					result = append(result, cs[:entry.start]...)
-					// Write remapped operand
-					newBiasedNum := newNum - newGlobalBias
-					result = append(result, encodeCSInt(newBiasedNum)...)
-					// Write operator
-					result = append(result, cs[opStart:pos]...)
-					// Continue from here
-					cs = cs[pos:]
-					pos = 0
-					continue
+				// Add raw bytes from opStart to just before the subr number operand
+				if subrOp.start > opStart {
+					parsed.elements = append(parsed.elements, parsedCSElement{
+						elemType: csElemBytes,
+						rawBytes: cs[opStart:subrOp.start],
+					})
 				}
+
+				// Add callgsubr element with actual subroutine number
+				parsed.elements = append(parsed.elements, parsedCSElement{
+					elemType: csElemCallGSubr,
+					subrNum:  subrOp.value + globalBias,
+				})
+
+				opStart = pos
 			}
 
 		case csHstem, csVstem, csHstemhm, csVstemhm:
-			hintCount += len(stack) / 2
-			stack = stack[:0]
+			hintCount += len(operandStack) / 2
+			operandStack = operandStack[:0]
 
 		case csHintmask, csCntrmask:
-			if len(stack) > 0 {
-				hintCount += len(stack) / 2
-				stack = stack[:0]
+			if len(operandStack) > 0 {
+				hintCount += len(operandStack) / 2
+				operandStack = operandStack[:0]
 			}
 			// Skip mask bytes
 			maskBytes := (hintCount + 7) / 8
 			pos += maskBytes
 
 		default:
-			stack = stack[:0]
+			operandStack = operandStack[:0]
 		}
 	}
 
-	// If no remapping happened, return original
-	if len(result) == 0 {
+	// Add any remaining bytes
+	if pos > opStart {
+		parsed.elements = append(parsed.elements, parsedCSElement{
+			elemType: csElemBytes,
+			rawBytes: cs[opStart:pos],
+		})
+	}
+
+	return parsed
+}
+
+// serialize writes the parsed CharString back to bytes with remapped subroutine numbers.
+// This is the second phase of HarfBuzz's approach.
+//
+// Key insight from HarfBuzz (hb-subset-cff-common.hh:1136-1150):
+// - For callsubr/callgsubr: encode new biased number, then copy operator byte
+// - For all other data: copy original bytes directly (no re-encoding!)
+func (p *parsedCharString) serialize(globalMap, localMap map[int]int, newGlobalBias, newLocalBias int) []byte {
+	// Estimate size: original length + some extra for potentially larger subr numbers
+	result := make([]byte, 0, len(p.original)+16)
+
+	for _, elem := range p.elements {
+		switch elem.elemType {
+		case csElemBytes:
+			// Copy original bytes verbatim - this preserves fixed-point precision!
+			result = append(result, elem.rawBytes...)
+
+		case csElemCallSubr:
+			// Remap local subroutine
+			if newNum, ok := localMap[elem.subrNum]; ok {
+				biasedNum := newNum - newLocalBias
+				result = append(result, encodeCSInt(biasedNum)...)
+			} else {
+				// Subroutine not in map - shouldn't happen if closure was computed correctly
+				biasedNum := elem.subrNum - newLocalBias
+				result = append(result, encodeCSInt(biasedNum)...)
+			}
+			result = append(result, byte(csCallsubr))
+
+		case csElemCallGSubr:
+			// Remap global subroutine
+			if newNum, ok := globalMap[elem.subrNum]; ok {
+				biasedNum := newNum - newGlobalBias
+				result = append(result, encodeCSInt(biasedNum)...)
+			} else {
+				// Subroutine not in map - shouldn't happen if closure was computed correctly
+				biasedNum := elem.subrNum - newGlobalBias
+				result = append(result, encodeCSInt(biasedNum)...)
+			}
+			result = append(result, byte(csCallgsubr))
+		}
+	}
+
+	return result
+}
+
+// RemapCharString rewrites a CharString with remapped subroutine numbers.
+// This is the HarfBuzz-style implementation using two phases:
+// 1. Parse the CharString completely, storing pointers to original bytes
+// 2. Serialize: copy original bytes for everything except subroutine calls
+//
+// Key insight from HarfBuzz (hb-subset-cff-common.hh):
+// - Original bytes are preserved for operands (including fixed-point numbers)
+// - Only subroutine numbers need to be re-encoded with new biased values
+func RemapCharString(cs []byte, globalMap, localMap map[int]int,
+	oldGlobalBias, oldLocalBias, newGlobalBias, newLocalBias int) []byte {
+
+	// Phase 1: Parse completely
+	parsed := parseCharString(cs, oldGlobalBias, oldLocalBias)
+
+	// Check if any remapping is needed
+	hasSubrCalls := false
+	for _, elem := range parsed.elements {
+		if elem.elemType == csElemCallSubr || elem.elemType == csElemCallGSubr {
+			hasSubrCalls = true
+			break
+		}
+	}
+
+	// If no subroutine calls, return original unchanged
+	if !hasSubrCalls {
 		return cs
 	}
 
-	// Append remaining data
-	result = append(result, cs...)
-	return result
+	// Phase 2: Serialize with remapped values
+	return parsed.serialize(globalMap, localMap, newGlobalBias, newLocalBias)
 }
