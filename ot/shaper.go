@@ -1259,7 +1259,7 @@ func (s *Shaper) Shape(buf *Buffer, features []Feature) {
 	}
 
 	// Use default features if none specified
-	if features == nil {
+	if len(features) == 0 {
 		features = s.defaultFeatures
 	}
 
