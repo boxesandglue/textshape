@@ -31,16 +31,44 @@ func FindSyllablesUSE(syllables []USESyllableInfo) (hasBroken bool) {
     return false
   }
 
-  // Build category array, filtering out CGJ
-  // HarfBuzz: not_ccs_default_ignorable filters CGJ
+  // Build category array, filtering out CGJ and ZWNJ-before-mark.
+  // HarfBuzz: find_syllables_use() in hb-ot-shaper-use-machine.hh:906-924
+  // Filter 1: not_ccs_default_ignorable filters CGJ
+  // Filter 2: ZWNJ is filtered out if the next non-CGJ glyph is a unicode mark
   n := len(syllables)
   data := make([]byte, n)
   mapping := make([]int, 0, n) // Maps filtered index to original index
 
   for i := 0; i < n; i++ {
     cat := syllables[i].Category
+    // Filter 1: Skip CGJ (HarfBuzz: not_ccs_default_ignorable)
     if cat == USE_CGJ {
-      continue // Skip CGJ like HarfBuzz
+      continue
+    }
+    // Filter 1b: Skip ZWJ (U+200D) from Ragel input.
+    // HarfBuzz's compiled C Ragel machine treats ZWJ (category WJ=16) as transparent
+    // within clusters, but our Go Ragel compilation breaks clusters at ZWJ.
+    // U+2060 (Word Joiner) also has category WJ but must NOT be filtered - it should
+    // break clusters and trigger dotted circle insertion for broken syllables.
+    // Only filter the actual ZWJ character (U+200D).
+    if cat == USE_WJ && syllables[i].Codepoint == 0x200D {
+      continue
+    }
+    // Filter 2: Skip ZWNJ if next non-CGJ glyph is a unicode mark
+    // HarfBuzz: hb-ot-shaper-use-machine.hh:914-921
+    if cat == USE_ZWNJ {
+      filterZWNJ := false
+      for j := i + 1; j < n; j++ {
+        if syllables[j].Category == USE_CGJ {
+          continue // Skip CGJ when looking ahead
+        }
+        // Found next non-CGJ glyph: filter ZWNJ if it's a mark
+        filterZWNJ = IsUnicodeMark(syllables[j].Codepoint)
+        break
+      }
+      if filterZWNJ {
+        continue
+      }
     }
     data[len(mapping)] = byte(cat)
     mapping = append(mapping, i)

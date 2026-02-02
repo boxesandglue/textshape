@@ -62,8 +62,10 @@ type OTApplyContext struct {
 
 	// Syllable tracking
 	// HarfBuzz: bool per_syllable, unsigned new_syllables in hb_ot_apply_context_t:737-739
-	PerSyllable  bool // Apply lookup per-syllable (GSUB only)
-	NewSyllables int  // New syllable value for substituted glyphs (-1 = don't change)
+	PerSyllable  bool  // Apply lookup per-syllable (GSUB only)
+	NewSyllables int   // New syllable value for substituted glyphs (-1 = don't change)
+	MatchSyllable uint8 // Reference syllable for per-syllable matching (0 = no constraint)
+	// HarfBuzz equivalent: matcher_t::syllable set via reset(start_index_)
 
 	// Per-syllable range constraints
 	// When PerSyllable is true, these define the valid range for context matching
@@ -264,13 +266,32 @@ func (ctx *OTApplyContext) MayMatch(index int, contextMatch bool) MayMatchResult
 	// HarfBuzz: return mask ? (info.mask & mask) : true
 	// If mask is 0 (global feature), always matches.
 	// Otherwise, check if glyph has the required mask bits set.
-	if mask != 0 && (info.Mask & mask) == 0 {
+	if mask != 0 && (info.Mask&mask) == 0 {
 		return MatchNo
 	}
 
-	// Check per-syllable matching (GSUB only)
-	// HarfBuzz: if (per_syllable && syllable && syllable != info.syllable()) return MATCH_NO
-	// TODO: Implement syllable tracking when needed
+	return MatchMaybe
+}
+
+// MayMatchInfo is like MayMatch but takes a GlyphInfo pointer directly.
+// This is needed for backtrack matching which uses the output buffer, not input.
+func (ctx *OTApplyContext) MayMatchInfo(info *GlyphInfo, contextMatch bool) MayMatchResult {
+	if info == nil {
+		return MatchNo
+	}
+
+	var mask uint32 = 0xFFFFFFFF
+	if !contextMatch {
+		mask = ctx.FeatureMask
+	}
+
+	if mask != 0 && (info.Mask&mask) == 0 {
+		return MatchNo
+	}
+
+	if ctx.PerSyllable && ctx.MatchSyllable != 0 && info.Syllable != ctx.MatchSyllable {
+		return MatchNo
+	}
 
 	return MatchMaybe
 }
@@ -802,28 +823,177 @@ func (ctx *OTApplyContext) PrevGlyph(startIndex int) int {
 	return -1
 }
 
-// NextContextGlyph finds the next glyph for context matching (backtrack/lookahead).
-// HarfBuzz equivalent: skipping_iterator_t::next() with iter_context (context_match=true)
-// The mask is NOT checked here - only GDEF/LookupFlags filtering applies.
-// HarfBuzz: hb-ot-layout-gsubgpos.hh:781 - iter_context.init(this, true)
+// ContextMatchFunc is a callback that checks whether a glyph matches at a given position.
+// It is used by NextContextMatch/PrevContextMatch to implement the 3-way match logic
+// from HarfBuzz's skipping_iterator_t::match().
+// Returns true if the glyph matches the expected value.
+type ContextMatchFunc func(info *GlyphInfo) bool
+
+// NextContextGlyph finds the next non-skippable glyph for context matching.
+// This simplified version does NOT implement the 3-way match logic.
+// For proper HarfBuzz-compatible context matching, use NextContextMatch instead.
 func (ctx *OTApplyContext) NextContextGlyph(startIndex int) int {
 	for i := startIndex + 1; i < len(ctx.Buffer.Info); i++ {
-		if !ctx.ShouldSkipContextGlyph(i) {
+		skip := ctx.MaySkip(i, true) // contextMatch=true
+		if skip == SkipYes {
+			continue
+		}
+		if skip == SkipNo || skip == SkipMaybe {
 			return i
 		}
 	}
 	return -1
 }
 
-// PrevContextGlyph finds the previous glyph for context matching (backtrack/lookahead).
-// HarfBuzz equivalent: skipping_iterator_t::prev() with iter_context (context_match=true)
-// The mask is NOT checked here - only GDEF/LookupFlags filtering applies.
-// HarfBuzz: hb-ot-layout-gsubgpos.hh:781 - iter_context.init(this, true)
+// PrevContextGlyph finds the previous non-skippable glyph for context matching.
+// This simplified version does NOT implement the 3-way match logic.
+// For proper HarfBuzz-compatible context matching, use PrevContextMatch instead.
 func (ctx *OTApplyContext) PrevContextGlyph(startIndex int) int {
 	for i := startIndex - 1; i >= 0; i-- {
-		if !ctx.ShouldSkipContextGlyph(i) {
+		skip := ctx.MaySkip(i, true) // contextMatch=true
+		if skip == SkipYes {
+			continue
+		}
+		if skip == SkipNo || skip == SkipMaybe {
 			return i
 		}
+	}
+	return -1
+}
+
+// NextContextMatch finds the next context glyph that matches, implementing HarfBuzz's
+// 3-way match logic (hb-ot-layout-gsubgpos.hh:562-578):
+//
+//	SKIP_YES                        → skip (continue to next)
+//	SKIP_NO  + match                → MATCH (return position)
+//	SKIP_NO  + no match             → NOT_MATCH (return -1, rule fails)
+//	SKIP_MAYBE + match              → MATCH (return position)
+//	SKIP_MAYBE + no match           → SKIP (continue to next)
+//
+// This is critical for default ignorables like ZWJ: they have SKIP_MAYBE and if
+// they don't match the expected class/coverage, they should be skipped over, not
+// cause the entire rule to fail.
+func (ctx *OTApplyContext) NextContextMatch(startIndex int, matchFn ContextMatchFunc) int {
+	for i := startIndex + 1; i < len(ctx.Buffer.Info); i++ {
+		skip := ctx.MaySkip(i, true) // contextMatch=true
+		if skip == SkipYes {
+			continue
+		}
+
+		// Check may_match: mask (always passes for context: mask=0xFFFFFFFF) and per_syllable
+		// HarfBuzz: may_match() checks (info.mask & mask) and (per_syllable && syllable && syllable != info.syllable())
+		info := &ctx.Buffer.Info[i]
+		mayMatch := true
+		if ctx.PerSyllable && ctx.MatchSyllable != 0 && info.Syllable != ctx.MatchSyllable {
+			mayMatch = false
+		}
+
+		if !mayMatch {
+			// may_match returned MATCH_NO
+			if skip == SkipNo {
+				return -1 // NOT_MATCH
+			}
+			// skip == SkipMaybe → SKIP
+			continue
+		}
+
+		matched := matchFn(info)
+
+		if matched {
+			return i // MATCH
+		}
+
+		if skip == SkipNo {
+			return -1 // NOT_MATCH: non-skippable glyph doesn't match → rule fails
+		}
+
+		// skip == SkipMaybe && !matched → SKIP: continue searching
+	}
+	return -1
+}
+
+// PrevContextMatch finds the previous context glyph that matches, with 3-way match logic.
+// See NextContextMatch for detailed documentation.
+func (ctx *OTApplyContext) PrevContextMatch(startIndex int, matchFn ContextMatchFunc) int {
+	// HarfBuzz: backtrack matching uses out_info (output buffer) when have_output is true.
+	// This is critical because earlier substitutions change the backtrack context.
+	// HarfBuzz: prev() in skipping_iterator_t uses out_info for backtrack.
+	// HarfBuzz reference: hb-ot-layout-gsubgpos.hh:1569-1601 (match_backtrack)
+	if ctx.Buffer.HaveOutput() {
+		// Use output buffer for backtrack matching
+		backtrackLen := ctx.Buffer.BacktrackLen()
+		// startIndex is relative to input buffer; convert to backtrack position
+		// When have_output, positions before Idx map to outInfo positions
+		pos := backtrackLen
+		if startIndex < ctx.Buffer.Idx {
+			pos = startIndex
+		}
+		for i := pos - 1; i >= 0; i-- {
+			info := ctx.Buffer.BacktrackInfo(i)
+			if info == nil {
+				return -1
+			}
+			skip := ctx.MaySkipInfo(info, true) // contextMatch=true
+			if skip == SkipYes {
+				continue
+			}
+
+			mayMatch := true
+			if ctx.PerSyllable && ctx.MatchSyllable != 0 && info.Syllable != ctx.MatchSyllable {
+				mayMatch = false
+			}
+
+			if !mayMatch {
+				if skip == SkipNo {
+					return -1
+				}
+				continue
+			}
+
+			matched := matchFn(info)
+			if matched {
+				return i
+			}
+			if skip == SkipNo {
+				return -1
+			}
+		}
+		return -1
+	}
+
+	// No output buffer — use input buffer directly
+	for i := startIndex - 1; i >= 0; i-- {
+		skip := ctx.MaySkip(i, true) // contextMatch=true
+		if skip == SkipYes {
+			continue
+		}
+
+		// Check may_match: per_syllable check
+		// HarfBuzz: may_match() checks (per_syllable && syllable && syllable != info.syllable())
+		info := &ctx.Buffer.Info[i]
+		mayMatch := true
+		if ctx.PerSyllable && ctx.MatchSyllable != 0 && info.Syllable != ctx.MatchSyllable {
+			mayMatch = false
+		}
+
+		if !mayMatch {
+			if skip == SkipNo {
+				return -1 // NOT_MATCH
+			}
+			continue // SKIP
+		}
+
+		matched := matchFn(info)
+
+		if matched {
+			return i // MATCH
+		}
+
+		if skip == SkipNo {
+			return -1 // NOT_MATCH
+		}
+
+		// skip == SkipMaybe && !matched → SKIP
 	}
 	return -1
 }

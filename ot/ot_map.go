@@ -23,6 +23,13 @@ type LookupMap struct {
 	PerSyllable  bool   // Apply per syllable (for Indic/USE shapers)
 }
 
+// featureMaskEntry stores the allocated mask and shift for a compiled feature.
+// HarfBuzz equivalent: hb_ot_map_t::feature_map_t in hb-ot-map.hh:88-107
+type featureMaskEntry struct {
+	Shift uint   // Bit position where this feature's bits start
+	Mask  uint32 // Bit mask for this feature
+}
+
 // OTMap organizes lookups for GSUB and GPOS tables.
 // HarfBuzz equivalent: hb_ot_map_t in hb-ot-map.hh:42-166
 type OTMap struct {
@@ -38,6 +45,10 @@ type OTMap struct {
 	// Feature requests from shapers (used during plan compilation)
 	// HarfBuzz equivalent: hb_ot_map_builder_t::feature_infos
 	featureRequests []featureRequest
+
+	// Feature mask allocations for per-cluster range features.
+	// HarfBuzz equivalent: hb_ot_map_t::features (sorted vector of feature_map_t)
+	FeatureMasks map[Tag]featureMaskEntry
 }
 
 // NewOTMap creates a new empty OT map.
@@ -50,18 +61,22 @@ func NewOTMap() *OTMap {
 // AddGSUBLookup adds a GSUB lookup to the map.
 // HarfBuzz equivalent: adding to lookups[0] in hb_ot_map_builder_t::compile()
 func (m *OTMap) AddGSUBLookup(index uint16, mask uint32, featureTag Tag) {
-	// Determine if this is the 'rand' (random) feature
-	// HarfBuzz: sets lookup.random = true for 'rand' feature
+	m.addGSUBLookupWithFlags(index, mask, featureTag, false, true)
+}
+
+// addGSUBLookupWithFlags adds a GSUB lookup with explicit per-syllable and auto-ZWJ flags.
+// HarfBuzz equivalent: adding to lookups[0] with feature flags from hb_ot_map_feature_flags_t
+func (m *OTMap) addGSUBLookupWithFlags(index uint16, mask uint32, featureTag Tag, perSyllable bool, autoZWJ bool) {
 	isRandom := featureTag == MakeTag('r', 'a', 'n', 'd')
 
 	m.GSUBLookups = append(m.GSUBLookups, LookupMap{
-		Index:        index,
-		Mask:         mask,
-		FeatureTag:   featureTag,
-		AutoZWNJ:     true,
-		AutoZWJ:      true,
-		Random:       isRandom,       // True for 'rand' feature
-		PerSyllable:  false,          // Set by shapers if needed
+		Index:       index,
+		Mask:        mask,
+		FeatureTag:  featureTag,
+		AutoZWNJ:    true,
+		AutoZWJ:     autoZWJ,
+		Random:      isRandom,
+		PerSyllable: perSyllable,
 	})
 }
 
@@ -152,6 +167,9 @@ func (g *GSUB) applyLookupWithMap(lookupIndex int, buf *Buffer, font *Font, gdef
 				buf.Idx--
 				continue
 			}
+			if ctx.PerSyllable {
+				ctx.MatchSyllable = buf.Info[buf.Idx].Syllable
+			}
 			for _, subtable := range lookup.subtables {
 				if subtable.Apply(ctx) > 0 {
 					break
@@ -178,6 +196,12 @@ func (g *GSUB) applyLookupWithMap(lookupIndex int, buf *Buffer, font *Font, gdef
 		if ctx.ShouldSkipGlyph(buf.Idx) {
 			buf.nextGlyph()
 			continue
+		}
+
+		// Set per-syllable reference syllable from current glyph position.
+		// HarfBuzz: skipping_iterator_t::reset() sets matcher.syllable from info[start_index].syllable()
+		if ctx.PerSyllable {
+			ctx.MatchSyllable = buf.Info[buf.Idx].Syllable
 		}
 
 		applied := false
@@ -295,69 +319,180 @@ func (g *GPOS) applyLookupWithMap(lookupIndex int, buf *Buffer, font *Font, gdef
 	}
 }
 
+// featureInfo is used internally during CompileMap for HarfBuzz-style feature merging.
+// HarfBuzz equivalent: hb_ot_map_builder_t::feature_info_t in hb-ot-map.hh:258-273
+type featureInfo struct {
+	tag          Tag
+	seq          int    // sequence number for stable sorting
+	maxValue     uint32 // maximum feature value
+	defaultValue uint32 // default value for glyphs not in range (0 for non-global)
+	isGlobal     bool   // F_GLOBAL: applies to all glyphs
+	perSyllable  bool
+	manualZWJ    bool
+}
+
 // CompileMap creates an OTMap from feature list and requested features.
-// HarfBuzz equivalent: hb_ot_map_builder_t::compile() in hb-ot-map.cc:250-400
+// HarfBuzz equivalent: hb_ot_map_builder_t::compile() in hb-ot-map.cc:183-391
 //
-// This function:
-// 1. For each requested feature, finds the lookups in the font
-// 2. Uses script/language-specific feature selection (CRITICAL FIX!)
-// 3. Assigns masks based on feature type (global vs positional)
-// 4. Collects all lookups into the map for efficient application
-//
-// HarfBuzz reference:
-// - Line 242-248: hb_ot_layout_collect_features_map() gets script/language-specific features
-// - Line 279: Checks if feature exists in the script/language-specific map
+// This implements HarfBuzz's full feature merging algorithm:
+// 1. Collect all features into featureInfo list with sequence numbers
+// 2. Sort by tag (stable by sequence), merge duplicates per HarfBuzz rules
+// 3. Allocate mask bits for non-global features
+// 4. Find lookups in GSUB/GPOS using script/language-specific feature indices
+// 5. Assign masks to lookups
 func CompileMap(gsub *GSUB, gpos *GPOS, features []Feature, scriptTag Tag, languageTag Tag) *OTMap {
 	m := NewOTMap()
+	m.FeatureMasks = make(map[Tag]featureMaskEntry)
+
+	// Step 1: Build feature info list with sequence numbers
+	// HarfBuzz: feature_infos collected via add_feature() calls
+	var infos []featureInfo
+	for i, f := range features {
+		// A feature is global if either:
+		// - IsGlobal() returns true (Start==0, End==FeatureGlobalEnd), or
+		// - Start==0 and End==0 (struct literal without explicit End, treated as global)
+		// HarfBuzz: F_GLOBAL is passed explicitly; we infer it from Start/End.
+		isGlobal := f.IsGlobal() || (f.Start == 0 && f.End == 0)
+		infos = append(infos, featureInfo{
+			tag:          f.Tag,
+			seq:          i,
+			maxValue:     f.Value,
+			defaultValue: 0,
+			isGlobal:     isGlobal,
+			perSyllable:  f.PerSyllable,
+			manualZWJ:    f.ManualZWJ,
+		})
+		if isGlobal {
+			infos[len(infos)-1].defaultValue = f.Value
+		}
+	}
+
+	// Step 2: Sort by tag (stable by seq) and merge duplicates
+	// HarfBuzz: hb-ot-map.cc:213-240
+	sort.Slice(infos, func(i, j int) bool {
+		if infos[i].tag != infos[j].tag {
+			return infos[i].tag < infos[j].tag
+		}
+		return infos[i].seq < infos[j].seq
+	})
+
+	// Merge duplicates
+	if len(infos) > 1 {
+		j := 0
+		for i := 1; i < len(infos); i++ {
+			if infos[i].tag != infos[j].tag {
+				j++
+				infos[j] = infos[i]
+			} else {
+				// Same tag: merge per HarfBuzz rules (hb-ot-map.cc:224-238)
+				if infos[i].isGlobal {
+					// Later global overrides earlier: take its max_value and default_value
+					infos[j].isGlobal = true
+					infos[j].maxValue = infos[i].maxValue
+					infos[j].defaultValue = infos[i].defaultValue
+				} else {
+					// Later non-global: remove F_GLOBAL from earlier, take max of max_value
+					if infos[j].isGlobal {
+						infos[j].isGlobal = false
+					}
+					if infos[i].maxValue > infos[j].maxValue {
+						infos[j].maxValue = infos[i].maxValue
+					}
+					// Inherit default_value from j (earlier entry)
+				}
+			}
+		}
+		infos = infos[:j+1]
+	}
+
+	// Step 3: Allocate mask bits
+	// HarfBuzz: hb-ot-map.cc:250-324
+	globalBitShift := uint(31)
+	globalBitMask := uint32(1) << globalBitShift
+	m.GlobalMask = globalBitMask
+	nextBit := uint(1) // Bit 0 is reserved (HB_GLYPH_FLAG_DEFINED), start from 1
+
+	// Compute mask for each feature
+	type compiledFeature struct {
+		info featureInfo
+		mask uint32
+	}
+	var compiled []compiledFeature
+
+	for _, info := range infos {
+		if info.maxValue == 0 {
+			// Feature disabled (e.g., -calt), skip entirely
+			// HarfBuzz: hb-ot-map.cc:268 "if (!info->max_value...) continue"
+			continue
+		}
+
+		var mask uint32
+		if info.isGlobal && info.maxValue == 1 {
+			// Global feature with value 1: use the global bit
+			// HarfBuzz: hb-ot-map.cc:312-315
+			mask = globalBitMask
+		} else {
+			// Non-global or multi-valued: allocate dedicated bits
+			// HarfBuzz: hb-ot-map.cc:316-321
+			bitsNeeded := bitStorage(info.maxValue)
+			if bitsNeeded > 8 {
+				bitsNeeded = 8 // HB_OT_MAP_MAX_BITS
+			}
+			if nextBit+bitsNeeded >= globalBitShift {
+				continue // Not enough bits
+			}
+			mask = (1<<(nextBit+bitsNeeded) - 1) &^ (1<<nextBit - 1)
+			m.FeatureMasks[info.tag] = featureMaskEntry{Shift: nextBit, Mask: mask}
+			// Set default_value in global_mask
+			m.GlobalMask |= (info.defaultValue << nextBit) & mask
+			nextBit += bitsNeeded
+		}
+
+		compiled = append(compiled, compiledFeature{info: info, mask: mask})
+	}
+
+	// Step 4: Collect lookups for compiled features
+	// HarfBuzz: hb-ot-map.cc:332-389
 	featureMap := NewFeatureMap()
+
+	// Helper to get feature indices for a table
+	getFeatureIndices := func(scriptList *ScriptList, scriptTag, languageTag Tag) []uint16 {
+		if scriptList == nil {
+			return nil
+		}
+		langSys := scriptList.GetLangSys(scriptTag, languageTag)
+		if langSys == nil {
+			langSys = scriptList.GetDefaultScript()
+		}
+		if langSys != nil {
+			return langSys.FeatureIndices
+		}
+		return nil
+	}
 
 	// Process GSUB features
 	if gsub != nil {
 		featureList, err := gsub.ParseFeatureList()
 		if err == nil {
-			// Get script/language-specific feature indices
-			// HarfBuzz: hb_ot_layout_collect_features_map() in hb-ot-map.cc:244-248
-			//   const OT::LangSys &l = g.get_script (script_index).get_lang_sys (language_index);
-			var featureIndices []uint16
-			scriptList, err := gsub.ParseScriptList()
-			if err == nil && scriptList != nil {
-				// Try to get LangSys for the requested script/language
-				langSys := scriptList.GetLangSys(scriptTag, languageTag)
-				// If script not found, fall back to DFLT script
-				// HarfBuzz: hb_ot_layout_table_select_script() falls back to DFLT
-				if langSys == nil {
-					langSys = scriptList.GetDefaultScript()
-				}
-				if langSys != nil {
-					featureIndices = langSys.FeatureIndices
-				}
-			}
+			scriptList, _ := gsub.ParseScriptList()
+			featureIndices := getFeatureIndices(scriptList, scriptTag, languageTag)
 
-			for _, f := range features {
-				if f.Value == 0 {
-					continue
+			for _, cf := range compiled {
+				// Use the compiled mask, but check if FeatureMap has a positional mask override
+				mask := cf.mask
+				if positionalMask := featureMap.GetMask(cf.info.tag); positionalMask != MaskGlobal {
+					mask = positionalMask
 				}
 
 				var lookups []uint16
 				if featureIndices != nil {
-					// Use script/language-specific search
-					// HarfBuzz: feature_indices[table_index].has() in hb-ot-map.cc:279
-					lookups = featureList.FindFeatureByIndices(f.Tag, featureIndices)
+					lookups = featureList.FindFeatureByIndices(cf.info.tag, featureIndices)
 				} else {
-					// Fallback to global search only if no script/language found at all
-					// This is a last resort - should rarely happen
-					lookups = featureList.FindFeature(f.Tag)
+					lookups = featureList.FindFeature(cf.info.tag)
 				}
-
-				if lookups == nil {
-					continue
-				}
-
-				// Get mask for this feature
-				mask := featureMap.GetMask(f.Tag)
 
 				for _, lookupIdx := range lookups {
-					m.AddGSUBLookup(lookupIdx, mask, f.Tag)
+					m.addGSUBLookupWithFlags(lookupIdx, mask, cf.info.tag, cf.info.perSyllable, !cf.info.manualZWJ)
 				}
 			}
 		}
@@ -367,49 +502,21 @@ func CompileMap(gsub *GSUB, gpos *GPOS, features []Feature, scriptTag Tag, langu
 	if gpos != nil {
 		featureList, err := gpos.ParseFeatureList()
 		if err == nil {
-			// Get script/language-specific feature indices
-			// HarfBuzz: hb_ot_layout_collect_features_map() in hb-ot-map.cc:244-248
-			//   const OT::LangSys &l = g.get_script (script_index).get_lang_sys (language_index);
-			var featureIndices []uint16
-			scriptList, err := gpos.ParseScriptList()
-			if err == nil && scriptList != nil {
-				// Try to get LangSys for the requested script/language
-				langSys := scriptList.GetLangSys(scriptTag, languageTag)
-				// If script not found, fall back to DFLT script
-				// HarfBuzz: hb_ot_layout_table_select_script() falls back to DFLT
-				if langSys == nil {
-					langSys = scriptList.GetDefaultScript()
-				}
-				if langSys != nil {
-					featureIndices = langSys.FeatureIndices
-				}
-			}
+			scriptList, _ := gpos.ParseScriptList()
+			featureIndices := getFeatureIndices(scriptList, scriptTag, languageTag)
 
-			for _, f := range features {
-				if f.Value == 0 {
-					continue
-				}
+			for _, cf := range compiled {
+				mask := cf.mask
 
 				var lookups []uint16
 				if featureIndices != nil {
-					// Use script/language-specific search
-					// HarfBuzz: feature_indices[table_index].has() in hb-ot-map.cc:279
-					lookups = featureList.FindFeatureByIndices(f.Tag, featureIndices)
+					lookups = featureList.FindFeatureByIndices(cf.info.tag, featureIndices)
 				} else {
-					// Fallback to global search only if no script/language found at all
-					// This is a last resort - should rarely happen
-					lookups = featureList.FindFeature(f.Tag)
+					lookups = featureList.FindFeature(cf.info.tag)
 				}
-
-				if lookups == nil {
-					continue
-				}
-
-				// Get mask for this feature
-				mask := featureMap.GetMask(f.Tag)
 
 				for _, lookupIdx := range lookups {
-					m.AddGPOSLookup(lookupIdx, mask, f.Tag)
+					m.AddGPOSLookup(lookupIdx, mask, cf.info.tag)
 				}
 			}
 		}
@@ -417,12 +524,24 @@ func CompileMap(gsub *GSUB, gpos *GPOS, features []Feature, scriptTag Tag, langu
 
 	// Sort lookups and merge duplicates
 	// HarfBuzz equivalent: hb-ot-map.cc:362-377
-	// When multiple features reference the same lookup, we must deduplicate
-	// to avoid applying the lookup multiple times.
 	m.GSUBLookups = deduplicateLookups(m.GSUBLookups)
 	m.GPOSLookups = deduplicateLookups(m.GPOSLookups)
 
 	return m
+}
+
+// bitStorage returns the number of bits needed to store a value.
+// HarfBuzz equivalent: hb_bit_storage() in hb-algs.hh
+func bitStorage(v uint32) uint {
+	if v == 0 {
+		return 0
+	}
+	n := uint(0)
+	for v > 0 {
+		n++
+		v >>= 1
+	}
+	return n
 }
 
 // deduplicateLookups sorts lookups by index and merges duplicates.

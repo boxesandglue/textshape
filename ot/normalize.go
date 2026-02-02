@@ -360,6 +360,11 @@ func (s *Shaper) recomposeBuffer(info []GlyphInfo) []GlyphInfo {
 		}
 
 		if canCompose {
+			// Check compose filter callback (e.g., USE compose_use prevents mark recomposition)
+			if s.composeFilter != nil && !s.composeFilter(result[starterIdx].Codepoint, info[i].Codepoint) {
+				result = append(result, info[i])
+				continue
+			}
 			// Try to compose starter + current mark
 			composed, ok := unicodeCompose(result[starterIdx].Codepoint, info[i].Codepoint)
 			if ok && !isCompositionExclusion(composed) {

@@ -8,32 +8,36 @@ package ot
 // It handles scripts like Khmer, Tibetan, Javanese, Balinese, etc.
 //
 // Reference: https://docs.microsoft.com/en-us/typography/script-development/use
+//
+// Like HarfBuzz, USE category is stored directly on GlyphInfo.USECategory
+// so it survives GSUB operations automatically.
 
 // useSyllableAccessor implements SyllableAccessor for USE shaper.
 type useSyllableAccessor struct {
-	syllables []USESyllableInfo
+	buf *Buffer
 }
 
 func (a *useSyllableAccessor) GetSyllable(i int) uint8 {
-	return a.syllables[i].Syllable
+	return a.buf.Info[i].Syllable
 }
 
 func (a *useSyllableAccessor) GetCategory(i int) uint8 {
-	return uint8(a.syllables[i].Category)
+	return a.buf.Info[i].USECategory
 }
 
 func (a *useSyllableAccessor) SetCategory(i int, cat uint8) {
-	a.syllables[i].Category = USECategory(cat)
+	a.buf.Info[i].USECategory = cat
 }
 
 func (a *useSyllableAccessor) Len() int {
-	return len(a.syllables)
+	return len(a.buf.Info)
 }
 
 // USE Features - applied in order
 // HarfBuzz equivalent: use_basic_features[], use_topographical_features[], use_other_features[]
 var (
-	// Basic features - applied before reordering, per-syllable
+	// Basic features - applied before reordering
+	// HarfBuzz: F_MANUAL_ZWJ | F_PER_SYLLABLE
 	useBasicFeatures = []Tag{
 		MakeTag('r', 'k', 'r', 'f'), // Rakar Forms
 		MakeTag('a', 'b', 'v', 'f'), // Above-base Forms
@@ -53,30 +57,23 @@ var (
 	}
 
 	// Other features - applied after reordering
+	// HarfBuzz: F_MANUAL_ZWJ (NOT per-syllable)
 	useOtherFeatures = []Tag{
 		MakeTag('a', 'b', 'v', 's'), // Above-base Substitutions
 		MakeTag('b', 'l', 'w', 's'), // Below-base Substitutions
 		MakeTag('h', 'a', 'l', 'n'), // Halant Forms
 		MakeTag('p', 'r', 'e', 's'), // Pre-base Substitutions
 		MakeTag('p', 's', 't', 's'), // Post-base Substitutions
+		MakeTag('r', 'l', 'i', 'g'), // Required Ligatures (common feature, HarfBuzz common_features[])
 	}
 
 	// Horizontal features - applied after other features (like all scripts)
 	// HarfBuzz equivalent: horizontal_features[] in hb-ot-shape.cc:309-319
-	// These are applied for ALL scripts with horizontal direction.
 	useHorizontalFeatures = []Tag{
 		MakeTag('c', 'a', 'l', 't'), // Contextual Alternates
 		MakeTag('c', 'l', 'i', 'g'), // Contextual Ligatures
 		MakeTag('l', 'i', 'g', 'a'), // Standard Ligatures
 		MakeTag('r', 'c', 'l', 't'), // Required Contextual Alternates
-	}
-
-	// Pre-processing features (before syllable detection)
-	usePreProcessingFeatures = []Tag{
-		MakeTag('l', 'o', 'c', 'l'), // Localized Forms
-		MakeTag('c', 'c', 'm', 'p'), // Glyph Composition/Decomposition
-		MakeTag('n', 'u', 'k', 't'), // Nukta Forms
-		MakeTag('a', 'k', 'h', 'n'), // Akhand
 	}
 
 	// Repha feature
@@ -96,41 +93,29 @@ const (
 	JoiningFormNone
 )
 
-// hasUSEScript checks if the buffer contains USE-handled script characters.
-func (s *Shaper) hasUSEScript(buf *Buffer) bool {
-	for _, info := range buf.Info {
-		if isUSEScript(info.Codepoint) {
-			return true
-		}
-	}
-	return false
-}
-
 // shapeUSE applies USE shaping to the buffer.
 // HarfBuzz equivalent: _hb_ot_shaper_use in hb-ot-shaper-use.cc
 func (s *Shaper) shapeUSE(buf *Buffer, features []Feature) {
 	// Set direction based on script if not already set
 	if buf.Direction == 0 {
-		// Most USE scripts are LTR
 		buf.Direction = DirectionLTR
 	}
 
 	// Step 0: Preprocess vowel constraints (insert dotted circles)
-	// HarfBuzz equivalent: _hb_preprocess_text_vowel_constraints() in hb-ot-shaper-vowel-constraints.cc
-	// This is called BEFORE normalization in HarfBuzz's preprocess_text hook
+	// HarfBuzz: _hb_preprocess_text_vowel_constraints()
 	PreprocessVowelConstraints(buf)
 
 	// Step 1: Normalize Unicode
-	// HarfBuzz uses COMPOSED_DIACRITICS_NO_SHORT_CIRCUIT for USE
+	// HarfBuzz: compose_use() prevents recomposition when 'a' is a mark
+	s.composeFilter = composeUSE
 	s.normalizeBuffer(buf, NormalizationModeComposedDiacritics)
+	s.composeFilter = nil
 
-	// Step 1.5: Initialize masks after normalization
-	// HarfBuzz equivalent: hb_ot_shape_initialize_masks()
+	// Step 1.5: Initialize masks
 	buf.ResetMasks(MaskGlobal)
 
-	// Step 1.6: Setup Arabic-like joining masks for scripts that use it
-	// HarfBuzz equivalent: setup_masks_use() calling setup_masks_arabic_plan()
-	// This is done BEFORE allocating use_category (setupUSECategories)
+	// Step 1.6: Setup Arabic-like joining masks
+	// HarfBuzz: setup_masks_use() calling setup_masks_arabic_plan()
 	useArabicJoining := hasArabicJoining(buf.Script)
 	if useArabicJoining {
 		s.setupMasksArabicPlan(buf)
@@ -139,141 +124,153 @@ func (s *Shaper) shapeUSE(buf *Buffer, features []Feature) {
 	// Step 2: Map codepoints to glyphs
 	s.mapCodepointsToGlyphs(buf)
 
-	// Step 3: Setup USE categories for each glyph
-	syllables := s.setupUSECategories(buf)
+	// Step 2b: Set glyph classes from GDEF (or synthesize from Unicode)
+	// HarfBuzz: this is done in the main shaping pipeline (hb-ot-shape.cc)
+	// and is needed for zeroMarkWidthsByGDEF to correctly identify marks.
+	s.setGlyphClasses(buf)
 
-	// Step 4: Find syllables
-	hasBroken := FindSyllablesUSE(syllables)
+	// Step 3: Setup USE categories on GlyphInfo
+	// HarfBuzz: setup_masks_use() -> info.use_category() = data[cp]
+	s.setupUSECategories(buf)
 
-	// Step 5: Insert dotted circles for broken clusters
-	// HarfBuzz equivalent: hb_syllabic_insert_dotted_circles() in reorder_use()
-	if hasBroken {
-		accessor := &useSyllableAccessor{syllables: syllables}
-		// USE(B) = Base category, USE(R) = Repha category
-		// HarfBuzz: hb-ot-shaper-use.cc:455-458
-		s.insertSyllabicDottedCircles(buf, accessor,
-			uint8(USE_BrokenCluster), // broken syllable type
-			uint8(USE_B),             // dotted circle category
-			int(USE_R))               // repha category
-		// Update syllables slice after insertion (buffer length may have changed)
-		syllables = s.setupUSECategories(buf)
-		FindSyllablesUSE(syllables)
-	}
+	// Step 4: Find syllables (uses Ragel state machine)
+	// HarfBuzz equivalent: setup_syllables_use() GSUB pause
+	// In HarfBuzz, setup_syllables_use() does: find_syllables + setup_rphf_mask + setup_topographical_masks
+	hasBroken := s.findUSESyllables(buf)
 
-	// Step 5.5: Mark syllables as unsafe to break
-	// HarfBuzz equivalent: buffer->unsafe_to_break(start, end) in setup_syllables_use()
-	// Note: unsafe_to_break is a flag for line-breaking, not cluster merging
-	// We don't implement line-breaking, so this is a no-op for now
+	// Step 4b: Setup rphf mask (before pre-processing, like HarfBuzz)
+	// HarfBuzz: setup_rphf_mask() called inside setup_syllables_use()
+	s.setupRphfMask(buf)
 
-	// Step 5: Apply pre-processing features
-	s.applyUSEPreProcessingFeatures(buf, syllables)
-
-	// Step 6: Setup masks for rphf (repha feature)
-	s.setupRphfMask(buf, syllables)
-
-	// Step 7: Apply rphf and record results
-	s.applyRphfUSE(buf, syllables)
-
-	// Step 8: Apply pref and record results
-	s.applyPrefUSE(buf, syllables)
-
-	// Step 9: Apply basic features
-	s.applyUSEBasicFeatures(buf, syllables)
-
-	// Step 10: Reorder syllables
-	s.reorderUSE(buf, syllables)
-
-	// Step 11: Setup topographical masks
-	// For scripts with Arabic-like joining, this is skipped (masks already set)
-	// HarfBuzz equivalent: setup_topographical_masks() checking use_plan->arabic_plan
+	// Step 4c: Setup topographical masks (before pre-processing, like HarfBuzz)
+	// HarfBuzz: setup_topographical_masks() called inside setup_syllables_use()
 	if !useArabicJoining {
-		s.setupTopographicalMasks(buf, syllables)
+		s.setupTopographicalMasks(buf)
 	}
 
-	// Step 12: Apply other features + horizontal features (calt, clig, liga, rclt)
-	// HarfBuzz: All features are compiled together in map.compile() and applied together
-	// See hb-ot-shape.cc:375-376 - horizontal_features[] added via map->add_feature()
-	s.applyUSEOtherFeatures(buf, syllables)
+	// Step 5: Apply pre-processing features (locl, ccmp, nukt, akhn)
+	// HarfBuzz: F_PER_SYLLABLE
+	s.applyUSEPreProcessingFeatures(buf)
 
-	// Step 13: Set base advances
+	// Step 8: Apply rphf and record results
+	// HarfBuzz: _hb_clear_substitution_flags -> rphf -> record_rphf_use
+	s.applyRphfUSE(buf)
+
+	// Step 9: Apply pref and record results
+	// HarfBuzz: _hb_clear_substitution_flags -> pref -> record_pref_use
+	s.applyPrefUSE(buf)
+
+	// Step 10: Apply basic features (rkrf, abvf, blwf, half, pstf, vatu, cjct)
+	// HarfBuzz: F_MANUAL_ZWJ | F_PER_SYLLABLE
+	s.applyUSEBasicFeatures(buf)
+
+	// Step 11: Reorder syllables (includes dotted circle insertion)
+	// HarfBuzz equivalent: reorder_use() GSUB pause callback
+	// In HarfBuzz, reorder_use() first inserts dotted circles, then reorders.
+	s.reorderUSE(buf, hasBroken)
+
+	// Step 12: Apply other features + horizontal features
+	// HarfBuzz: topographical features + use_other_features
+	s.applyUSEOtherFeatures(buf)
+
+	// Step 14: Set base advances
 	s.setBaseAdvances(buf)
 
-	// Step 14: Zero mark widths (EARLY mode - before GPOS!)
-	// HarfBuzz: _hb_ot_shaper_use has zero_width_marks = HB_OT_SHAPE_ZERO_WIDTH_MARKS_BY_GDEF_EARLY
-	s.zeroMarkWidthsByGDEF(buf)
+	// Step 15: Zero mark widths (EARLY mode - before GPOS!)
+	// HarfBuzz: zero_width_marks = HB_OT_SHAPE_ZERO_WIDTH_MARKS_BY_GDEF_EARLY
+	s.zeroMarkWidthsByGDEFEarly(buf)
 
-	// Step 15: Apply GPOS features
+	// Step 16: Apply GPOS features
 	_, gposFeatures := s.categorizeFeatures(features)
 	gposFeatures = append(gposFeatures, s.getUSEGPOSFeatures()...)
 	s.applyGPOS(buf, gposFeatures)
 
-	// Step 16: Reverse buffer if RTL
+	// Step 16b: Zero width of default ignorables
+	// HarfBuzz: hb_ot_zero_width_default_ignorables() in hb-ot-shape.cc:1085
+	zeroWidthDefaultIgnorables(buf)
+
+	// Step 16c: Propagate attachment offsets (cursive → marks)
+	// HarfBuzz: GPOS::position_finish_offsets() in hb-ot-shape.cc:1086
+	PropagateAttachmentOffsets(buf.Pos, buf.Direction)
+
+	// Step 17: Reverse buffer if RTL
 	if buf.Direction == DirectionRTL {
 		s.reverseBuffer(buf)
 	}
 }
 
-// setupUSECategories assigns USE categories to each glyph.
-// HarfBuzz equivalent: setup_masks_use() in hb-ot-shaper-use.cc:188-210
-func (s *Shaper) setupUSECategories(buf *Buffer) []USESyllableInfo {
-	syllables := make([]USESyllableInfo, len(buf.Info))
-
+// setupUSECategories assigns USE categories to each glyph's USECategory field.
+// HarfBuzz equivalent: setup_masks_use() -> info.use_category() = data[cp]
+func (s *Shaper) setupUSECategories(buf *Buffer) {
 	for i := range buf.Info {
-		syllables[i].Category = getUSECategory(buf.Info[i].Codepoint)
+		buf.Info[i].USECategory = uint8(getUSECategory(buf.Info[i].Codepoint))
+	}
+}
+
+// findUSESyllables runs the Ragel state machine and stores syllable data on GlyphInfo.
+// Returns true if any broken clusters were found.
+func (s *Shaper) findUSESyllables(buf *Buffer) bool {
+	// Build temporary USESyllableInfo slice for the state machine
+	syllables := make([]USESyllableInfo, len(buf.Info))
+	for i := range buf.Info {
+		syllables[i].Category = USECategory(buf.Info[i].USECategory)
+		syllables[i].Codepoint = buf.Info[i].Codepoint
 	}
 
-	return syllables
+	hasBroken := FindSyllablesUSE(syllables)
+
+	// Copy results back to buffer
+	for i := range syllables {
+		buf.Info[i].Syllable = syllables[i].Syllable
+	}
+
+	return hasBroken
 }
 
 // applyUSEPreProcessingFeatures applies pre-processing features.
 // HarfBuzz equivalent: collect_features_use() lines 117-121
-// Uses OT Map to collect all lookups and apply them sorted by index (like HarfBuzz).
-func (s *Shaper) applyUSEPreProcessingFeatures(buf *Buffer, syllables []USESyllableInfo) {
+func (s *Shaper) applyUSEPreProcessingFeatures(buf *Buffer) {
 	if s.gsub == nil {
 		return
 	}
 
-	// Convert tags to Features
-	features := make([]Feature, len(usePreProcessingFeatures))
-	for i, tag := range usePreProcessingFeatures {
-		features[i] = Feature{Tag: tag, Value: 1}
+	// HarfBuzz: locl, ccmp: F_PER_SYLLABLE; akhn: F_MANUAL_ZWJ | F_PER_SYLLABLE
+	features := []Feature{
+		{Tag: MakeTag('l', 'o', 'c', 'l'), Value: 1, PerSyllable: true},
+		{Tag: MakeTag('c', 'c', 'm', 'p'), Value: 1, PerSyllable: true},
+		{Tag: MakeTag('n', 'u', 'k', 't'), Value: 1, PerSyllable: true},
+		{Tag: MakeTag('a', 'k', 'h', 'n'), Value: 1, PerSyllable: true, ManualZWJ: true},
 	}
 
-	// Use CompileMap to collect all lookups and sort them by index
-	// HarfBuzz: All features are enabled via map->enable_feature() and applied together
 	otMap := CompileMap(s.gsub, nil, features, buf.Script, buf.Language)
 	otMap.ApplyGSUB(s.gsub, buf, s.font, s.gdef)
 }
 
 // setupRphfMask sets up masks for rphf (repha) feature.
 // HarfBuzz equivalent: setup_rphf_mask() in hb-ot-shaper-use.cc:213-229
-func (s *Shaper) setupRphfMask(buf *Buffer, syllables []USESyllableInfo) {
-	// Mark first 1-3 characters of each syllable for rphf
-	// If first char is R (repha), mark just it
-	// Otherwise mark first 3 chars (potential Ra + H sequence)
+func (s *Shaper) setupRphfMask(buf *Buffer) {
 	n := len(buf.Info)
 	i := 0
 
 	for i < n {
-		syllable := syllables[i].Syllable
+		syllable := buf.Info[i].Syllable
 		start := i
 
-		// Find syllable end
 		end := i + 1
-		for end < n && syllables[end].Syllable == syllable {
+		for end < n && buf.Info[end].Syllable == syllable {
 			end++
 		}
 
-		// Mark for rphf
+		// Mark first 1 or 3 chars for rphf
 		var limit int
-		if syllables[start].Category == USE_R {
+		if USECategory(buf.Info[start].USECategory) == USE_R {
 			limit = 1
 		} else {
 			limit = min(3, end-start)
 		}
 
 		for j := start; j < start+limit; j++ {
-			buf.Info[j].Mask |= 1 << 0 // rphf mask bit
+			buf.Info[j].Mask |= MaskRphf
 		}
 
 		i = end
@@ -282,41 +279,39 @@ func (s *Shaper) setupRphfMask(buf *Buffer, syllables []USESyllableInfo) {
 
 // applyRphfUSE applies rphf and records substituted repha.
 // HarfBuzz equivalent: record_rphf_use() in hb-ot-shaper-use.cc:310-332
-// Uses buffer-based feature application (not codepoint-based) to support multi-step ligatures.
-func (s *Shaper) applyRphfUSE(buf *Buffer, syllables []USESyllableInfo) {
+func (s *Shaper) applyRphfUSE(buf *Buffer) {
 	if s.gsub == nil {
 		return
 	}
 
-	// Store original glyphs to detect substitution
-	originalGlyphs := make([]GlyphID, len(buf.Info))
-	for i := range buf.Info {
-		originalGlyphs[i] = buf.Info[i].GlyphID
+	// HarfBuzz: _hb_clear_substitution_flags() before rphf
+	clearSubstitutionFlags(buf)
+
+	// HarfBuzz: rphf has F_MANUAL_ZWJ | F_PER_SYLLABLE, applied with rphf_mask
+	features := []Feature{
+		{Tag: useRphfFeature, Value: 1, PerSyllable: true, ManualZWJ: true},
 	}
+	otMap := CompileMap(s.gsub, nil, features, buf.Script, buf.Language)
+	for i := range otMap.GSUBLookups {
+		otMap.GSUBLookups[i].Mask = MaskRphf
+	}
+	otMap.ApplyGSUB(s.gsub, buf, s.font, s.gdef)
 
-	// Apply rphf using buffer-based approach
-	// HarfBuzz: rphf is applied via OT map pipeline with mask
-	variationsIndex := s.gsub.FindVariationsIndex(s.normalizedCoordsI)
-	s.gsub.ApplyFeatureToBufferWithMaskAndVariations(useRphfFeature, buf, s.gdef, MaskGlobal, s.font, variationsIndex)
-
-	// Mark substituted rephas as USE_R
+	// record_rphf_use: Mark substituted rephas as USE_R
 	n := len(buf.Info)
 	i := 0
 	for i < n {
-		syllable := syllables[i].Syllable
+		syllable := buf.Info[i].Syllable
 		start := i
 
-		// Find syllable end
 		end := i + 1
-		for end < n && syllables[end].Syllable == syllable {
+		for end < n && buf.Info[end].Syllable == syllable {
 			end++
 		}
 
-		// Check for substituted rphf
-		for j := start; j < end && (buf.Info[j].Mask&(1<<0)) != 0; j++ {
-			if buf.Info[j].GlyphID != originalGlyphs[j] {
-				// Substituted - mark as repha
-				syllables[j].Category = USE_R
+		for j := start; j < end && (buf.Info[j].Mask&MaskRphf) != 0; j++ {
+			if (buf.Info[j].GlyphProps & GlyphPropsSubstituted) != 0 {
+				buf.Info[j].USECategory = uint8(USE_R)
 				break
 			}
 		}
@@ -327,40 +322,36 @@ func (s *Shaper) applyRphfUSE(buf *Buffer, syllables []USESyllableInfo) {
 
 // applyPrefUSE applies pref and records substituted pre-base forms.
 // HarfBuzz equivalent: record_pref_use() in hb-ot-shaper-use.cc:334-352
-// Uses buffer-based feature application (not codepoint-based) to support multi-step ligatures.
-func (s *Shaper) applyPrefUSE(buf *Buffer, syllables []USESyllableInfo) {
+func (s *Shaper) applyPrefUSE(buf *Buffer) {
 	if s.gsub == nil {
 		return
 	}
 
-	// Store original glyphs
-	originalGlyphs := make([]GlyphID, len(buf.Info))
-	for i := range buf.Info {
-		originalGlyphs[i] = buf.Info[i].GlyphID
+	// HarfBuzz: _hb_clear_substitution_flags() before pref
+	clearSubstitutionFlags(buf)
+
+	// HarfBuzz: pref has F_MANUAL_ZWJ | F_PER_SYLLABLE
+	features := []Feature{
+		{Tag: usePrefFeature, Value: 1, PerSyllable: true, ManualZWJ: true},
 	}
+	otMap := CompileMap(s.gsub, nil, features, buf.Script, buf.Language)
+	otMap.ApplyGSUB(s.gsub, buf, s.font, s.gdef)
 
-	// Apply pref using buffer-based approach
-	// HarfBuzz: pref is applied via OT map pipeline with mask
-	variationsIndex := s.gsub.FindVariationsIndex(s.normalizedCoordsI)
-	s.gsub.ApplyFeatureToBufferWithMaskAndVariations(usePrefFeature, buf, s.gdef, MaskGlobal, s.font, variationsIndex)
-
-	// Mark substituted pref as VPre
+	// record_pref_use: Mark substituted pref as VPre
 	n := len(buf.Info)
 	i := 0
 	for i < n {
-		syllable := syllables[i].Syllable
+		syllable := buf.Info[i].Syllable
 		start := i
 
-		// Find syllable end
 		end := i + 1
-		for end < n && syllables[end].Syllable == syllable {
+		for end < n && buf.Info[end].Syllable == syllable {
 			end++
 		}
 
-		// Check for substituted pref
 		for j := start; j < end; j++ {
-			if buf.Info[j].GlyphID != originalGlyphs[j] {
-				syllables[j].Category = USE_VPre
+			if (buf.Info[j].GlyphProps & GlyphPropsSubstituted) != 0 {
+				buf.Info[j].USECategory = uint8(USE_VPre)
 				break
 			}
 		}
@@ -371,42 +362,58 @@ func (s *Shaper) applyPrefUSE(buf *Buffer, syllables []USESyllableInfo) {
 
 // applyUSEBasicFeatures applies basic shaping features.
 // HarfBuzz equivalent: collect_features_use() lines 131-133
-// Uses OT Map to collect all lookups and apply them sorted by index (like HarfBuzz).
-func (s *Shaper) applyUSEBasicFeatures(buf *Buffer, syllables []USESyllableInfo) {
+func (s *Shaper) applyUSEBasicFeatures(buf *Buffer) {
 	if s.gsub == nil {
 		return
 	}
 
-	// Convert tags to Features
+	// HarfBuzz: all basic features have F_MANUAL_ZWJ | F_PER_SYLLABLE
 	features := make([]Feature, len(useBasicFeatures))
 	for i, tag := range useBasicFeatures {
-		features[i] = Feature{Tag: tag, Value: 1}
+		features[i] = Feature{Tag: tag, Value: 1, PerSyllable: true, ManualZWJ: true}
 	}
 
-	// Use CompileMap to collect all lookups and sort them by index
-	// HarfBuzz: All features are enabled via map->enable_feature() and applied together
 	otMap := CompileMap(s.gsub, nil, features, buf.Script, buf.Language)
 	otMap.ApplyGSUB(s.gsub, buf, s.font, s.gdef)
 }
 
 // reorderUSE reorders glyphs within syllables.
 // HarfBuzz equivalent: reorder_use() in hb-ot-shaper-use.cc:447-470
-func (s *Shaper) reorderUSE(buf *Buffer, syllables []USESyllableInfo) {
+// In HarfBuzz, this function first inserts dotted circles for broken clusters,
+// then reorders each syllable.
+func (s *Shaper) reorderUSE(buf *Buffer, hasBroken bool) {
+	// HarfBuzz: hb_syllabic_insert_dotted_circles() called inside reorder_use()
+	// This happens AFTER basic features, not before pre-processing.
+	if hasBroken {
+		accessor := &useSyllableAccessor{buf: buf}
+		if s.insertSyllabicDottedCircles(buf, accessor,
+			uint8(USE_BrokenCluster),
+			uint8(USE_B),
+			int(USE_R)) {
+			// Set USECategory on inserted dotted circles.
+			// The generic function copies Syllable but doesn't know about USECategory.
+			// We set it here: dotted circle (U+25CC) gets USE_B category.
+			for i := range buf.Info {
+				if buf.Info[i].Codepoint == 0x25CC && buf.Info[i].USECategory == 0 {
+					buf.Info[i].USECategory = uint8(USE_B)
+				}
+			}
+		}
+	}
+
 	n := len(buf.Info)
 	i := 0
 
 	for i < n {
-		syllable := syllables[i].Syllable
+		syllable := buf.Info[i].Syllable
 		start := i
 
-		// Find syllable end
 		end := i + 1
-		for end < n && syllables[end].Syllable == syllable {
+		for end < n && buf.Info[end].Syllable == syllable {
 			end++
 		}
 
-		// Reorder this syllable
-		s.reorderSyllableUSE(buf, syllables, start, end)
+		s.reorderSyllableUSE(buf, start, end)
 
 		i = end
 	}
@@ -414,10 +421,9 @@ func (s *Shaper) reorderUSE(buf *Buffer, syllables []USESyllableInfo) {
 
 // reorderSyllableUSE reorders a single syllable.
 // HarfBuzz equivalent: reorder_syllable_use() in hb-ot-shaper-use.cc:361-445
-func (s *Shaper) reorderSyllableUSE(buf *Buffer, syllables []USESyllableInfo, start, end int) {
-	syllableType := syllables[start].SyllableType
+func (s *Shaper) reorderSyllableUSE(buf *Buffer, start, end int) {
+	syllableType := USESyllableType(buf.Info[start].Syllable & 0x0F)
 
-	// Only reorder certain syllable types
 	if syllableType != USE_ViramaTerminatedCluster &&
 		syllableType != USE_SakotTerminatedCluster &&
 		syllableType != USE_StandardCluster &&
@@ -427,21 +433,21 @@ func (s *Shaper) reorderSyllableUSE(buf *Buffer, syllables []USESyllableInfo, st
 	}
 
 	// Move repha (R) forward
-	if syllables[start].Category == USE_R && end-start > 1 {
-		s.moveRephaForward(buf, syllables, start, end)
+	if USECategory(buf.Info[start].USECategory) == USE_R && end-start > 1 {
+		s.moveRephaForward(buf, start, end)
 	}
 
 	// Move VPre and VMPre backward
-	s.movePreBasesBackward(buf, syllables, start, end)
+	s.movePreBasesBackward(buf, start, end)
 }
 
 // moveRephaForward moves repha toward the end, before post-base glyphs.
 // HarfBuzz equivalent: reorder_syllable_use() lines 397-421
-func (s *Shaper) moveRephaForward(buf *Buffer, syllables []USESyllableInfo, start, end int) {
-	// Find position to insert repha (before first post-base glyph)
+func (s *Shaper) moveRephaForward(buf *Buffer, start, end int) {
 	insertPos := end - 1
 	for i := start + 1; i < end; i++ {
-		if isUSEPostBase(syllables[i].Category) || isUSEHalant(syllables[i].Category) {
+		cat := USECategory(buf.Info[i].USECategory)
+		if isUSEPostBase(cat) || isUSEHalant(cat, &buf.Info[i]) {
 			insertPos = i - 1
 			break
 		}
@@ -451,18 +457,12 @@ func (s *Shaper) moveRephaForward(buf *Buffer, syllables []USESyllableInfo, star
 		return
 	}
 
-	// Merge clusters
 	buf.MergeClusters(start, insertPos+1)
 
-	// Move repha
 	saved := buf.Info[start]
-	savedSyl := syllables[start]
 	copy(buf.Info[start:insertPos], buf.Info[start+1:insertPos+1])
-	copy(syllables[start:insertPos], syllables[start+1:insertPos+1])
 	buf.Info[insertPos] = saved
-	syllables[insertPos] = savedSyl
 
-	// Move positions too
 	if len(buf.Pos) > insertPos {
 		savedPos := buf.Pos[start]
 		copy(buf.Pos[start:insertPos], buf.Pos[start+1:insertPos+1])
@@ -472,22 +472,18 @@ func (s *Shaper) moveRephaForward(buf *Buffer, syllables []USESyllableInfo, star
 
 // movePreBasesBackward moves VPre and VMPre backward to after halant.
 // HarfBuzz equivalent: reorder_syllable_use() lines 423-444
-func (s *Shaper) movePreBasesBackward(buf *Buffer, syllables []USESyllableInfo, start, end int) {
+func (s *Shaper) movePreBasesBackward(buf *Buffer, start, end int) {
 	j := start
 	for i := start; i < end; i++ {
-		cat := syllables[i].Category
-		if isUSEHalant(cat) {
+		cat := USECategory(buf.Info[i].USECategory)
+		if isUSEHalant(cat, &buf.Info[i]) {
 			j = i + 1
-		} else if (cat == USE_VPre || cat == USE_VMPre) && j < i {
-			// Merge clusters and move
+		} else if (cat == USE_VPre || cat == USE_VMPre) && buf.Info[i].GetLigComp() == 0 && j < i {
 			buf.MergeClusters(j, i+1)
 
 			saved := buf.Info[i]
-			savedSyl := syllables[i]
 			copy(buf.Info[j+1:i+1], buf.Info[j:i])
-			copy(syllables[j+1:i+1], syllables[j:i])
 			buf.Info[j] = saved
-			syllables[j] = savedSyl
 
 			if len(buf.Pos) > i {
 				savedPos := buf.Pos[i]
@@ -500,65 +496,81 @@ func (s *Shaper) movePreBasesBackward(buf *Buffer, syllables []USESyllableInfo, 
 
 // setupTopographicalMasks sets up masks for isol/init/medi/fina features.
 // HarfBuzz equivalent: setup_topographical_masks() in hb-ot-shaper-use.cc:231-294
-func (s *Shaper) setupTopographicalMasks(buf *Buffer, syllables []USESyllableInfo) {
-	// For scripts that don't use Arabic joining (most USE scripts),
-	// topographical features are determined by syllable boundaries.
-	// We set masks based on joining behavior between syllables.
+var joiningFormToMask = [4]uint32{
+	MaskIsol, // JoiningFormIsol
+	MaskInit, // JoiningFormInit
+	MaskMedi, // JoiningFormMedi
+	MaskFina, // JoiningFormFina
+}
 
+func (s *Shaper) setupTopographicalMasks(buf *Buffer) {
 	n := len(buf.Info)
 	if n == 0 {
 		return
 	}
 
-	// Track syllable positions for joining
+	// HarfBuzz equivalent: setup_topographical_masks() in hb-ot-shaper-use.cc:231-294
+	// HarfBuzz uses plan->map.get_1_mask() to get actual masks from the compiled map.
+	// We use hardcoded masks. If the mask equals the global mask (meaning the feature
+	// is not in the font), HarfBuzz sets it to 0.
+	masks := joiningFormToMask
+	var allMasks uint32
+	for i := 0; i < 4; i++ {
+		allMasks |= masks[i]
+	}
+	if allMasks == 0 {
+		return
+	}
+	// HarfBuzz: hb_mask_t other_masks = ~all_masks;
+	otherMasks := ^allMasks
+
 	var lastStart int
 	lastForm := JoiningFormNone
 
 	i := 0
 	for i < n {
-		syllable := syllables[i].Syllable
+		syllable := buf.Info[i].Syllable
 		start := i
 
-		// Find syllable end
 		end := i + 1
-		for end < n && syllables[end].Syllable == syllable {
+		for end < n && buf.Info[end].Syllable == syllable {
 			end++
 		}
 
-		syllableType := syllables[start].SyllableType
+		syllableType := USESyllableType(buf.Info[start].Syllable & 0x0F)
 
-		// Hieroglyph and non-clusters don't join
 		if syllableType == USE_HieroglyphCluster || syllableType == USE_NonCluster {
 			lastForm = JoiningFormNone
 			i = end
 			continue
 		}
 
-		// Determine joining
 		join := lastForm == JoiningFormFina || lastForm == JoiningFormIsol
 
 		if join {
-			// Update previous syllable's form
+			// HarfBuzz: Fixup previous syllable's form
 			var newForm JoiningForm
 			if lastForm == JoiningFormFina {
 				newForm = JoiningFormMedi
 			} else {
 				newForm = JoiningFormInit
 			}
+			// HarfBuzz: info[i].mask = (info[i].mask & other_masks) | masks[last_form]
+			// REPLACE topographical bits, don't just OR
 			for j := lastStart; j < start; j++ {
-				buf.Info[j].Mask |= uint32(newForm) << 1 // Shift past rphf bit
+				buf.Info[j].Mask = (buf.Info[j].Mask & otherMasks) | masks[newForm]
 			}
 		}
 
-		// Set this syllable's form
 		var thisForm JoiningForm
 		if join {
 			thisForm = JoiningFormFina
 		} else {
 			thisForm = JoiningFormIsol
 		}
+		// HarfBuzz: info[i].mask = (info[i].mask & other_masks) | masks[last_form]
 		for j := start; j < end; j++ {
-			buf.Info[j].Mask |= uint32(thisForm) << 1
+			buf.Info[j].Mask = (buf.Info[j].Mask & otherMasks) | masks[thisForm]
 		}
 
 		lastStart = start
@@ -569,56 +581,45 @@ func (s *Shaper) setupTopographicalMasks(buf *Buffer, syllables []USESyllableInf
 
 // applyUSEOtherFeatures applies post-reordering features including horizontal features.
 // HarfBuzz equivalent: collect_features_use() lines 143-145 + hb_ot_shape_collect_features()
-//
-// In HarfBuzz, ALL features are collected into the map builder and compiled TOGETHER:
-// 1. use_other_features (abvs, blws, haln, pres, psts) via enable_feature(..., F_MANUAL_ZWJ)
-// 2. horizontal_features (calt, clig, liga, rclt) via add_feature() in hb_ot_shape_collect_features
-//
-// Then map.compile() creates a sorted lookup list, and all lookups are applied together.
-// We replicate this by combining both feature lists into one CompileMap call.
-func (s *Shaper) applyUSEOtherFeatures(buf *Buffer, syllables []USESyllableInfo) {
+func (s *Shaper) applyUSEOtherFeatures(buf *Buffer) {
 	if s.gsub == nil {
 		return
 	}
 
-	// Combine all USE features into one list
-	// HarfBuzz: All features are compiled together in map.compile()
-	// This ensures correct lookup ordering when features share lookups
 	allFeatures := make([]Feature, 0, len(useTopographicalFeatures)+len(useOtherFeatures)+len(useHorizontalFeatures))
 
-	// Add topographical features (isol, init, medi, fina)
-	// HarfBuzz: collect_features_use() lines 139-140
-	// These use masks set by either setupMasksArabicPlan or setupTopographicalMasks
+	// Topographical features (isol, init, medi, fina) - no special flags
 	for _, tag := range useTopographicalFeatures {
 		allFeatures = append(allFeatures, Feature{Tag: tag, Value: 1})
 	}
 
-	// Add USE other features (abvs, blws, haln, pres, psts)
+	// Other features (abvs, blws, haln, pres, psts) - F_MANUAL_ZWJ
 	for _, tag := range useOtherFeatures {
-		allFeatures = append(allFeatures, Feature{Tag: tag, Value: 1})
+		allFeatures = append(allFeatures, Feature{Tag: tag, Value: 1, ManualZWJ: true})
 	}
 
-	// Add horizontal features (calt, clig, liga, rclt)
-	// HarfBuzz: horizontal_features[] in hb-ot-shape.cc:309-319
+	// Horizontal features (calt, clig, liga, rclt) - no special flags
 	for _, tag := range useHorizontalFeatures {
 		allFeatures = append(allFeatures, Feature{Tag: tag, Value: 1})
 	}
 
-	// Use CompileMap to collect all lookups and sort them by index
-	// This replicates HarfBuzz's map.compile() which sorts all lookups together
 	otMap := CompileMap(s.gsub, nil, allFeatures, buf.Script, buf.Language)
 	otMap.ApplyGSUB(s.gsub, buf, s.font, s.gdef)
 }
 
 // getUSEGPOSFeatures returns GPOS features for USE shaping.
+// HarfBuzz: common_features[] + horizontal_features[] in hb-ot-shape.cc:295-318
 func (s *Shaper) getUSEGPOSFeatures() []Feature {
-	return []Feature{
-		{Tag: MakeTag('d', 'i', 's', 't'), Value: 1}, // Distances
+	features := []Feature{
 		{Tag: MakeTag('a', 'b', 'v', 'm'), Value: 1}, // Above-base Mark Positioning
 		{Tag: MakeTag('b', 'l', 'w', 'm'), Value: 1}, // Below-base Mark Positioning
 		{Tag: MakeTag('m', 'a', 'r', 'k'), Value: 1}, // Mark Positioning
 		{Tag: MakeTag('m', 'k', 'm', 'k'), Value: 1}, // Mark-to-Mark Positioning
+		{Tag: MakeTag('c', 'u', 'r', 's'), Value: 1}, // Cursive Positioning
+		{Tag: MakeTag('d', 'i', 's', 't'), Value: 1}, // Distances
+		{Tag: MakeTag('k', 'e', 'r', 'n'), Value: 1}, // Kerning
 	}
+	return features
 }
 
 // isUSEPostBase returns true if the category is a post-base element.
@@ -633,54 +634,19 @@ func isUSEPostBase(cat USECategory) bool {
 	return false
 }
 
-// mergeSyllableClustersUSE merges clusters within each syllable.
-// HarfBuzz equivalent: buffer->unsafe_to_break(start, end) in setup_syllables_use()
-// This ensures that all glyphs within a syllable share the same (minimum) cluster value.
-// IMPORTANT: ZWNJ (U+200C) forms cluster boundaries. The part before ZWNJ merges to
-// its minimum, and the part starting with ZWNJ merges to ZWNJ's cluster.
-func (s *Shaper) mergeSyllableClustersUSE(buf *Buffer, syllables []USESyllableInfo) {
-	n := len(buf.Info)
-	i := 0
-
-	for i < n {
-		syllable := syllables[i].Syllable
-		start := i
-
-		// Find syllable end
-		end := i + 1
-		for end < n && syllables[end].Syllable == syllable {
-			end++
-		}
-
-		// Find ZWNJ position within syllable (if any)
-		zwnjPos := -1
-		for j := start; j < end; j++ {
-			if buf.Info[j].Codepoint == 0x200C {
-				zwnjPos = j
-				break
-			}
-		}
-
-		if zwnjPos >= 0 {
-			// Merge part before ZWNJ
-			if zwnjPos > start {
-				buf.MergeClusters(start, zwnjPos)
-			}
-			// Merge part starting with ZWNJ (including ZWNJ) to ZWNJ's cluster
-			if end > zwnjPos {
-				// The cluster after ZWNJ should all be set to ZWNJ's cluster
-				zwnjCluster := buf.Info[zwnjPos].Cluster
-				for j := zwnjPos; j < end; j++ {
-					buf.Info[j].Cluster = zwnjCluster
-				}
-			}
-		} else {
-			// No ZWNJ - merge entire syllable
-			if end > start {
-				buf.MergeClusters(start, end)
-			}
-		}
-
-		i = end
+// clearSubstitutionFlags clears the SUBSTITUTED flag on all glyphs.
+// HarfBuzz equivalent: _hb_clear_substitution_flags() in hb-ot-layout.hh
+// IMPORTANT: Only clears SUBSTITUTED, NOT LIGATED or MULTIPLIED.
+// HarfBuzz: _hb_glyph_info_clear_substituted() only clears HB_OT_LAYOUT_GLYPH_PROPS_SUBSTITUTED.
+// The LIGATED flag must be preserved for is_halant_use() checks during reordering.
+func clearSubstitutionFlags(buf *Buffer) {
+	for i := range buf.Info {
+		buf.Info[i].GlyphProps &^= GlyphPropsSubstituted
 	}
+}
+
+// composeUSE is the USE shaper's compose filter.
+// HarfBuzz equivalent: compose_use() in hb-ot-shaper-use.cc:481-492
+func composeUSE(a, _ Codepoint) bool {
+	return !IsUnicodeMark(a)
 }

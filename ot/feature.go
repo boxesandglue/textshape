@@ -26,6 +26,11 @@ type Feature struct {
 	Value uint32 // 0 = off, 1 = on, >1 for alternates
 	Start uint   // Cluster start (inclusive), FeatureGlobalStart for beginning
 	End   uint   // Cluster end (exclusive), FeatureGlobalEnd for end
+
+	// Internal flags matching HarfBuzz F_PER_SYLLABLE and F_MANUAL_ZWJ.
+	// HarfBuzz: hb_ot_map_feature_flags_t in hb-ot-map.hh
+	PerSyllable bool // F_PER_SYLLABLE: constrain lookup application to syllable boundaries
+	ManualZWJ   bool // F_MANUAL_ZWJ: disable automatic ZWJ handling (AutoZWJ = !ManualZWJ)
 }
 
 const (
@@ -208,6 +213,144 @@ func (f Feature) String() string {
 	return sb.String()
 }
 
+// mergedFeatureInfo contains the result of HarfBuzz-style feature merging.
+// HarfBuzz equivalent: feature_info_t after compile() merging in hb-ot-map.cc:213-240
+type mergedFeatureInfo struct {
+	MaxValue     uint32 // 0 = disabled globally
+	DefaultValue uint32 // default value for glyphs (from earlier global entry)
+	IsGlobal     bool   // true if feature applies uniformly to all glyphs
+}
+
+// mergeFeatureInfo determines the effective feature parameters after applying
+// HarfBuzz-style merging of a default (on) feature with user overrides.
+// HarfBuzz equivalent: feature merging in hb-ot-map.cc:213-240
+func mergeFeatureInfo(tag Tag, userFeatures []Feature) mergedFeatureInfo {
+	// Default: feature is on (global, value=1)
+	info := mergedFeatureInfo{
+		MaxValue:     1,
+		DefaultValue: 1,
+		IsGlobal:     true,
+	}
+
+	for _, f := range userFeatures {
+		if f.Tag != tag {
+			continue
+		}
+		fIsGlobal := f.IsGlobal() || (f.Start == 0 && f.End == 0)
+		if fIsGlobal {
+			// Later global overrides earlier: take its value
+			// HarfBuzz: hb-ot-map.cc:226-228
+			info.IsGlobal = true
+			info.MaxValue = f.Value
+			info.DefaultValue = f.Value
+		} else {
+			// Later non-global: remove F_GLOBAL, keep default_value
+			// HarfBuzz: hb-ot-map.cc:230-237
+			info.IsGlobal = false
+			if f.Value > info.MaxValue {
+				info.MaxValue = f.Value
+			}
+			// default_value stays from the earlier entry
+		}
+	}
+
+	return info
+}
+
+// mergedFeatureValue is a convenience wrapper that returns the effective global
+// value of a feature. Returns 0 if the feature is globally disabled.
+func mergedFeatureValue(tag Tag, userFeatures []Feature) uint32 {
+	info := mergeFeatureInfo(tag, userFeatures)
+	if info.MaxValue == 0 {
+		return 0
+	}
+	return info.DefaultValue
+}
+
+// applyFeatureWithMergedMask applies a single feature with HarfBuzz-style per-cluster
+// mask support. It allocates a mask bit starting at nextBit for non-global features,
+// sets up per-glyph masks, and applies the feature with the correct mask.
+// HarfBuzz equivalent: mask allocation in hb-ot-map.cc:250-324 + setup_masks in hb-ot-shape.cc:771-779
+//
+// Returns the updated nextBit value.
+func applyFeatureWithMergedMask(
+	tag Tag,
+	userFeatures []Feature,
+	nextBit uint,
+	buf *Buffer,
+	gsub *GSUB,
+	gdef *GDEF,
+	font *Font,
+) uint {
+	info := mergeFeatureInfo(tag, userFeatures)
+
+	if info.MaxValue == 0 {
+		// Feature globally disabled (e.g., -calt)
+		return nextBit
+	}
+
+	if info.IsGlobal {
+		// Simple case: feature applies to all glyphs with MaskGlobal
+		gsub.ApplyFeatureToBufferWithMask(tag, buf, gdef, MaskGlobal, font)
+		return nextBit
+	}
+
+	// Non-global: allocate dedicated mask bit for per-cluster ranges
+	// HarfBuzz: hb-ot-map.cc:316-321
+	bitsNeeded := bitStorage(info.MaxValue)
+	if bitsNeeded > 8 {
+		bitsNeeded = 8
+	}
+	if nextBit+bitsNeeded >= 31 {
+		// Not enough bits, fall back to global application
+		gsub.ApplyFeatureToBufferWithMask(tag, buf, gdef, MaskGlobal, font)
+		return nextBit
+	}
+
+	mask := uint32((1<<(nextBit+bitsNeeded) - 1) &^ (1<<nextBit - 1))
+	shift := nextBit
+
+	// Set default value on all glyphs
+	// HarfBuzz: global_mask |= (default_value << shift) & mask
+	if info.DefaultValue > 0 {
+		defaultMaskValue := (info.DefaultValue << shift) & mask
+		for i := range buf.Info {
+			buf.Info[i].Mask |= defaultMaskValue
+		}
+	}
+
+	// Apply per-cluster range overrides from user features
+	// HarfBuzz: hb-ot-shape.cc:771-779
+	for _, f := range userFeatures {
+		if f.Tag != tag {
+			continue
+		}
+		fIsGlobal := f.IsGlobal() || (f.Start == 0 && f.End == 0)
+		if fIsGlobal {
+			continue
+		}
+		buf.SetMasksForClusterRange(f.Value<<shift, mask, int(f.Start), int(f.End))
+	}
+
+	// Apply feature with the allocated mask
+	gsub.ApplyFeatureToBufferWithMask(tag, buf, gdef, mask, font)
+
+	return nextBit + bitsNeeded
+}
+
+// uniqueFeatureTags returns the unique tags from a feature list (preserving order of first occurrence).
+func uniqueFeatureTags(features []Feature) []Tag {
+	seen := make(map[Tag]bool)
+	var tags []Tag
+	for _, f := range features {
+		if !seen[f.Tag] {
+			seen[f.Tag] = true
+			tags = append(tags, f.Tag)
+		}
+	}
+	return tags
+}
+
 // ParseFeatures parses a comma-separated list of features.
 func ParseFeatures(s string) []Feature {
 	if s == "" {
@@ -227,10 +370,8 @@ func ParseFeatures(s string) []Feature {
 }
 
 // DefaultFeatures returns the default features for shaping.
-// Note: 'locl' (Localized Forms) is NOT included here because it should only
-// be applied when the font has it registered for the current script/language.
-// HarfBuzz applies features based on script/language registration, which
-// textshape doesn't fully implement yet.
+// HarfBuzz equivalent: common_features[] in hb-ot-shape.cc:295-305
+// Note: 'locl' is applied separately in applyGSUB to ensure it only uses LangSys features.
 func DefaultFeatures() []Feature {
 	return []Feature{
 		// GSUB features

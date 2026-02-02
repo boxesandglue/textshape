@@ -128,6 +128,11 @@ func getKhmerCategory(cp Codepoint) KhmerCategory {
 	case cp == 0x17D3, cp == 0x17DD:
 		return K_Ygroup
 
+	// U+17D9: Khmer Sign Phnaek Muan — PLACEHOLDER in HarfBuzz indic table _(GB,C)
+	// HarfBuzz equivalent: hb-ot-shaper-indic-table.cc:372, set_khmer_properties()
+	case cp == 0x17D9:
+		return K_Placeholder
+
 	// ZWNJ and ZWJ
 	case cp == 0x200C:
 		return K_ZWNJ
@@ -148,30 +153,19 @@ func getKhmerCategory(cp Codepoint) KhmerCategory {
 // shapeKhmer applies Khmer-specific shaping to the buffer.
 // HarfBuzz equivalent: _hb_ot_shaper_khmer
 //
-// Note: Unicode normalization (including Khmer split matra decomposition via
-// decomposeKhmer) is performed in Shape() before this function is called.
-// The Khmer split matras (U+17BE, U+17BF, U+17C0, U+17C4, U+17C5) are already
-// decomposed at this point.
 func (s *Shaper) shapeKhmer(buf *Buffer, features []Feature) {
 	// Set direction to LTR for Khmer
 	if buf.Direction == 0 {
 		buf.Direction = DirectionLTR
 	}
 
-	// Note: Normalization already performed in Shape() - don't call normalizeBuffer again!
+	// Normalize buffer: decompose split matras (U+17BE, U+17BF, U+17C0, U+17C4, U+17C5),
+	// reorder marks by canonical combining class, and recompose.
+	// HarfBuzz: hb-ot-shaper-khmer.cc uses HB_OT_SHAPE_NORMALIZATION_MODE_COMPOSED_DIACRITICS
+	s.normalizeBuffer(buf, NormalizationModeComposedDiacritics)
 
-	// Step 1: Map codepoints to glyphs (if not already done)
-	// Check if glyphs are already mapped by looking at GlyphID
-	needsMapping := false
-	for _, info := range buf.Info {
-		if info.GlyphID == 0 && info.Codepoint != 0 {
-			needsMapping = true
-			break
-		}
-	}
-	if needsMapping {
-		s.mapCodepointsToGlyphs(buf)
-	}
+	// Map codepoints to glyphs
+	s.mapCodepointsToGlyphs(buf)
 
 	// Step 3: Set glyph classes from GDEF
 	s.setGlyphClasses(buf)
@@ -302,23 +296,22 @@ func (s *Shaper) reorderKhmer(buf *Buffer, categories []KhmerCategory) {
 //
 // IMPORTANT: Like HarfBuzz, we only move info (not pos). Positions are set
 // later in hb_ot_position_default / setBaseAdvances.
+// IMPORTANT: VPre reordering is an else-if inside the same loop as Coeng+Ra,
+// not a separate loop. This ensures correct ordering when both are present.
 func (s *Shaper) reorderKhmerSyllable(buf *Buffer, categories []KhmerCategory, start, end int) {
-	// Handle Coeng + Ra sequence (move to front with 'pref' mask)
-	// HarfBuzz: lines 224-267
+	// HarfBuzz: reorder_consonant_syllable() lines 224-279
+	// Single loop handles both Coeng+Ra and VPre reordering.
 	numCoengs := 0
 	for i := start + 1; i < end; i++ {
 		if categories[i] == K_H && numCoengs <= 2 && i+1 < end {
+			// Coeng found - check for Ra (Robat)
 			numCoengs++
-			if categories[i+1] == K_Ra {
-				// HarfBuzz: info[i + j].mask |= khmer_plan->mask_array[KHMER_PREF];
-				// TODO: Set PREF mask on Coeng+Ra
 
+			if categories[i+1] == K_Ra {
 				// Move Coeng+Ra to the start
 				// HarfBuzz: buffer->merge_clusters(start, i + 2);
 				buf.MergeClusters(start, i+2)
 
-				// HarfBuzz: Only moves info, not pos!
-				// memmove (&info[start + 2], &info[start], (i - start) * sizeof (info[0]));
 				savedInfo := [2]GlyphInfo{buf.Info[i], buf.Info[i+1]}
 				savedCat := [2]KhmerCategory{categories[i], categories[i+1]}
 
@@ -330,23 +323,13 @@ func (s *Shaper) reorderKhmerSyllable(buf *Buffer, categories []KhmerCategory, s
 				categories[start] = savedCat[0]
 				categories[start+1] = savedCat[1]
 
-				// HarfBuzz: Mark subsequent stuff with 'cfar'
-				// TODO: Set CFAR mask on remaining glyphs
-
 				numCoengs = 2 // Done with Coeng+Ra
 			}
-		}
-	}
-
-	// Move VPre (left-side vowels) to the start
-	// HarfBuzz: lines 270-278
-	for i := start + 1; i < end; i++ {
-		if categories[i] == K_VPre {
-			// HarfBuzz: buffer->merge_clusters(start, i + 1);
+		} else if categories[i] == K_VPre {
+			// Reorder left matra piece - move to start
+			// HarfBuzz: lines 270-278
 			buf.MergeClusters(start, i+1)
 
-			// HarfBuzz: Only moves info, not pos!
-			// memmove (&info[start + 1], &info[start], (i - start) * sizeof (info[0]));
 			savedInfo := buf.Info[i]
 			savedCat := categories[i]
 

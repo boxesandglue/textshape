@@ -33,6 +33,10 @@ const (
 	// Combined mask for all Arabic positional features
 	MaskArabicPositional = MaskIsol | MaskFina | MaskFin2 | MaskFin3 | MaskMedi | MaskMed2 | MaskInit
 
+	// USE shaper feature masks
+	// HarfBuzz: use_plan->rphf_mask = plan->map.get_1_mask(HB_TAG('r','p','h','f'))
+	MaskRphf uint32 = 1 << 8 // Repha feature (USE shaper)
+
 	// Note: Indic feature masks are now generated dynamically in IndicPlan.maskArray
 	// See indic.go: newIndicPlan() and indicFeatures[]
 )
@@ -87,6 +91,9 @@ func NewFeatureMap() *FeatureMap {
 	fm.masks[MakeTag('m', 'e', 'd', 'i')] = MaskMedi
 	fm.masks[MakeTag('m', 'e', 'd', '2')] = MaskMed2
 	fm.masks[MakeTag('i', 'n', 'i', 't')] = MaskInit
+
+	// USE shaper features
+	fm.masks[MakeTag('r', 'p', 'h', 'f')] = MaskRphf
 
 	return fm
 }

@@ -192,7 +192,7 @@ var QaagShaper = &OTShaper{
 //   - fontScriptTag: The actual script tag found in the font's GSUB table (e.g., 'knd3')
 func SelectShaperWithFont(script Tag, direction Direction, fontScriptTag Tag) *OTShaper {
 	// For Indic scripts, check if the font uses version 3 script tag
-	// HarfBuzz: hb-ot-shaper.hh:238-245
+	// HarfBuzz: hb-ot-shaper.hh:220-245
 	switch script {
 	case MakeTag('D', 'e', 'v', 'a'), // Devanagari
 		MakeTag('B', 'e', 'n', 'g'), // Bengali
@@ -202,8 +202,8 @@ func SelectShaperWithFont(script Tag, direction Direction, fontScriptTag Tag) *O
 		MakeTag('T', 'a', 'm', 'l'), // Tamil
 		MakeTag('T', 'e', 'l', 'u'), // Telugu
 		MakeTag('K', 'n', 'd', 'a'), // Kannada
-		MakeTag('M', 'l', 'y', 'm'), // Malayalam
-		MakeTag('S', 'i', 'n', 'h'): // Sinhala
+		MakeTag('M', 'l', 'y', 'm'): // Malayalam
+		// Note: Sinhala is NOT in this group - it uses USE shaper (hb-ot-shaper.hh:280)
 
 		// Check for DFLT or latn fallback
 		if fontScriptTag == MakeTag('D', 'F', 'L', 'T') ||
@@ -264,8 +264,8 @@ func SelectShaper(script Tag, direction Direction) *OTShaper {
 		MakeTag('T', 'a', 'm', 'l'), // Tamil
 		MakeTag('T', 'e', 'l', 'u'), // Telugu
 		MakeTag('K', 'n', 'd', 'a'), // Kannada
-		MakeTag('M', 'l', 'y', 'm'), // Malayalam
-		MakeTag('S', 'i', 'n', 'h'): // Sinhala
+		MakeTag('M', 'l', 'y', 'm'): // Malayalam
+		// Note: Sinhala uses USE shaper, not Indic (hb-ot-shaper.hh:280)
 		return IndicShaper
 
 	// Khmer
@@ -281,11 +281,60 @@ func SelectShaper(script Tag, direction Direction) *OTShaper {
 		return DefaultShaper
 
 	// USE scripts (Universal Shaping Engine)
-	// HarfBuzz: hb-ot-shaper.hh:275-414 - many scripts use USE
-	case MakeTag('J', 'a', 'v', 'a'), // Javanese
+	// HarfBuzz: hb-ot-shaper.hh:275-414 - comprehensive list of USE scripts
+	case MakeTag('S', 'i', 'n', 'h'), // Sinhala (USE, not Indic - hb-ot-shaper.hh:280)
+		MakeTag('J', 'a', 'v', 'a'), // Javanese
 		MakeTag('B', 'a', 'l', 'i'), // Balinese
 		MakeTag('S', 'u', 'n', 'd'), // Sundanese
 		MakeTag('T', 'i', 'b', 't'), // Tibetan
+		MakeTag('A', 'h', 'o', 'm'), // Ahom
+		MakeTag('B', 'a', 't', 'k'), // Batak
+		MakeTag('B', 'h', 'k', 's'), // Bhaiksuki
+		MakeTag('B', 'r', 'a', 'h'), // Brahmi
+		MakeTag('B', 'u', 'g', 'i'), // Buginese
+		MakeTag('B', 'u', 'h', 'd'), // Buhid
+		MakeTag('C', 'a', 'k', 'm'), // Chakma
+		MakeTag('C', 'h', 'a', 'm'), // Cham
+		MakeTag('D', 'i', 'a', 'k'), // Dives Akuru
+		MakeTag('D', 'o', 'g', 'r'), // Dogra
+		MakeTag('G', 'r', 'a', 'n'), // Grantha
+		MakeTag('G', 'o', 'n', 'g'), // Gunjala Gondi
+		MakeTag('G', 'u', 'k', 'h'), // Gurung Khema
+		MakeTag('H', 'a', 'n', 'o'), // Hanunoo
+		MakeTag('K', 'a', 'i', 't'), // Kaithi
+		MakeTag('K', 'a', 'w', 'i'), // Kawi
+		MakeTag('K', 'a', 'l', 'i'), // Kayah Li
+		MakeTag('K', 'h', 'a', 'r'), // Kharoshthi
+		MakeTag('K', 'h', 'o', 'j'), // Khojki
+		MakeTag('S', 'i', 'n', 'd'), // Khudawadi
+		MakeTag('K', 'r', 'a', 'i'), // Kirat Rai
+		MakeTag('L', 'e', 'p', 'c'), // Lepcha
+		MakeTag('L', 'i', 'm', 'b'), // Limbu
+		MakeTag('M', 'a', 'h', 'j'), // Mahajani
+		MakeTag('M', 'a', 'k', 'a'), // Makasar
+		MakeTag('M', 'a', 'r', 'c'), // Marchen
+		MakeTag('G', 'o', 'n', 'm'), // Masaram Gondi
+		MakeTag('M', 't', 'e', 'i'), // Meetei Mayek
+		MakeTag('M', 'o', 'd', 'i'), // Modi
+		MakeTag('M', 'u', 'l', 't'), // Multani
+		MakeTag('N', 'a', 'n', 'd'), // Nandinagari
+		MakeTag('T', 'a', 'l', 'u'), // New Tai Lue
+		MakeTag('N', 'e', 'w', 'a'), // Newa
+		MakeTag('R', 'j', 'n', 'g'), // Rejang
+		MakeTag('S', 'a', 'u', 'r'), // Saurashtra
+		MakeTag('S', 'h', 'r', 'd'), // Sharada
+		MakeTag('S', 'i', 'd', 'd'), // Siddham
+		MakeTag('S', 'o', 'y', 'o'), // Soyombo
+		MakeTag('S', 'y', 'l', 'o'), // Syloti Nagri
+		MakeTag('T', 'g', 'l', 'g'), // Tagalog
+		MakeTag('T', 'a', 'g', 'b'), // Tagbanwa
+		MakeTag('T', 'a', 'l', 'e'), // Tai Le
+		MakeTag('L', 'a', 'n', 'a'), // Tai Tham
+		MakeTag('T', 'a', 'v', 't'), // Tai Viet
+		MakeTag('T', 'a', 'k', 'r'), // Takri
+		MakeTag('T', 'i', 'r', 'h'), // Tirhuta
+		MakeTag('T', 'u', 'l', 'u'), // Tulu Tigalari
+		MakeTag('Z', 'a', 'n', 'b'), // Zanabazar Square
 		// Scripts with Arabic-like joining that use USE shaper
 		MakeTag('A', 'd', 'l', 'm'), // Adlam
 		MakeTag('C', 'h', 'r', 's'), // Chorasmian

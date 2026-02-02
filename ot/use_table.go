@@ -24,6 +24,8 @@ func getUSECategory(cp Codepoint) USECategory {
 		return USE_CGJ
 	case 0x2060: // WORD JOINER
 		return USE_WJ
+	case 0x25CC: // DOTTED CIRCLE - Base in USE (HarfBuzz: hb_use_get_category returns B)
+		return USE_B
 	}
 	if cp >= 0x002D && cp <= 0x0039 {
 		return useTable002D[cp-0x002D]
@@ -533,9 +535,9 @@ var useTable0D81 = [115]USECategory{
 	USE_B, USE_O, USE_B, USE_B, USE_B, USE_B, USE_B, USE_B,
 	USE_B, USE_B, USE_B, USE_O, USE_B, USE_O, USE_O, USE_B,
 	USE_B, USE_B, USE_B, USE_B, USE_B, USE_B, USE_O, USE_O,
-	USE_O, USE_H, USE_O, USE_O, USE_O, USE_O, USE_VPst, USE_VPst,
+	USE_O, USE_HVM, USE_O, USE_O, USE_O, USE_O, USE_VPst, USE_VPst,
 	USE_VPst, USE_VAbv, USE_VAbv, USE_VBlw, USE_O, USE_VBlw, USE_O, USE_VPst,
-	USE_VPre, USE_VAbv, USE_VPre, USE_VPst, USE_VPst, USE_VPst, USE_VPst, USE_O,
+	USE_VPre, USE_VPre, USE_VPre, USE_VPre, USE_VPre, USE_VPre, USE_VPst, USE_O,
 	USE_O, USE_O, USE_O, USE_O, USE_O, USE_N, USE_N, USE_N,
 	USE_N, USE_N, USE_N, USE_N, USE_N, USE_N, USE_N, USE_O,
 	USE_O, USE_VPst, USE_VPst,
@@ -694,7 +696,7 @@ var useTable1A20 = [122]USECategory{
 	USE_B, USE_B, USE_B, USE_B, USE_B, USE_B, USE_B, USE_B,
 	USE_B, USE_B, USE_B, USE_B, USE_B, USE_MPre, USE_MBlw, USE_SUB,
 	USE_FAbv, USE_FAbv, USE_MAbv, USE_SUB, USE_SUB, USE_SUB, USE_SUB, USE_O,
-	USE_IS, USE_VPst, USE_VAbv, USE_VPst, USE_VPst, USE_VAbv, USE_VAbv, USE_VAbv,
+	USE_Sk, USE_VPst, USE_VAbv, USE_VPst, USE_VPst, USE_VAbv, USE_VAbv, USE_VAbv,
 	USE_VAbv, USE_VBlw, USE_VBlw, USE_VAbv, USE_VBlw, USE_VPst, USE_VPre, USE_VPre,
 	USE_VPre, USE_VPre, USE_VPre, USE_VAbv, USE_VMAbv, USE_VMAbv, USE_VMAbv, USE_VMAbv,
 	USE_VMAbv, USE_VMAbv, USE_VAbv, USE_FMAbv, USE_FMAbv, USE_O, USE_O, USE_FMBlw,
@@ -977,10 +979,10 @@ var useTable11100 = [72]USECategory{
 	USE_B, USE_B, USE_B, USE_B, USE_B, USE_B, USE_B, USE_B,
 	USE_B, USE_B, USE_B, USE_B, USE_B, USE_B, USE_B, USE_B,
 	USE_B, USE_B, USE_B, USE_B, USE_B, USE_B, USE_B, USE_B,
-	USE_B, USE_B, USE_B, USE_B, USE_B, USE_B, USE_B, USE_VAbv,
-	USE_VAbv, USE_VAbv, USE_VBlw, USE_VBlw, USE_VPre, USE_VAbv, USE_VBlw, USE_VBlw,
-	USE_VAbv, USE_VBlw, USE_VBlw, USE_IS, USE_VAbv, USE_O, USE_N, USE_N,
-	USE_N, USE_N, USE_N, USE_N, USE_N, USE_N, USE_N, USE_N,
+	USE_B, USE_B, USE_B, USE_B, USE_B, USE_B, USE_B, USE_VBlw,
+	USE_VBlw, USE_VBlw, USE_VAbv, USE_VAbv, USE_VPre, USE_VBlw, USE_VAbv, USE_VAbv,
+	USE_VBlw, USE_VAbv, USE_VAbv, USE_IS, USE_CMAbv, USE_O, USE_B, USE_B,
+	USE_B, USE_B, USE_B, USE_B, USE_B, USE_B, USE_B, USE_B,
 	USE_O, USE_O, USE_O, USE_O, USE_B, USE_VPst, USE_VPst, USE_B,
 }
 

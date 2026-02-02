@@ -67,6 +67,7 @@ type USESyllableInfo struct {
 	Category     USECategory
 	SyllableType USESyllableType
 	Syllable     uint8 // Syllable index (upper 4 bits = serial, lower 4 bits = type)
+	Codepoint    Codepoint // Original codepoint, needed for ZWNJ filtering
 }
 
 // USESyllableType defines the types of syllables in USE.
@@ -148,8 +149,12 @@ func isUSEFinal(cat USECategory) bool {
 	return false
 }
 
-// isUSEHalant returns true if the category is a halant/virama.
+// isUSEHalant returns true if the category is a halant/virama and the glyph is not ligated.
 // HarfBuzz equivalent: is_halant_use() in hb-ot-shaper-use.cc:354-359
-func isUSEHalant(cat USECategory) bool {
+// HarfBuzz checks: (info.use_category() == USE(H) || ...) && !_hb_glyph_info_ligated(&info)
+func isUSEHalant(cat USECategory, info *GlyphInfo) bool {
+	if info != nil && (info.GlyphProps&GlyphPropsLigated) != 0 {
+		return false
+	}
 	return cat == USE_H || cat == USE_HVM || cat == USE_IS
 }

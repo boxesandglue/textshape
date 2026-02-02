@@ -1434,7 +1434,9 @@ func (l *LigatureSubst) matchLigature(ctx *OTApplyContext, lig *Ligature) []int 
 
 		// Per-syllable check: all matched glyphs must be in the same syllable
 		// HarfBuzz equivalent: per_syllable && syllable != info.syllable() in may_match()
-		if ctx.PerSyllable && ctx.Buffer.Info[pos].Syllable != startSyllable {
+		// HarfBuzz: if (per_syllable && syllable && syllable != info.syllable()) return MATCH_NO
+		// Note: syllable==0 means no syllable assigned → skip the check
+		if ctx.PerSyllable && startSyllable != 0 && ctx.Buffer.Info[pos].Syllable != startSyllable {
 			return nil // Cross-syllable match not allowed
 		}
 
@@ -1827,6 +1829,19 @@ func (g *GSUB) FindChosenScriptTag(scriptTag Tag) Tag {
 	return sl.FindChosenScriptTag(scriptTag)
 }
 
+// FindBestLanguage finds the first language tag from a list of candidates that the font
+// actually supports in its GSUB table. Returns the matching Tag, or the first candidate if none match.
+func (g *GSUB) FindBestLanguage(scriptTag Tag, languageTags []Tag) Tag {
+	sl, err := g.ParseScriptList()
+	if err != nil || sl == nil {
+		if len(languageTags) > 0 {
+			return languageTags[0]
+		}
+		return 0
+	}
+	return sl.FindBestLanguage(scriptTag, languageTags)
+}
+
 // LangSys represents a Language System table with its feature indices.
 type LangSys struct {
 	RequiredFeature int      // -1 if none
@@ -1944,6 +1959,55 @@ func getNewScriptTags(oldTag Tag) []Tag {
 	default:
 		return nil
 	}
+}
+
+// FindBestLanguage finds the first language tag from a list of candidates that the font's
+// script table actually supports. Returns the matching Tag, or 0 if none match.
+// This is used to resolve BCP47 language tags that map to multiple OT tags (e.g., "zh-mo" → [ZHTM, ZHH]).
+func (sl *ScriptList) FindBestLanguage(scriptTag Tag, languageTags []Tag) Tag {
+	if len(languageTags) == 0 {
+		return 0
+	}
+
+	// Convert scriptTag to OpenType format (lowercase first char)
+	otScriptTag := scriptTag | 0x20000000
+	newScriptTags := getNewScriptTags(otScriptTag)
+
+	tagsToTry := make([]Tag, 0, len(newScriptTags)+2)
+	tagsToTry = append(tagsToTry, newScriptTags...)
+	tagsToTry = append(tagsToTry, otScriptTag, scriptTag)
+
+	// Find the script record
+	for _, tryTag := range tagsToTry {
+		for i := 0; i < sl.count; i++ {
+			recOff := sl.offset + 2 + i*6
+			tag := Tag(binary.BigEndian.Uint32(sl.data[recOff:]))
+			if tag == tryTag {
+				scriptOff := sl.offset + int(binary.BigEndian.Uint16(sl.data[recOff+4:]))
+				// Now check which language tag exists in this script
+				if scriptOff+4 > len(sl.data) {
+					continue
+				}
+				langSysCount := int(binary.BigEndian.Uint16(sl.data[scriptOff+2:]))
+				for _, langTag := range languageTags {
+					for j := 0; j < langSysCount; j++ {
+						lrOff := scriptOff + 4 + j*6
+						if lrOff+6 > len(sl.data) {
+							break
+						}
+						lt := Tag(binary.BigEndian.Uint32(sl.data[lrOff:]))
+						if lt == langTag {
+							return langTag
+						}
+					}
+				}
+				// No language candidate found in this script, return first candidate
+				// (will fall back to default LangSys in GetLangSys)
+				return languageTags[0]
+			}
+		}
+	}
+	return languageTags[0]
 }
 
 // parseScriptWithLanguage parses a Script table and returns the LangSys for the specified language.
@@ -2467,6 +2531,71 @@ func (g *GSUB) ApplyFeatureToBufferWithMask(tag Tag, buf *Buffer, gdef *GDEF, fe
 	g.ApplyFeatureToBufferWithMaskAndVariations(tag, buf, gdef, featureMask, font, VariationsNotFoundIndex)
 }
 
+// ApplyFeatureToBufferLangSysOnly applies a feature only if it's found in the current
+// script/language LangSys. Does NOT fall back to global feature search.
+// This is used for 'locl' which should only apply when the font has it for the specific language.
+// Tries the buffer's script first, then DFLT/dflt as fallback scripts.
+func (g *GSUB) ApplyFeatureToBufferLangSysOnly(tag Tag, buf *Buffer, gdef *GDEF, featureMask uint32, font *Font, variationsIndex uint32) {
+	if buf.Language == 0 {
+		return // No language set - locl not applicable
+	}
+
+	featureList, err := g.ParseFeatureList()
+	if err != nil {
+		return
+	}
+
+	scriptList, err := g.ParseScriptList()
+	if err != nil || scriptList == nil {
+		return
+	}
+
+	// Try buffer's script first, then DFLT/dflt as fallback
+	// HarfBuzz: hb_ot_layout_table_select_script() tries DFLT/dflt when script not found
+	langSys := scriptList.GetLangSys(buf.Script, buf.Language)
+	if langSys == nil {
+		// Try DFLT script as fallback
+		langSys = scriptList.GetLangSys(MakeTag('D', 'F', 'L', 'T'), buf.Language)
+	}
+	if langSys == nil {
+		// Try dflt script as fallback
+		langSys = scriptList.GetLangSys(MakeTag('d', 'f', 'l', 't'), buf.Language)
+	}
+	if langSys == nil {
+		// Also try with language candidates if available
+		if len(buf.LanguageCandidates) > 1 {
+			for _, langTag := range buf.LanguageCandidates[1:] {
+				langSys = scriptList.GetLangSys(buf.Script, langTag)
+				if langSys != nil {
+					break
+				}
+				langSys = scriptList.GetLangSys(MakeTag('D', 'F', 'L', 'T'), langTag)
+				if langSys != nil {
+					break
+				}
+			}
+		}
+	}
+	if langSys == nil {
+		return // No LangSys found - don't apply
+	}
+
+	lookups := featureList.FindFeatureByIndicesWithVariations(tag, langSys.FeatureIndices, g.featureVariations, variationsIndex)
+	if lookups == nil {
+		return
+	}
+
+	sorted := make([]int, len(lookups))
+	for i, l := range lookups {
+		sorted[i] = int(l)
+	}
+	sort.Ints(sorted)
+
+	for _, lookupIdx := range sorted {
+		g.ApplyLookupToBufferWithMask(lookupIdx, buf, gdef, featureMask, font)
+	}
+}
+
 // ApplyFeatureToBufferWithMaskAndVariations applies all lookups for a feature directly to a Buffer
 // with mask filtering and FeatureVariations support.
 // variationsIndex should be obtained from FindVariationsIndex() or VariationsNotFoundIndex if not applicable.
@@ -2525,6 +2654,13 @@ func (g *GSUB) ApplyFeatureToBufferWithMaskAndVariations(tag Tag, buf *Buffer, g
 // Only glyphs in the range [start, end) are considered for substitution.
 // HarfBuzz equivalent: per_syllable flag in hb_ot_apply_context_t
 func (g *GSUB) ApplyFeatureToBufferRangeWithMask(tag Tag, buf *Buffer, gdef *GDEF, featureMask uint32, font *Font, start, end int) {
+	g.ApplyFeatureToBufferRangeWithOpts(tag, buf, gdef, featureMask, font, start, end, true, true)
+}
+
+// ApplyFeatureToBufferRangeWithOpts is like ApplyFeatureToBufferRangeWithMask but allows
+// setting AutoZWNJ and AutoZWJ flags. These control whether ZWNJ/ZWJ are automatically
+// skipped during matching (HarfBuzz: auto_zwnj, auto_zwj from F_MANUAL_ZWNJ/F_MANUAL_ZWJ).
+func (g *GSUB) ApplyFeatureToBufferRangeWithOpts(tag Tag, buf *Buffer, gdef *GDEF, featureMask uint32, font *Font, start, end int, autoZWNJ, autoZWJ bool) {
 	if start >= end || start < 0 || end > len(buf.Info) {
 		return
 	}
@@ -2565,7 +2701,7 @@ func (g *GSUB) ApplyFeatureToBufferRangeWithMask(tag Tag, buf *Buffer, gdef *GDE
 	sort.Ints(sorted)
 
 	for _, lookupIdx := range sorted {
-		g.ApplyLookupToBufferRangeWithMask(lookupIdx, buf, gdef, featureMask, font, start, end)
+		g.applyLookupToBufferRangeWithOpts(lookupIdx, buf, gdef, featureMask, font, start, end, autoZWNJ, autoZWJ)
 		// Update end if buffer length changed (e.g., ligature or multiple substitution)
 		// We need to find where this syllable ends now
 		if start < len(buf.Info) {
@@ -2580,8 +2716,16 @@ func (g *GSUB) ApplyFeatureToBufferRangeWithMask(tag Tag, buf *Buffer, gdef *GDE
 
 // ApplyLookupToBufferRangeWithMask applies a single lookup to a range of the Buffer.
 // Only positions in [start, end) are considered as starting positions for matches.
-// This implements per-syllable GSUB application.
+// Uses HarfBuzz defaults for auto_zwnj=true, auto_zwj=true.
 func (g *GSUB) ApplyLookupToBufferRangeWithMask(lookupIndex int, buf *Buffer, gdef *GDEF, featureMask uint32, font *Font, start, end int) {
+	g.applyLookupToBufferRangeWithOpts(lookupIndex, buf, gdef, featureMask, font, start, end, true, true)
+}
+
+// applyLookupToBufferRangeWithOpts applies a single lookup to a range of the Buffer
+// with explicit auto_zwnj/auto_zwj settings.
+// HarfBuzz equivalent: The per-lookup application in hb_ot_map_t::apply(),
+// where auto_zwnj and auto_zwj come from the lookup_map_t flags.
+func (g *GSUB) applyLookupToBufferRangeWithOpts(lookupIndex int, buf *Buffer, gdef *GDEF, featureMask uint32, font *Font, start, end int, autoZWNJ, autoZWJ bool) {
 	lookup := g.GetLookup(lookupIndex)
 	if lookup == nil {
 		return
@@ -2602,6 +2746,8 @@ func (g *GSUB) ApplyLookupToBufferRangeWithMask(lookupIndex int, buf *Buffer, gd
 		FeatureMask:      featureMask,
 		TableType:        TableGSUB,
 		Font:             font,
+		AutoZWNJ:         autoZWNJ, // HarfBuzz: lookup.auto_zwnj from F_MANUAL_ZWNJ
+		AutoZWJ:          autoZWJ,  // HarfBuzz: lookup.auto_zwj from F_MANUAL_ZWJ
 		// Per-syllable range constraints
 		RangeStart: start,
 		RangeEnd:   end,
@@ -3287,12 +3433,17 @@ func (ccs *ChainContextSubst) matchRuleFormat1(ctx *OTApplyContext, rule *ChainR
 	}
 
 	// Check backtrack (in reverse order)
-	if ctx.Buffer.Idx < len(rule.Backtrack) {
+	// HarfBuzz: backtrack matching uses out_info (output buffer) when have_output is true.
+	// This is critical because earlier substitutions change the backtrack context.
+	// HarfBuzz: match_backtrack() in hb-ot-layout-gsubgpos.hh:1569-1601
+	backtrackLen := ctx.Buffer.BacktrackLen()
+	if backtrackLen < len(rule.Backtrack) {
 		return false
 	}
 	for i, g := range rule.Backtrack {
 		// Backtrack[0] is immediately before current position
-		if ctx.Buffer.Info[ctx.Buffer.Idx-1-i].GlyphID != g {
+		info := ctx.Buffer.BacktrackInfo(backtrackLen - 1 - i)
+		if info == nil || info.GlyphID != g {
 			return false
 		}
 	}
@@ -3359,29 +3510,29 @@ func (ccs *ChainContextSubst) matchRuleFormat2(ctx *OTApplyContext, rule *ChainR
 	}
 
 	// Check lookahead by class (continue from last input position)
-	// HarfBuzz: uses iter_context (context_match=true) - mask is NOT checked!
+	// HarfBuzz: uses iter_context (context_match=true) with 3-way match logic.
+	// SKIP_MAYBE glyphs (like ZWJ) that don't match the expected class are skipped,
+	// while SKIP_NO glyphs that don't match cause the rule to fail.
 	lookaheadPos := pos
 	for _, classID := range rule.Lookahead {
-		lookaheadPos = ctx.NextContextGlyph(lookaheadPos) // context_match=true
+		expectedClass := int(classID)
+		lookaheadPos = ctx.NextContextMatch(lookaheadPos, func(info *GlyphInfo) bool {
+			return ccs.lookaheadClassDef.GetClass(info.GlyphID) == expectedClass
+		})
 		if lookaheadPos < 0 {
-			return false
-		}
-		glyphClass := ccs.lookaheadClassDef.GetClass(ctx.Buffer.Info[lookaheadPos].GlyphID)
-		if glyphClass != int(classID) {
 			return false
 		}
 	}
 
 	// Check backtrack by class (in reverse order, starting before current position)
-	// HarfBuzz: uses iter_context (context_match=true) - mask is NOT checked!
+	// HarfBuzz: uses iter_context (context_match=true) with 3-way match logic.
 	backtrackPos := ctx.Buffer.Idx
 	for _, classID := range rule.Backtrack {
-		backtrackPos = ctx.PrevContextGlyph(backtrackPos) // context_match=true
+		expectedClass := int(classID)
+		backtrackPos = ctx.PrevContextMatch(backtrackPos, func(info *GlyphInfo) bool {
+			return ccs.backtrackClassDef.GetClass(info.GlyphID) == expectedClass
+		})
 		if backtrackPos < 0 {
-			return false
-		}
-		glyphClass := ccs.backtrackClassDef.GetClass(ctx.Buffer.Info[backtrackPos].GlyphID)
-		if glyphClass != int(classID) {
 			return false
 		}
 	}
@@ -3451,8 +3602,9 @@ func (ccs *ChainContextSubst) applyFormat3(ctx *OTApplyContext) int {
 			if skip == SkipYes {
 				continue // Definitely skip
 			}
+
 			glyph := ctx.Buffer.Info[lookaheadPos].GlyphID
-			// First check if glyph is in coverage
+			// Check if glyph is in coverage
 			if cov.GetCoverage(glyph) != NotCovered {
 				found = true
 				break // Found matching glyph in coverage
@@ -3495,7 +3647,8 @@ func (ccs *ChainContextSubst) applyFormat3(ctx *OTApplyContext) int {
 			if skip == SkipYes {
 				continue // Definitely skip (e.g., ignored by LookupFlag)
 			}
-			// First check if glyph is in coverage
+
+			// Check if glyph is in coverage
 			if cov.GetCoverage(info.GlyphID) != NotCovered {
 				found = true
 				break // Found matching glyph in coverage

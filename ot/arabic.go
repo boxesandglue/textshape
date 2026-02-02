@@ -269,6 +269,18 @@ func (s *Shaper) arabicJoining(buf *Buffer) []ArabicAction {
 	state := uint8(0)
 	prevI := -1 // Index of previous non-transparent character
 
+	// Check pre-context (HarfBuzz: lines 306-316 in hb-ot-shaper-arabic.cc)
+	for _, cp := range buf.PreContext {
+		jt := getJoiningType(cp, getGeneralCategory(cp))
+		if jt == joiningTypeT {
+			continue
+		}
+		col := joiningTypeColumn(jt)
+		entry := arabicStateTable[state][col]
+		state = entry.nextState
+		break
+	}
+
 	for i := 0; i < len(buf.Info); i++ {
 		cp := buf.Info[i].Codepoint
 		jt := getJoiningType(cp, getGeneralCategory(cp))
@@ -293,6 +305,20 @@ func (s *Shaper) arabicJoining(buf *Buffer) []ArabicAction {
 		// Update state
 		state = entry.nextState
 		prevI = i
+	}
+
+	// Check post-context (HarfBuzz: lines 355-374 in hb-ot-shaper-arabic.cc)
+	for _, cp := range buf.PostContext {
+		jt := getJoiningType(cp, getGeneralCategory(cp))
+		if jt == joiningTypeT {
+			continue
+		}
+		col := joiningTypeColumn(jt)
+		entry := arabicStateTable[state][col]
+		if prevI >= 0 && entry.prevAction != arabicActionNone {
+			actions[prevI] = entry.prevAction
+		}
+		break
 	}
 
 	return actions
@@ -414,9 +440,12 @@ func (s *Shaper) applyArabicFeatures(buf *Buffer, userFeatures []Feature) {
 	// HarfBuzz: ccmp is applied before positional features, and new glyphs
 	// inherit the mask of the original glyph.
 	// Use MaskGlobal since ccmp applies to all glyphs.
-	// Using Buffer-based method to preserve cluster information.
+	// Respects user feature overrides via mergedFeatureValue().
+	// HarfBuzz: hb-ot-map.cc:213-324 (feature merging in compile())
 	if s.gsub != nil {
-		s.gsub.ApplyFeatureToBufferWithMask(tagCcmp, buf, s.gdef, MaskGlobal, s.font)
+		// Apply ccmp with per-cluster mask support.
+		// Bit allocation starts at bit 8 (after positional mask bits 1-7).
+		applyFeatureWithMergedMask(tagCcmp, userFeatures, 8, buf, s.gsub, s.gdef, s.font)
 	}
 
 	// CRITICAL: Set glyph classes from GDEF immediately after ccmp!
@@ -532,21 +561,27 @@ func (s *Shaper) applyArabicFeatures(buf *Buffer, userFeatures []Feature) {
 	if s.gsub != nil {
 		if s.isArabicProper(buf) {
 			// Arabic: Apply rlig FIRST (with pause), then calt+liga separately
-			s.gsub.ApplyFeatureToBufferWithMask(tagRlig, buf, s.gdef, MaskGlobal, s.font)
-			s.gsub.ApplyFeatureToBufferWithMask(tagCalt, buf, s.gdef, MaskGlobal, s.font)
-			s.gsub.ApplyFeatureToBufferWithMask(tagLiga, buf, s.gdef, MaskGlobal, s.font)
+			// HarfBuzz: hb-ot-shaper-arabic.cc:228-238
+			// Uses applyFeatureWithMergedMask for HarfBuzz-conformant handling of:
+			// - Global disable (-calt): feature skipped entirely
+			// - Per-cluster ranges (-calt[0]): mask bits allocated, per-glyph masks set
+			// Bit allocation starts at bit 8 (after positional mask bits 1-7)
+			nextBit := uint(8)
+			nextBit = applyFeatureWithMergedMask(tagRlig, userFeatures, nextBit, buf, s.gsub, s.gdef, s.font)
+			nextBit = applyFeatureWithMergedMask(tagCalt, userFeatures, nextBit, buf, s.gsub, s.gdef, s.font)
+			_ = applyFeatureWithMergedMask(tagLiga, userFeatures, nextBit, buf, s.gsub, s.gdef, s.font)
 		} else {
 			// Mongolian and other scripts: Apply rlig+calt+liga TOGETHER
 			// All lookups sorted by index (no pause between features)
-			s.applyRligCaltLigaTogether(buf)
+			s.applyRligCaltLigaTogether(buf, userFeatures)
 		}
 	}
 
 	// Apply user GSUB features (e.g., salt=2, ss01)
-	// Standard Arabic features (ccmp, rlig, calt, liga, positional) are already applied above,
-	// so we filter them out to avoid double application.
+	// Standard Arabic features (ccmp, rlig, calt, liga, positional) are already applied above
+	// via CompileMap which handles merging. User features that add new features (e.g., salt=2)
+	// are applied here.
 	// HarfBuzz: In HarfBuzz, all features go through OT Map which deduplicates lookups.
-	// Since we apply standard features separately, we filter them here.
 	s.applyUserArabicGSUBFeatures(buf, userFeatures)
 }
 
@@ -597,7 +632,15 @@ func isStandardArabicGSUBFeature(tag Tag) bool {
 		MakeTag('l', 't', 'r', 'a'), // ltra (direction feature)
 		MakeTag('l', 't', 'r', 'm'), // ltrm (direction feature)
 		MakeTag('r', 't', 'l', 'a'), // rtla (direction feature)
-		MakeTag('r', 't', 'l', 'm'): // rtlm (direction feature)
+		MakeTag('r', 't', 'l', 'm'), // rtlm (direction feature)
+		// Default GPOS features (applied via CompileMap in GPOS path, not here)
+		MakeTag('a', 'b', 'v', 'm'), // abvm
+		MakeTag('b', 'l', 'w', 'm'), // blwm
+		MakeTag('m', 'a', 'r', 'k'), // mark
+		MakeTag('m', 'k', 'm', 'k'), // mkmk
+		MakeTag('c', 'u', 'r', 's'), // curs
+		MakeTag('d', 'i', 's', 't'), // dist
+		MakeTag('k', 'e', 'r', 'n'): // kern
 		return true
 	}
 	return false
@@ -637,43 +680,19 @@ func (s *Shaper) isArabicProper(buf *Buffer) bool {
 // using OT Map with lookups sorted by index.
 // HarfBuzz: For non-Arabic scripts (like Mongolian), there's no pause between
 // these features, so all lookups are sorted by index and applied in that order.
-func (s *Shaper) applyRligCaltLigaTogether(buf *Buffer) {
-	featureList, err := s.gsub.ParseFeatureList()
-	if err != nil {
-		// Fallback to separate application
-		s.gsub.ApplyFeatureToBufferWithMask(tagRlig, buf, s.gdef, MaskGlobal, s.font)
-		s.gsub.ApplyFeatureToBufferWithMask(tagCalt, buf, s.gdef, MaskGlobal, s.font)
-		s.gsub.ApplyFeatureToBufferWithMask(tagLiga, buf, s.gdef, MaskGlobal, s.font)
-		return
-	}
-
-	// Build OT Map with rlig, calt, liga features
-	otMap := NewOTMap()
-
-	ligatureFeatures := []Tag{tagRlig, tagCalt, tagLiga}
-	for _, tag := range ligatureFeatures {
-		lookups := featureList.FindFeature(tag)
-		for _, lookupIdx := range lookups {
-			otMap.AddGSUBLookup(lookupIdx, MaskGlobal, tag)
-		}
-	}
-
-	// Sort lookups by index and deduplicate
-	// This ensures lookup 9 is applied before lookup 10, regardless of which
-	// feature (rlig or calt) references them.
-	otMap.GSUBLookups = deduplicateLookups(otMap.GSUBLookups)
-
-	// Apply all lookups in sorted order
+func (s *Shaper) applyRligCaltLigaTogether(buf *Buffer, userFeatures []Feature) {
+	// Build CompileMap with rlig+calt+liga defaults + user overrides.
+	// CompileMap handles feature merging (e.g., -calt disables calt).
+	// HarfBuzz: Mongolian applies rlig+calt+liga TOGETHER (no pause), sorted by lookup index.
+	features := append([]Feature{
+		NewFeatureOn(tagRlig),
+		NewFeatureOn(tagCalt),
+		NewFeatureOn(tagLiga),
+	}, userFeatures...)
+	otMap := CompileMap(s.gsub, nil, features, buf.Script, buf.Language)
 	otMap.ApplyGSUB(s.gsub, buf, s.font, s.gdef)
 }
 
-// getGlyphClass returns the GDEF glyph class for a glyph, or 0 if not available.
-func (s *Shaper) getGlyphClass(glyph GlyphID) int {
-	if s.gdef != nil && s.gdef.HasGlyphClasses() {
-		return s.gdef.GetGlyphClass(glyph)
-	}
-	return 0
-}
 
 // isArabicScript returns true if the codepoint is in an Arabic-like script.
 func isArabicScript(cp Codepoint) bool {

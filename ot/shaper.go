@@ -111,6 +111,11 @@ type GlyphInfo struct {
 	// MyanmarPosition holds the Myanmar character position for Myanmar shaping.
 	// HarfBuzz equivalent: myanmar_position() stored via ot_shaper_var_u8_auxiliary()
 	MyanmarPosition uint8
+
+	// USECategory holds the USE character category for USE shaping.
+	// HarfBuzz equivalent: use_category() stored in var2.u8[3] via HB_BUFFER_ALLOCATE_VAR
+	// Stored directly on GlyphInfo so it survives GSUB operations.
+	USECategory uint8
 }
 
 // Glyph property constants.
@@ -283,8 +288,15 @@ type Buffer struct {
 	serial uint8
 
 	// Script and Language for shaping (optional, can be auto-detected)
-	Script   Tag
-	Language Tag
+	Script             Tag
+	Language           Tag
+	LanguageCandidates []Tag // Multiple language candidates in priority order (BCP47→OT may produce multiple)
+
+	// PreContext and PostContext hold Unicode codepoints that surround the text being shaped.
+	// Used for Arabic joining: context characters affect the joining form of the first/last glyphs.
+	// HarfBuzz equivalent: context[2][CONTEXT_LENGTH] and context_len[2] in hb-buffer.hh:110-111
+	PreContext  []Codepoint
+	PostContext []Codepoint
 
 	// ScratchFlags holds temporary flags used during shaping.
 	// HarfBuzz equivalent: scratch_flags in hb-buffer.hh
@@ -536,6 +548,12 @@ func isContinuation(cp Codepoint) bool {
 	return false
 }
 
+// isRegionalIndicator returns true if the codepoint is a Regional Indicator Symbol (U+1F1E6-U+1F1FF).
+// Pairs of Regional Indicators form flag emoji and should be merged into one cluster.
+func isRegionalIndicator(cp Codepoint) bool {
+	return cp >= 0x1F1E6 && cp <= 0x1F1FF
+}
+
 // formClusters merges clusters for grapheme groups (base + continuations).
 // HarfBuzz equivalent: hb_form_clusters() in hb-ot-shape.cc:577-589
 // This ensures that a base character and its continuations share the same cluster.
@@ -544,14 +562,33 @@ func formClusters(buf *Buffer) {
 		return
 	}
 
-	// Find grapheme boundaries and merge clusters
-	// A grapheme is: base character + any following continuations
-	// HarfBuzz uses _hb_glyph_info_is_continuation() which checks for continuation flag
+	// First pass: determine continuation flags for each glyph.
+	// HarfBuzz equivalent: hb_set_unicode_props() in hb-ot-shape.cc:470-546
+	// This handles context-dependent continuations:
+	// - ZWJ (U+200D) is a continuation
+	// - Extended_Pictographic character after ZWJ is also a continuation
+	// - Second Regional Indicator in a pair is a continuation (flag emoji)
+	n := len(buf.Info)
+	isCont := make([]bool, n)
+	for i := 0; i < n; i++ {
+		cp := buf.Info[i].Codepoint
+		if isContinuation(cp) {
+			isCont[i] = true
+			// HarfBuzz: if ZWJ and next char is Extended_Pictographic, mark it as continuation too
+			if cp == 0x200D && i+1 < n && isExtendedPictographic(buf.Info[i+1].Codepoint) {
+				i++
+				isCont[i] = true
+			}
+		} else if i > 0 && isRegionalIndicator(cp) && isRegionalIndicator(buf.Info[i-1].Codepoint) {
+			// HarfBuzz: RI + RI → second RI is continuation (flag emoji pair)
+			isCont[i] = true
+		}
+	}
+
+	// Second pass: merge clusters for grapheme groups (base + continuations)
 	start := 0
-	for i := 1; i < len(buf.Info); i++ {
-		// Check if this is a continuation
-		if isContinuation(buf.Info[i].Codepoint) {
-			// This is a continuation - continue the current grapheme
+	for i := 1; i < n; i++ {
+		if isCont[i] {
 			continue
 		}
 		// This is a new base - merge the previous grapheme's clusters
@@ -561,8 +598,8 @@ func formClusters(buf *Buffer) {
 		start = i
 	}
 	// Merge the last grapheme
-	if len(buf.Info) > start+1 {
-		buf.MergeClusters(start, len(buf.Info))
+	if n > start+1 {
+		buf.MergeClusters(start, n)
 	}
 }
 
@@ -950,6 +987,11 @@ type Shaper struct {
 	// (e.g., Arabic, Hebrew). Reset to nil after normalization.
 	reorderMarksCallback ReorderMarksCallback
 
+	// Script-specific compose filter callback.
+	// HarfBuzz equivalent: plan->shaper->compose in hb-ot-shape-normalize.cc:448
+	// If set, this is called before recomposition. Return false to prevent composition.
+	composeFilter func(a, b Codepoint) bool
+
 	// Arabic fallback shaping plan.
 	// Used when font has no GSUB but has Unicode Arabic Presentation Forms.
 	// HarfBuzz equivalent: arabic_fallback_plan_t in hb-ot-shaper-arabic-fallback.hh
@@ -1258,14 +1300,31 @@ func (s *Shaper) Shape(buf *Buffer, features []Feature) {
 		return
 	}
 
-	// Use default features if none specified
-	if features == nil {
+	// HarfBuzz: Default features (common_features[], horizontal_features[]) are ALWAYS
+	// added first, then user features are appended AFTER. compile() merges duplicates
+	// so user features can override defaults (e.g., -calt disables calt but keeps kern).
+	// See hb-ot-shape.cc:320-399 (hb_ot_shape_collect_features)
+	if len(features) > 0 {
+		allFeatures := make([]Feature, 0, len(s.defaultFeatures)+len(features))
+		allFeatures = append(allFeatures, s.defaultFeatures...)
+		allFeatures = append(allFeatures, features...)
+		features = allFeatures
+	} else {
 		features = s.defaultFeatures
 	}
 
 	// Step 1: Guess segment properties (script, direction, language)
 	// HarfBuzz equivalent: hb_buffer_guess_segment_properties() in hb-buffer.cc
 	buf.GuessSegmentProperties()
+
+	// Step 1.1: Resolve language candidates against font's GSUB table
+	// HarfBuzz equivalent: hb_ot_layout_table_select_script() tries multiple language tags
+	if len(buf.LanguageCandidates) > 1 && s.gsub != nil {
+		best := s.gsub.FindBestLanguage(buf.Script, buf.LanguageCandidates)
+		if best != 0 {
+			buf.Language = best
+		}
+	}
 
 	// Step 1.5: Form clusters - merge grapheme clusters (base + marks)
 	// HarfBuzz equivalent: hb_form_clusters() in hb-ot-shape.cc:577-589
@@ -1326,6 +1385,10 @@ func (s *Shaper) Shape(buf *Buffer, features []Feature) {
 		s.shapeDefault(buf, features)
 	}
 
+	// Step 3b: Apply space fallback widths for special Unicode spaces
+	// HarfBuzz equivalent: _hb_ot_shape_fallback_spaces() in hb-ot-shape-fallback.cc
+	s.applySpaceFallback(buf)
+
 	// Step 4: Handle default ignorables (after all shaping)
 	// HarfBuzz: hb-ot-shape.cc:828-851 (hb_ot_hide_default_ignorables)
 	s.hideDefaultIgnorables(buf)
@@ -1341,9 +1404,11 @@ func (s *Shaper) insertDottedCircle(buf *Buffer) {
 		return
 	}
 
-	// 2. Check if buffer starts with a mark (BOT flag + first char is mark)
+	// 2. Check if buffer starts with a mark (BOT flag + no pre-context + first char is mark)
 	// BOT = Beginning Of Text
+	// HarfBuzz: !(buffer->flags & HB_BUFFER_FLAG_BOT) || buffer->context_len[0] || !is_mark
 	if buf.Flags&BufferFlagBOT == 0 ||
+		len(buf.PreContext) > 0 ||
 		buf.Len() == 0 ||
 		!IsUnicodeMark(buf.Info[0].Codepoint) {
 		return
@@ -1439,9 +1504,11 @@ func (s *Shaper) insertSyllabicDottedCircles(buf *Buffer, accessor SyllableAcces
 			lastSyllable = syllable
 
 			// Create the dotted circle with same cluster/mask/syllable as current glyph
+			// HarfBuzz: hb-ot-shaper-syllabic.cc:73-76
 			ginfo := dottedCircle
 			ginfo.Cluster = buf.Info[buf.Idx].Cluster
 			ginfo.Mask = buf.Info[buf.Idx].Mask
+			ginfo.Syllable = buf.Info[buf.Idx].Syllable
 
 			// Insert dotted circle after possible Repha
 			// HarfBuzz: hb-ot-shaper-syllabic.cc:81-87
@@ -1499,9 +1566,9 @@ func (s *Shaper) shapeDefault(buf *Buffer, features []Feature) {
 	s.applyGSUB(buf, gsubFeatures)
 	s.setBaseAdvances(buf)
 
-	// Add default GPOS features if none provided
-	// HarfBuzz equivalent: common_features[] and horizontal_features[] in hb-ot-shape.cc:295-318
-	// These features are always enabled by default for mark positioning, cursive, kerning, etc.
+	// Fallback: add default GPOS features if categorization yielded none
+	// (e.g., font has no GPOS table at all). Normally defaults are already
+	// in the features list from Shape().
 	if len(gposFeatures) == 0 {
 		gposFeatures = s.getDefaultGPOSFeatures(buf.Direction)
 	}
@@ -1752,10 +1819,10 @@ func (s *Shaper) shapeArabic(buf *Buffer, features []Feature) {
 	// This internally calls arabicJoining() and applies features per-glyph
 	// Buffer is in LOGICAL order (left-to-right in memory = logical order)
 	//
-	// User GSUB features are passed to applyArabicFeatures, which filters out
-	// standard Arabic features (ccmp, rlig, calt, liga, etc.) and applies the rest.
-	gsubFeatures, _ := s.categorizeFeatures(features)
-	s.applyArabicFeatures(buf, gsubFeatures)
+	// Pass raw user features to applyArabicFeatures. It builds CompileMap internally
+	// to merge defaults with user overrides (e.g., -calt disables calt).
+	// HarfBuzz: hb_ot_shape_collect_features() + compile() handles merging
+	s.applyArabicFeatures(buf, features)
 
 	// Step 1.5: Set glyph classes from GDEF AFTER GSUB (CRITICAL!)
 	// GSUB may have decomposed glyphs (e.g., U+0623 → Alef + HamzaAbove)
@@ -1826,14 +1893,14 @@ func (s *Shaper) reverseClusters(buf *Buffer) {
 // Features are categorized based on whether they exist in the font's GSUB or GPOS table.
 func (s *Shaper) categorizeFeatures(features []Feature) (gsub, gpos []Feature) {
 	for _, f := range features {
-		if f.Value == 0 {
-			continue // Disabled feature
-		}
+		// Value==0 features (e.g., -kern) must be passed through so CompileMap
+		// can merge them with defaults. HarfBuzz: compile() handles Value==0
+		// by skipping the feature after merging (hb-ot-map.cc:268).
 
 		// Check if feature exists in GSUB
 		if s.gsub != nil {
 			if featureList, err := s.gsub.ParseFeatureList(); err == nil {
-				if featureList.FindFeature(f.Tag) != nil {
+				if f.Value == 0 || featureList.FindFeature(f.Tag) != nil {
 					gsub = append(gsub, f)
 				}
 			}
@@ -1842,7 +1909,7 @@ func (s *Shaper) categorizeFeatures(features []Feature) (gsub, gpos []Feature) {
 		// Check if feature exists in GPOS
 		if s.gpos != nil {
 			if featureList, err := s.gpos.ParseFeatureList(); err == nil {
-				if featureList.FindFeature(f.Tag) != nil {
+				if f.Value == 0 || featureList.FindFeature(f.Tag) != nil {
 					gpos = append(gpos, f)
 				}
 			}
@@ -2003,6 +2070,8 @@ func getCodepointFallback(cp Codepoint) Codepoint {
 		return 0x0020
 	case 0x205F: // MEDIUM MATHEMATICAL SPACE -> SPACE
 		return 0x0020
+	case 0x3000: // IDEOGRAPHIC SPACE -> SPACE
+		return 0x0020
 	}
 	return cp
 }
@@ -2122,19 +2191,23 @@ func (s *Shaper) applyGSUB(buf *Buffer, features []Feature) {
 	rvrnTag := MakeTag('r', 'v', 'r', 'n')
 	s.gsub.ApplyFeatureToBufferWithMaskAndVariations(rvrnTag, buf, s.gdef, MaskGlobal, s.font, variationsIndex)
 
+	// Apply 'locl' (Localized Forms) feature - only via LangSys, no global fallback
+	// HarfBuzz: locl is in common_features[] and applied via script/language LangSys
+	s.gsub.ApplyFeatureToBufferLangSysOnly(TagLocl, buf, s.gdef, MaskGlobal, s.font, variationsIndex)
+
 	// Apply automatic fractions before other features
 	s.applyAutomaticFractions(buf)
 
 	// First, apply required features from the script/language system
 	s.applyRequiredGSUBFeaturesToBufferWithVariations(buf, variationsIndex)
 
-	// Apply each explicitly requested feature
-	for _, f := range features {
-		if f.Value == 0 {
-			continue // Feature disabled
-		}
-		// TODO: Respect f.Start/f.End for partial feature application
-		s.gsub.ApplyFeatureToBufferWithMaskAndVariations(f.Tag, buf, s.gdef, MaskGlobal, s.font, variationsIndex)
+	// Apply each feature with HarfBuzz-style merging.
+	// Features with the same tag are merged: later global overrides earlier,
+	// and per-cluster ranges get dedicated mask bits.
+	// HarfBuzz: compile() merges duplicates, then lookups are collected once per tag.
+	nextBit := uint(8) // Start after positional mask bits (1-7)
+	for _, tag := range uniqueFeatureTags(features) {
+		nextBit = applyFeatureWithMergedMask(tag, features, nextBit, buf, s.gsub, s.gdef, s.font)
 	}
 }
 
@@ -2569,10 +2642,35 @@ func zeroWidthDefaultIgnorables(buf *Buffer) {
 // This is called AFTER GPOS positioning (LATE mode for most shapers).
 // When GPOS has been applied, we don't adjust offsets - just zero advances.
 func (s *Shaper) zeroMarkWidthsByGDEF(buf *Buffer) {
+	s.zeroMarkWidthsByGDEFAdjust(buf, false)
+}
+
+// zeroMarkWidthsByGDEFEarly zeros mark advances and optionally adjusts offsets for EARLY mode.
+// HarfBuzz equivalent: zero_mark_widths_by_gdef(buffer, adjust_offsets_when_zeroing)
+//
+// HarfBuzz logic (hb-ot-shape.cc:198-204, 1044-1045):
+//   adjust_mark_positioning_when_zeroing = !apply_gpos && !apply_kerx && (!apply_kern || !cross_kerning)
+//   adjust_offsets_when_zeroing = adjust_mark_positioning_when_zeroing && HB_DIRECTION_IS_FORWARD(direction)
+//
+// So adjust_offsets is only true for FALLBACK mark positioning (no GPOS).
+// When GPOS is present, we just zero the mark advance without transferring to offset.
+func (s *Shaper) zeroMarkWidthsByGDEFEarly(buf *Buffer) {
+	// Only adjust offsets when there's no GPOS to handle mark positioning
+	// HarfBuzz: adjust_mark_positioning_when_zeroing = !apply_gpos && ...
+	adjustMarkPositioning := s.gpos == nil
+	adjustOffsets := adjustMarkPositioning && (buf.Direction == DirectionLTR || buf.Direction == DirectionTTB)
+	s.zeroMarkWidthsByGDEFAdjust(buf, adjustOffsets)
+}
+
+// zeroMarkWidthsByGDEFAdjust is the core implementation shared by EARLY and LATE modes.
+func (s *Shaper) zeroMarkWidthsByGDEFAdjust(buf *Buffer, adjustOffsets bool) {
 	for i := range buf.Pos {
 		if buf.Info[i].GlyphClass == GlyphClassMark {
-			// Zero BOTH advances (not just in-direction!)
-			// HarfBuzz zeros both x_advance and y_advance regardless of direction
+			if adjustOffsets {
+				// HarfBuzz: adjust_mark_offsets()
+				buf.Pos[i].XOffset -= buf.Pos[i].XAdvance
+				buf.Pos[i].YOffset -= buf.Pos[i].YAdvance
+			}
 			buf.Pos[i].XAdvance = 0
 			buf.Pos[i].YAdvance = 0
 		}
@@ -2859,4 +2957,139 @@ func ClearShaperCache() {
 	shaperCacheMu.Lock()
 	shaperCache = make(map[*Font]*Shaper)
 	shaperCacheMu.Unlock()
+}
+
+// spaceType represents the type of Unicode space character for fallback width calculation.
+// HarfBuzz equivalent: hb_unicode_funcs_t::space_t in hb-unicode.hh
+type spaceType int
+
+const (
+	spaceNotSpace     spaceType = 0
+	spaceEM           spaceType = 1  // full em
+	spaceEM2          spaceType = 2  // 1/2 em
+	spaceEM3          spaceType = 3  // 1/3 em
+	spaceEM4          spaceType = 4  // 1/4 em
+	spaceEM5          spaceType = 5  // 1/5 em
+	spaceEM6          spaceType = 6  // 1/6 em
+	spaceEM16         spaceType = 16 // 1/16 em
+	space4EM18        spaceType = 17 // 4/18 em
+	spaceRegular      spaceType = 18
+	spaceFigure       spaceType = 19
+	spacePunctuation  spaceType = 20
+	spaceNarrow       spaceType = 21
+)
+
+// getSpaceType returns the space fallback type for a Unicode codepoint.
+// HarfBuzz equivalent: hb_unicode_funcs_t::space_fallback_type() in hb-unicode.hh
+func getSpaceType(cp Codepoint) spaceType {
+	switch cp {
+	case 0x0020, 0x00A0:
+		return spaceRegular
+	case 0x2000: // EN QUAD
+		return spaceEM2
+	case 0x2001: // EM QUAD
+		return spaceEM
+	case 0x2002: // EN SPACE
+		return spaceEM2
+	case 0x2003: // EM SPACE
+		return spaceEM
+	case 0x2004: // THREE-PER-EM SPACE
+		return spaceEM3
+	case 0x2005: // FOUR-PER-EM SPACE
+		return spaceEM4
+	case 0x2006: // SIX-PER-EM SPACE
+		return spaceEM6
+	case 0x2007: // FIGURE SPACE
+		return spaceFigure
+	case 0x2008: // PUNCTUATION SPACE
+		return spacePunctuation
+	case 0x2009: // THIN SPACE
+		return spaceEM5
+	case 0x200A: // HAIR SPACE
+		return spaceEM16
+	case 0x202F: // NARROW NO-BREAK SPACE
+		return spaceNarrow
+	case 0x205F: // MEDIUM MATHEMATICAL SPACE
+		return space4EM18
+	case 0x3000: // IDEOGRAPHIC SPACE
+		return spaceEM
+	default:
+		return spaceNotSpace
+	}
+}
+
+// applySpaceFallback adjusts advance widths for special Unicode space characters.
+// HarfBuzz equivalent: _hb_ot_shape_fallback_spaces() in hb-ot-shape-fallback.cc
+func (s *Shaper) applySpaceFallback(buf *Buffer) {
+	upem := int(s.face.Upem())
+	horizontal := buf.Direction.IsHorizontal()
+
+	for i := range buf.Info {
+		st := getSpaceType(buf.Info[i].Codepoint)
+		if st == spaceNotSpace || st == spaceRegular {
+			continue
+		}
+
+		switch st {
+		case spaceEM, spaceEM2, spaceEM3, spaceEM4, spaceEM5, spaceEM6, spaceEM16:
+			// Width = upem / space_type (with rounding)
+			// HarfBuzz: (font->x_scale + ((int) space_type)/2) / (int) space_type
+			divisor := int(st)
+			if horizontal {
+				buf.Pos[i].XAdvance = int16((upem + divisor/2) / divisor)
+			} else {
+				buf.Pos[i].YAdvance = -int16((upem + divisor/2) / divisor)
+			}
+
+		case space4EM18:
+			// 4/18 of em
+			// HarfBuzz: (int64_t) +font->x_scale * 4 / 18
+			if horizontal {
+				buf.Pos[i].XAdvance = int16(int64(upem) * 4 / 18)
+			} else {
+				buf.Pos[i].YAdvance = -int16(int64(upem) * 4 / 18)
+			}
+
+		case spaceFigure:
+			// Width of digit '0'-'9'
+			for u := rune('0'); u <= '9'; u++ {
+				if glyph, ok := s.cmap.Lookup(Codepoint(u)); ok {
+					adv := s.getGlyphHAdvance(glyph)
+					if horizontal {
+						buf.Pos[i].XAdvance = int16(adv)
+					} else {
+						buf.Pos[i].YAdvance = -int16(adv)
+					}
+					break
+				}
+			}
+
+		case spacePunctuation:
+			// Width of '.' or ','
+			if glyph, ok := s.cmap.Lookup(Codepoint('.')); ok {
+				adv := s.getGlyphHAdvance(glyph)
+				if horizontal {
+					buf.Pos[i].XAdvance = int16(adv)
+				} else {
+					buf.Pos[i].YAdvance = -int16(adv)
+				}
+			} else if glyph, ok := s.cmap.Lookup(Codepoint(',')); ok {
+				adv := s.getGlyphHAdvance(glyph)
+				if horizontal {
+					buf.Pos[i].XAdvance = int16(adv)
+				} else {
+					buf.Pos[i].YAdvance = -int16(adv)
+				}
+			}
+
+		case spaceNarrow:
+			// Half the current advance
+			// HarfBuzz: pos[i].x_advance /= 2
+			if horizontal {
+				buf.Pos[i].XAdvance /= 2
+			} else {
+				buf.Pos[i].YAdvance /= 2
+			}
+		}
+	}
 }

@@ -267,7 +267,7 @@ var BCP47ToOpenType = map[string][]Tag{
 	"doi": {MakeTag('D', 'G', 'R', ' ')},                                                                                                                     // Dogri (macrolanguage)
 	"dsb": {MakeTag('L', 'S', 'B', ' ')},                                                                                                                     // Lower Sorbian
 	"duj": {MakeTag('D', 'U', 'J', ' ')},                                                                                                                     // Dhuwal
-	"dv":  {MakeTag('D', 'I', 'V', ' ')},                                                                                                                     // Dhivehi
+	"dv":  {MakeTag('D', 'I', 'V', ' '), MakeTag('D', 'H', 'V', ' ')},                                                                                       // Dhivehi (DIV=new, DHV=deprecated)
 	"dwu": {MakeTag('D', 'U', 'J', ' ')},                                                                                                                     // Dhuwal
 	"dwy": {MakeTag('D', 'U', 'J', ' ')},                                                                                                                     // Dhuwaya
 	"dyu": {MakeTag('J', 'U', 'L', ' ')},                                                                                                                     // Dyula
@@ -1022,7 +1022,16 @@ var BCP47ToOpenType = map[string][]Tag{
 	"zea": {MakeTag('Z', 'E', 'A', ' ')},                                                                                                                     // Zeeuws
 	"zen": {MakeTag('B', 'B', 'R', ' ')},                                                                                                                     // Zenaga
 	"zgh": {MakeTag('B', 'B', 'R', ' '), MakeTag('Z', 'G', 'H', ' ')},                                                                                        // Standard Moroccan Tamazight
-	"zh":  {MakeTag('Z', 'H', 'H', ' '), MakeTag('Z', 'H', 'P', ' '), MakeTag('Z', 'H', 'S', ' '), MakeTag('Z', 'H', 'T', ' '), MakeTag('Z', 'H', 'T', 'M')}, // Chinese
+	"zh":         {MakeTag('Z', 'H', 'S', ' '), MakeTag('Z', 'H', 'T', ' '), MakeTag('Z', 'H', 'H', ' '), MakeTag('Z', 'H', 'P', ' '), MakeTag('Z', 'H', 'T', 'M')}, // Chinese (prefer Simplified)
+	"zh-cn":      {MakeTag('Z', 'H', 'S', ' ')},                                                                                                                     // Chinese, Simplified (China)
+	"zh-sg":      {MakeTag('Z', 'H', 'S', ' ')},                                                                                                                     // Chinese, Simplified (Singapore)
+	"zh-hans":    {MakeTag('Z', 'H', 'S', ' ')},                                                                                                                     // Chinese, Simplified (by script)
+	"zh-tw":      {MakeTag('Z', 'H', 'T', ' ')},                                                                                                                     // Chinese, Traditional (Taiwan)
+	"zh-hant":    {MakeTag('Z', 'H', 'T', ' '), MakeTag('Z', 'H', 'H', ' '), MakeTag('Z', 'H', 'T', 'M')},                                                         // Chinese, Traditional (by script)
+	"zh-hk":      {MakeTag('Z', 'H', 'H', ' ')},                                                                                                                     // Chinese, Traditional (Hong Kong)
+	"zh-hant-hk": {MakeTag('Z', 'H', 'H', ' ')},                                                                                                                     // Chinese, Traditional (Hong Kong, by script)
+	"zh-mo":      {MakeTag('Z', 'H', 'T', 'M'), MakeTag('Z', 'H', 'H', ' ')},                                                                                       // Chinese, Traditional (Macao)
+	"zh-hant-mo": {MakeTag('Z', 'H', 'T', 'M'), MakeTag('Z', 'H', 'H', ' ')},                                                                                       // Chinese, Traditional (Macao, by script)
 	"zmz": {MakeTag('B', 'A', 'D', '0')},                                                                                                                     // Mbandja
 	"zne": {MakeTag('Z', 'N', 'D', ' ')},                                                                                                                     // Zande (individual language)
 	"zom": {MakeTag('Q', 'I', 'N', ' ')},                                                                                                                     // Zou

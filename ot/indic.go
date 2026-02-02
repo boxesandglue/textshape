@@ -60,9 +60,13 @@ const (
 type indicFeatureFlags uint8
 
 const (
-	indicFlagGlobal       indicFeatureFlags = 1 << 0 // Feature applies globally (mask is 0, always matches)
-	indicFlagManualJoiner indicFeatureFlags = 1 << 1 // Manual joiner handling (ZWNJ/ZWJ affect this)
-	indicFlagPerSyllable  indicFeatureFlags = 1 << 2 // Applied per syllable
+	indicFlagGlobal      indicFeatureFlags = 1 << 0 // Feature applies globally (mask is 0, always matches)
+	indicFlagManualZWNJ  indicFeatureFlags = 1 << 1 // HarfBuzz: F_MANUAL_ZWNJ — don't skip ZWNJ in context matching
+	indicFlagManualZWJ   indicFeatureFlags = 1 << 2 // HarfBuzz: F_MANUAL_ZWJ — don't skip ZWJ in input matching
+	indicFlagPerSyllable indicFeatureFlags = 1 << 3 // Applied per syllable
+
+	// HarfBuzz: F_MANUAL_JOINERS = F_MANUAL_ZWNJ | F_MANUAL_ZWJ
+	indicFlagManualJoiner indicFeatureFlags = indicFlagManualZWNJ | indicFlagManualZWJ
 )
 
 // indicFeature describes an Indic feature.
@@ -2144,28 +2148,19 @@ func (s *Shaper) applyIndicBasicFeatures(buf *Buffer, indicPlan *IndicPlan) {
 	// Note: These are applied with pauses between some of them in HarfBuzz
 	// ALL basic features have F_PER_SYLLABLE flag - must be applied per-syllable
 	// HarfBuzz: hb-ot-shaper-indic.cc:173-183
-	type featureSpec struct {
-		tag  Tag
-		mask uint32
+	// Apply each basic feature with the correct auto_zwnj/auto_zwj flags.
+	// HarfBuzz: indic_features[] in hb-ot-shaper-indic.cc:166-183
+	// All Indic basic features have F_MANUAL_JOINERS (auto_zwnj=false, auto_zwj=false).
+	basicIndices := []IndicFeatureIndex{
+		indicNukt, indicAkhn, indicRphf, indicRkrf, indicPref,
+		indicBlwf, indicAbvf, indicHalf, indicPstf, indicVatu, indicCjct,
 	}
-	// Build feature specs from IndicPlan masks
-	// HarfBuzz: indic_features[] and mask_array[] in hb-ot-shaper-indic.cc
-	basicFeatures := []featureSpec{
-		{indicFeatures[indicNukt].tag, indicPlan.maskArray[indicNukt]}, // Nukta forms (global)
-		{indicFeatures[indicAkhn].tag, indicPlan.maskArray[indicAkhn]}, // Akhand ligatures (global)
-		{indicFeatures[indicRphf].tag, indicPlan.maskArray[indicRphf]}, // Reph forms
-		{indicFeatures[indicRkrf].tag, indicPlan.maskArray[indicRkrf]}, // Rakaar forms (global)
-		{indicFeatures[indicPref].tag, indicPlan.maskArray[indicPref]}, // Pre-base forms
-		{indicFeatures[indicBlwf].tag, indicPlan.maskArray[indicBlwf]}, // Below-base forms
-		{indicFeatures[indicAbvf].tag, indicPlan.maskArray[indicAbvf]}, // Above-base forms
-		{indicFeatures[indicHalf].tag, indicPlan.maskArray[indicHalf]}, // Half forms
-		{indicFeatures[indicPstf].tag, indicPlan.maskArray[indicPstf]}, // Post-base forms
-		{indicFeatures[indicVatu].tag, indicPlan.maskArray[indicVatu]}, // Vattu variants (global)
-		{indicFeatures[indicCjct].tag, indicPlan.maskArray[indicCjct]}, // Conjunct forms
-	}
-
-	for _, feat := range basicFeatures {
-		s.applyFeaturePerSyllable(buf, feat.tag, feat.mask)
+	for _, idx := range basicIndices {
+		feat := indicFeatures[idx]
+		// HarfBuzz: auto_zwnj = !(flags & F_MANUAL_ZWNJ), auto_zwj = !(flags & F_MANUAL_ZWJ)
+		autoZWNJ := feat.flags&indicFlagManualZWNJ == 0
+		autoZWJ := feat.flags&indicFlagManualZWJ == 0
+		s.applyFeaturePerSyllableWithOpts(buf, feat.tag, indicPlan.maskArray[idx], autoZWNJ, autoZWJ)
 	}
 }
 
@@ -2226,23 +2221,31 @@ func (s *Shaper) applyIndicOtherFeatures(buf *Buffer, indicPlan *IndicPlan) {
 	}
 
 	// Apply 'init' feature (only first glyph has the init mask set)
-	// HarfBuzz: 'init' only applies to buffer-initial glyph
-	s.gsub.ApplyFeatureToBufferWithMask(MakeTag('i', 'n', 'i', 't'), buf, s.gdef, indicPlan.maskArray[indicInit], s.font)
+	// HarfBuzz: 'init' has F_MANUAL_JOINERS | F_PER_SYLLABLE → autoZWNJ=false, autoZWJ=false
+	s.applyFeaturePerSyllableWithOpts(buf, MakeTag('i', 'n', 'i', 't'), indicPlan.maskArray[indicInit], false, false)
 
 	// Other features (HarfBuzz: hb-ot-shaper-indic.cc other_features[])
-	// All have F_PER_SYLLABLE flag - must be applied within syllable boundaries only
-	otherFeatures := []Tag{
+	// All have F_MANUAL_JOINERS | F_PER_SYLLABLE → autoZWNJ=false, autoZWJ=false
+	otherIndicFeatures := []Tag{
 		tagPres, // Pre-base substitutions
-		tagAbvs,                     // Above-base substitutions
-		tagBlws,                     // Below-base substitutions
-		tagPsts,                     // Post-base substitutions
-		tagHaln,                     // Halant forms
-		// Standard features
+		tagAbvs, // Above-base substitutions
+		tagBlws, // Below-base substitutions
+		tagPsts, // Post-base substitutions
+		tagHaln, // Halant forms
+	}
+
+	for _, tag := range otherIndicFeatures {
+		s.applyFeaturePerSyllableWithOpts(buf, tag, MaskGlobal, false, false)
+	}
+
+	// Standard horizontal features (HarfBuzz: hb-ot-shape.cc horizontal_features[])
+	// These use default flags: autoZWNJ=true, autoZWJ=true
+	standardFeatures := []Tag{
 		tagCalt, // Contextual alternates
 		tagClig, // Contextual ligatures
 	}
 
-	for _, tag := range otherFeatures {
+	for _, tag := range standardFeatures {
 		s.applyFeaturePerSyllable(buf, tag, MaskGlobal)
 	}
 }
@@ -2251,7 +2254,20 @@ func (s *Shaper) applyIndicOtherFeatures(buf *Buffer, indicPlan *IndicPlan) {
 // HarfBuzz equivalent: F_PER_SYLLABLE flag in hb-ot-map.hh
 // This ensures that context-based lookups (ligatures, etc.) only match glyphs
 // within the same syllable, preventing cross-syllable substitutions.
+// Uses HarfBuzz defaults for auto_zwnj=true, auto_zwj=true.
 func (s *Shaper) applyFeaturePerSyllable(buf *Buffer, tag Tag, featureMask uint32) {
+	s.applyFeaturePerSyllableWithOpts(buf, tag, featureMask, true, true)
+}
+
+// applyFeaturePerSyllableWithOpts applies a GSUB feature per syllable with explicit
+// auto_zwnj/auto_zwj flags.
+// HarfBuzz equivalent: Feature application with F_PER_SYLLABLE combined with
+// F_MANUAL_ZWNJ (auto_zwnj=false) and/or F_MANUAL_ZWJ (auto_zwj=false).
+// See hb-ot-map.cc:308-309:
+//
+//	map->auto_zwnj = !(info->flags & F_MANUAL_ZWNJ);
+//	map->auto_zwj  = !(info->flags & F_MANUAL_ZWJ);
+func (s *Shaper) applyFeaturePerSyllableWithOpts(buf *Buffer, tag Tag, featureMask uint32, autoZWNJ, autoZWJ bool) {
 	if s.gsub == nil || len(buf.Info) == 0 {
 		return
 	}
@@ -2266,10 +2282,9 @@ func (s *Shaper) applyFeaturePerSyllable(buf *Buffer, tag Tag, featureMask uint3
 		}
 
 		// Apply feature to this syllable range only
-		s.gsub.ApplyFeatureToBufferRangeWithMask(tag, buf, s.gdef, featureMask, s.font, start, end)
+		s.gsub.ApplyFeatureToBufferRangeWithOpts(tag, buf, s.gdef, featureMask, s.font, start, end, autoZWNJ, autoZWJ)
 
 		// Adjust end for next iteration (buffer length may have changed)
-		// Find the new end by scanning for the next syllable
 		newEnd := start
 		for newEnd < len(buf.Info) && buf.Info[newEnd].Syllable == syllable {
 			newEnd++
