@@ -114,4 +114,4 @@ MIT License — see [LICENSE](LICENSE)
 ## Acknowledgments
 
 - [HarfBuzz](https://harfbuzz.github.io/) — The reference text shaping engine
-- [textlayout](https://github.com/boxesandglue/textlayout) — Earlier Go HarfBuzz port that inspired this implementation
+- [textlayout](https://github.com/benoitkugler/textlayout) — Earlier Go HarfBuzz port that inspired this implementation

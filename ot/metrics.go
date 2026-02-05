@@ -3,6 +3,7 @@ package ot
 import (
 	"encoding/binary"
 	"io"
+	"sync"
 )
 
 // FontExtents contains font-wide extent values.
@@ -298,17 +299,21 @@ func (n *Name) FullName() string {
 // Face represents a font face with parsed tables for metrics.
 // This is a higher-level abstraction that caches parsed tables.
 type Face struct {
-	Font  *Font
-	head  *Head
-	hhea  *Hhea
-	hmtx  *Hmtx
-	os2   *OS2
-	post  *Post
-	name  *Name
-	cmap  *Cmap
-	fvar  *Fvar
-	upem  uint16
-	isCFF bool
+	Font     *Font
+	head     *Head
+	hhea     *Hhea
+	hmtx     *Hmtx
+	os2      *OS2
+	post     *Post
+	name     *Name
+	cmap     *Cmap
+	fvar     *Fvar
+	glyf     *Glyf
+	glyfOnce sync.Once
+	cff      *CFF
+	cffOnce  sync.Once
+	upem     uint16
+	isCFF    bool
 }
 
 // NewFace creates a new Face from a Font, parsing required tables.
@@ -548,6 +553,28 @@ func (f *Face) NamedInstances() []NamedInstance {
 // Fvar returns the parsed fvar table, or nil if not present.
 func (f *Face) Fvar() *Fvar {
 	return f.fvar
+}
+
+// getGlyf returns the parsed glyf table, lazily initializing it.
+func (f *Face) getGlyf() *Glyf {
+	f.glyfOnce.Do(func() {
+		if !f.isCFF {
+			f.glyf, _ = ParseGlyfFromFont(f.Font)
+		}
+	})
+	return f.glyf
+}
+
+// getCFF returns the parsed CFF table, lazily initializing it.
+func (f *Face) getCFF() *CFF {
+	f.cffOnce.Do(func() {
+		if f.isCFF {
+			if data, err := f.Font.TableData(TagCFF); err == nil {
+				f.cff, _ = ParseCFF(data)
+			}
+		}
+	})
+	return f.cff
 }
 
 // LoadFaceFromData loads a font from byte data and returns a Face.
