@@ -349,4 +349,3 @@ var indicTableGrantha2 = [8]uint16{
 	// Grantha 0x11338-...
 	i_X, i_X, i_X, i_N, i_N, i_X, i_X, i_X,
 }
-

@@ -79,7 +79,7 @@ func (h *Hvar) HasData() bool {
 // GetAdvanceDelta returns the advance delta for a glyph at the given
 // normalized coordinates. The coordinates should be in F2DOT14 format
 // (scaled by 16384, where 1.0 = 16384).
-func (h *Hvar) GetAdvanceDelta(glyph GlyphID, normalizedCoords []int) float32 {
+func (h *Hvar) GetAdvanceDelta(glyph GlyphID, normalizedCoords []int) float64 {
 	if h == nil || h.varStore == nil {
 		return 0
 	}
@@ -154,7 +154,7 @@ func parseItemVariationStore(data []byte) (*ItemVariationStore, error) {
 
 // GetDelta returns the delta value for a variation index at the given
 // normalized coordinates.
-func (vs *ItemVariationStore) GetDelta(varIdx uint32, coords []int) float32 {
+func (vs *ItemVariationStore) GetDelta(varIdx uint32, coords []int) float64 {
 	if vs == nil || vs.regions == nil {
 		return 0
 	}
@@ -175,7 +175,7 @@ func (vs *ItemVariationStore) GetDelta(varIdx uint32, coords []int) float32 {
 }
 
 // getVarDataDelta extracts delta from a VarData subtable.
-func (vs *ItemVariationStore) getVarDataDelta(varData []byte, inner int, coords []int) float32 {
+func (vs *ItemVariationStore) getVarDataDelta(varData []byte, inner int, coords []int) float64 {
 	if len(varData) < 6 {
 		return 0
 	}
@@ -218,8 +218,8 @@ func (vs *ItemVariationStore) getVarDataDelta(varData []byte, inner int, coords 
 
 	row := varData[rowOffset:]
 
-	// Compute delta
-	var delta float32
+	// Compute delta using float64 precision (matches HarfBuzz's double)
+	var delta float64
 	for i := 0; i < int(regionIndexCount); i++ {
 		regionIdx := int(regionIndices[i])
 		scalar := vs.regions.Evaluate(regionIdx, coords)
@@ -248,7 +248,7 @@ func (vs *ItemVariationStore) getVarDataDelta(varData []byte, inner int, coords 
 			}
 		}
 
-		delta += scalar * float32(itemDelta)
+		delta += scalar * float64(itemDelta)
 	}
 
 	return delta
@@ -285,7 +285,7 @@ func parseVarRegionList(data []byte) (*VarRegionList, error) {
 
 // Evaluate computes the scalar for a region at the given normalized coordinates.
 // Coordinates are in F2DOT14 format (1.0 = 16384).
-func (rl *VarRegionList) Evaluate(regionIndex int, coords []int) float32 {
+func (rl *VarRegionList) Evaluate(regionIndex int, coords []int) float64 {
 	if rl == nil || regionIndex >= rl.regionCount {
 		return 0
 	}
@@ -297,7 +297,9 @@ func (rl *VarRegionList) Evaluate(regionIndex int, coords []int) float32 {
 	// Each region is axisCount * 6 bytes
 	regionOffset := 4 + regionIndex*rl.axisCount*6
 
-	var scalar float32 = 1.0
+	// HarfBuzz uses double precision for scalar calculations.
+	// hb-ot-var-common.hh:157: "double scalar = 1.0;"
+	var scalar float64 = 1.0
 	for i := 0; i < rl.axisCount; i++ {
 		axisOffset := regionOffset + i*6
 		startCoord := int16(binary.BigEndian.Uint16(rl.data[axisOffset:]))
@@ -323,7 +325,11 @@ func (rl *VarRegionList) Evaluate(regionIndex int, coords []int) float32 {
 
 // evaluateRegionAxis evaluates the contribution of a single axis to the region scalar.
 // All values are in F2DOT14 format (1.0 = 16384).
-func evaluateRegionAxis(start, peak, end, coord int) float32 {
+// evaluateRegionAxis evaluates the contribution of a single axis to the region scalar.
+// All values are in F2DOT14 format (1.0 = 16384).
+// HarfBuzz uses double precision for these calculations.
+// HarfBuzz equivalent: calculate_scalar() in hb-ot-var-common.hh:157-205
+func evaluateRegionAxis(start, peak, end, coord int) float64 {
 	if peak == 0 || coord == peak {
 		return 1.0
 	}
@@ -343,11 +349,11 @@ func evaluateRegionAxis(start, peak, end, coord int) float32 {
 		return 0
 	}
 
-	// Interpolate
+	// Interpolate using float64 (matches HarfBuzz's double precision)
 	if coord < peak {
-		return float32(coord-start) / float32(peak-start)
+		return float64(coord-start) / float64(peak-start)
 	}
-	return float32(end-coord) / float32(end-peak)
+	return float64(end-coord) / float64(end-peak)
 }
 
 // DeltaSetIndexMap maps glyph IDs to variation indices.

@@ -31,6 +31,7 @@ type Feature struct {
 	// HarfBuzz: hb_ot_map_feature_flags_t in hb-ot-map.hh
 	PerSyllable bool // F_PER_SYLLABLE: constrain lookup application to syllable boundaries
 	ManualZWJ   bool // F_MANUAL_ZWJ: disable automatic ZWJ handling (AutoZWJ = !ManualZWJ)
+	Random      bool // F_RANDOM: use random alternate selection (for 'rand' feature)
 }
 
 const (
@@ -289,8 +290,9 @@ func applyFeatureWithMergedMask(
 		return nextBit
 	}
 
-	if info.IsGlobal {
+	if info.IsGlobal && info.MaxValue == 1 {
 		// Simple case: feature applies to all glyphs with MaskGlobal
+		// HarfBuzz: only use global bit when max_value == 1 (hb-ot-map.cc:312)
 		gsub.ApplyFeatureToBufferWithMask(tag, buf, gdef, MaskGlobal, font)
 		return nextBit
 	}
@@ -380,6 +382,10 @@ func DefaultFeatures() []Feature {
 		NewFeatureOn(TagCalt), // Contextual Alternates
 		NewFeatureOn(TagLiga), // Standard Ligatures
 		NewFeatureOn(TagClig), // Contextual Ligatures
+		// HarfBuzz: enable_feature('rand', F_RANDOM, HB_OT_MAP_MAX_VALUE)
+		// Random alternate selection — global with value=MAX_VALUE.
+		{Tag: MakeTag('r', 'a', 'n', 'd'), Value: otMapMaxValue, Random: true,
+			Start: FeatureGlobalStart, End: FeatureGlobalEnd},
 		// GPOS features - HarfBuzz common_features[] and horizontal_features[]
 		// See hb-ot-shape.cc:295-318
 		NewFeatureOn(TagAbvm), // Above-base Mark Positioning

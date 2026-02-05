@@ -1,4 +1,3 @@
-
 //line use_machine.rl:1
 // Copyright 2015 Mozilla Foundation, Google, Inc.
 // Ported to Go for textshape.
@@ -7,7 +6,6 @@
 
 package ot
 
-
 //line use_machine_ragel.go:12
 const useSyllableMachine_start int = 1
 const useSyllableMachine_first_final int = 1
@@ -15,497 +13,537 @@ const useSyllableMachine_error int = -1
 
 const useSyllableMachine_en_main int = 1
 
-
 //line use_machine.rl:12
 
-
-
 //line use_machine.rl:138
-
 
 // FindSyllablesUSE finds USE syllable boundaries in the buffer.
 // It sets syllables[i].Syllable to (serial << 4 | type) for each glyph.
 // HarfBuzz equivalent: find_syllables_use() in hb-ot-shaper-use-machine.hh
 func FindSyllablesUSE(syllables []USESyllableInfo) (hasBroken bool) {
-  if len(syllables) == 0 {
-    return false
-  }
+	if len(syllables) == 0 {
+		return false
+	}
 
-  // Build category array, filtering out CGJ and ZWNJ-before-mark.
-  // HarfBuzz: find_syllables_use() in hb-ot-shaper-use-machine.hh:906-924
-  // Filter 1: not_ccs_default_ignorable filters CGJ
-  // Filter 2: ZWNJ is filtered out if the next non-CGJ glyph is a unicode mark
-  n := len(syllables)
-  data := make([]byte, n)
-  mapping := make([]int, 0, n) // Maps filtered index to original index
+	// Build category array, filtering out CGJ and ZWNJ-before-mark.
+	// HarfBuzz: find_syllables_use() in hb-ot-shaper-use-machine.hh:906-924
+	// Filter 1: not_ccs_default_ignorable filters CGJ
+	// Filter 2: ZWNJ is filtered out if the next non-CGJ glyph is a unicode mark
+	n := len(syllables)
+	data := make([]byte, n)
+	mapping := make([]int, 0, n) // Maps filtered index to original index
 
-  for i := 0; i < n; i++ {
-    cat := syllables[i].Category
-    // Filter 1: Skip CGJ (HarfBuzz: not_ccs_default_ignorable)
-    if cat == USE_CGJ {
-      continue
-    }
-    // Filter 1b: Skip ZWJ (U+200D) from Ragel input.
-    // HarfBuzz's compiled C Ragel machine treats ZWJ (category WJ=16) as transparent
-    // within clusters, but our Go Ragel compilation breaks clusters at ZWJ.
-    // U+2060 (Word Joiner) also has category WJ but must NOT be filtered - it should
-    // break clusters and trigger dotted circle insertion for broken syllables.
-    // Only filter the actual ZWJ character (U+200D).
-    if cat == USE_WJ && syllables[i].Codepoint == 0x200D {
-      continue
-    }
-    // Filter 2: Skip ZWNJ if next non-CGJ glyph is a unicode mark
-    // HarfBuzz: hb-ot-shaper-use-machine.hh:914-921
-    if cat == USE_ZWNJ {
-      filterZWNJ := false
-      for j := i + 1; j < n; j++ {
-        if syllables[j].Category == USE_CGJ {
-          continue // Skip CGJ when looking ahead
-        }
-        // Found next non-CGJ glyph: filter ZWNJ if it's a mark
-        filterZWNJ = IsUnicodeMark(syllables[j].Codepoint)
-        break
-      }
-      if filterZWNJ {
-        continue
-      }
-    }
-    data[len(mapping)] = byte(cat)
-    mapping = append(mapping, i)
-  }
+	for i := 0; i < n; i++ {
+		cat := syllables[i].Category
+		// Filter 1: Skip CGJ (HarfBuzz: not_ccs_default_ignorable)
+		if cat == USE_CGJ {
+			continue
+		}
+		// Filter 1b: Skip ZWJ (U+200D) from Ragel input.
+		// HarfBuzz's compiled C Ragel machine treats ZWJ (category WJ=16) as transparent
+		// within clusters, but our Go Ragel compilation breaks clusters at ZWJ.
+		// U+2060 (Word Joiner) also has category WJ but must NOT be filtered - it should
+		// break clusters and trigger dotted circle insertion for broken syllables.
+		// Only filter the actual ZWJ character (U+200D).
+		if cat == USE_WJ && syllables[i].Codepoint == 0x200D {
+			continue
+		}
+		// Filter 2: Skip ZWNJ if next non-CGJ glyph is a unicode mark
+		// HarfBuzz: hb-ot-shaper-use-machine.hh:914-921
+		if cat == USE_ZWNJ {
+			filterZWNJ := false
+			for j := i + 1; j < n; j++ {
+				if syllables[j].Category == USE_CGJ {
+					continue // Skip CGJ when looking ahead
+				}
+				// Found next non-CGJ glyph: filter ZWNJ if it's a mark
+				filterZWNJ = IsUnicodeMark(syllables[j].Codepoint)
+				break
+			}
+			if filterZWNJ {
+				continue
+			}
+		}
+		data[len(mapping)] = byte(cat)
+		mapping = append(mapping, i)
+	}
 
-  if len(mapping) == 0 {
-    return false
-  }
+	if len(mapping) == 0 {
+		return false
+	}
 
-  filteredData := data[:len(mapping)]
+	filteredData := data[:len(mapping)]
 
-  var cs, p, pe, eof, ts, te, act int
-  _ = act // Suppress unused variable warning
+	var cs, p, pe, eof, ts, te, act int
+	_ = act // Suppress unused variable warning
 
-  pe = len(filteredData)
-  eof = pe
+	pe = len(filteredData)
+	eof = pe
 
-  var syllableSerial uint8 = 1
+	var syllableSerial uint8 = 1
 
-  foundSyllable := func(syllableType USESyllableType) {
-    // Map filtered indices back to original indices
-    origStart := mapping[ts]
-    origEnd := n
-    if te < len(mapping) {
-      origEnd = mapping[te]
-    }
+	foundSyllable := func(syllableType USESyllableType) {
+		// Map filtered indices back to original indices
+		origStart := mapping[ts]
+		origEnd := n
+		if te < len(mapping) {
+			origEnd = mapping[te]
+		}
 
-    for i := origStart; i < origEnd; i++ {
-      syllables[i].Syllable = (syllableSerial << 4) | uint8(syllableType)
-      syllables[i].SyllableType = syllableType
-    }
-    syllableSerial++
-    if syllableSerial == 16 {
-      syllableSerial = 1
-    }
-  }
+		for i := origStart; i < origEnd; i++ {
+			syllables[i].Syllable = (syllableSerial << 4) | uint8(syllableType)
+			syllables[i].SyllableType = syllableType
+		}
+		syllableSerial++
+		if syllableSerial == 16 {
+			syllableSerial = 1
+		}
+	}
 
-  // Use filtered data for Ragel
-  data = filteredData
+	// Use filtered data for Ragel
+	data = filteredData
 
-  
 //line use_machine_ragel.go:86
 	{
-	cs = useSyllableMachine_start
-	ts = 0
-	te = 0
-	act = 0
+		cs = useSyllableMachine_start
+		ts = 0
+		te = 0
+		act = 0
 	}
 
 //line use_machine_ragel.go:94
 	{
-	if p == pe {
-		goto _test_eof
-	}
-	switch cs {
-	case 1:
-		goto st_case_1
-	case 2:
-		goto st_case_2
-	case 3:
-		goto st_case_3
-	case 4:
-		goto st_case_4
-	case 5:
-		goto st_case_5
-	case 6:
-		goto st_case_6
-	case 7:
-		goto st_case_7
-	case 8:
-		goto st_case_8
-	case 9:
-		goto st_case_9
-	case 10:
-		goto st_case_10
-	case 11:
-		goto st_case_11
-	case 12:
-		goto st_case_12
-	case 13:
-		goto st_case_13
-	case 14:
-		goto st_case_14
-	case 15:
-		goto st_case_15
-	case 16:
-		goto st_case_16
-	case 17:
-		goto st_case_17
-	case 18:
-		goto st_case_18
-	case 19:
-		goto st_case_19
-	case 20:
-		goto st_case_20
-	case 21:
-		goto st_case_21
-	case 22:
-		goto st_case_22
-	case 23:
-		goto st_case_23
-	case 24:
-		goto st_case_24
-	case 25:
-		goto st_case_25
-	case 26:
-		goto st_case_26
-	case 27:
-		goto st_case_27
-	case 28:
-		goto st_case_28
-	case 29:
-		goto st_case_29
-	case 30:
-		goto st_case_30
-	case 31:
-		goto st_case_31
-	case 32:
-		goto st_case_32
-	case 33:
-		goto st_case_33
-	case 34:
-		goto st_case_34
-	case 35:
-		goto st_case_35
-	case 36:
-		goto st_case_36
-	case 37:
-		goto st_case_37
-	case 38:
-		goto st_case_38
-	case 39:
-		goto st_case_39
-	case 40:
-		goto st_case_40
-	case 41:
-		goto st_case_41
-	case 42:
-		goto st_case_42
-	case 43:
-		goto st_case_43
-	case 44:
-		goto st_case_44
-	case 45:
-		goto st_case_45
-	case 46:
-		goto st_case_46
-	case 47:
-		goto st_case_47
-	case 48:
-		goto st_case_48
-	case 49:
-		goto st_case_49
-	case 50:
-		goto st_case_50
-	case 51:
-		goto st_case_51
-	case 52:
-		goto st_case_52
-	case 53:
-		goto st_case_53
-	case 54:
-		goto st_case_54
-	case 55:
-		goto st_case_55
-	case 56:
-		goto st_case_56
-	case 57:
-		goto st_case_57
-	case 58:
-		goto st_case_58
-	case 59:
-		goto st_case_59
-	case 60:
-		goto st_case_60
-	case 61:
-		goto st_case_61
-	case 62:
-		goto st_case_62
-	case 63:
-		goto st_case_63
-	case 64:
-		goto st_case_64
-	case 65:
-		goto st_case_65
-	case 66:
-		goto st_case_66
-	case 67:
-		goto st_case_67
-	case 68:
-		goto st_case_68
-	case 69:
-		goto st_case_69
-	case 70:
-		goto st_case_70
-	case 71:
-		goto st_case_71
-	case 72:
-		goto st_case_72
-	case 73:
-		goto st_case_73
-	case 74:
-		goto st_case_74
-	case 75:
-		goto st_case_75
-	case 76:
-		goto st_case_76
-	case 77:
-		goto st_case_77
-	case 78:
-		goto st_case_78
-	case 79:
-		goto st_case_79
-	case 80:
-		goto st_case_80
-	case 81:
-		goto st_case_81
-	case 82:
-		goto st_case_82
-	case 83:
-		goto st_case_83
-	case 84:
-		goto st_case_84
-	case 85:
-		goto st_case_85
-	case 86:
-		goto st_case_86
-	case 87:
-		goto st_case_87
-	case 88:
-		goto st_case_88
-	case 89:
-		goto st_case_89
-	case 90:
-		goto st_case_90
-	case 91:
-		goto st_case_91
-	case 92:
-		goto st_case_92
-	case 93:
-		goto st_case_93
-	case 94:
-		goto st_case_94
-	case 95:
-		goto st_case_95
-	case 96:
-		goto st_case_96
-	case 97:
-		goto st_case_97
-	case 98:
-		goto st_case_98
-	case 99:
-		goto st_case_99
-	case 100:
-		goto st_case_100
-	case 101:
-		goto st_case_101
-	case 102:
-		goto st_case_102
-	case 103:
-		goto st_case_103
-	case 104:
-		goto st_case_104
-	case 105:
-		goto st_case_105
-	case 106:
-		goto st_case_106
-	case 107:
-		goto st_case_107
-	case 108:
-		goto st_case_108
-	case 109:
-		goto st_case_109
-	case 110:
-		goto st_case_110
-	case 111:
-		goto st_case_111
-	case 112:
-		goto st_case_112
-	case 113:
-		goto st_case_113
-	case 114:
-		goto st_case_114
-	case 115:
-		goto st_case_115
-	case 116:
-		goto st_case_116
-	case 117:
-		goto st_case_117
-	case 118:
-		goto st_case_118
-	case 119:
-		goto st_case_119
-	case 120:
-		goto st_case_120
-	case 121:
-		goto st_case_121
-	case 122:
-		goto st_case_122
-	case 123:
-		goto st_case_123
-	case 124:
-		goto st_case_124
-	case 125:
-		goto st_case_125
-	case 126:
-		goto st_case_126
-	case 0:
-		goto st_case_0
-	}
-	goto st_out
-tr0:
+		if p == pe {
+			goto _test_eof
+		}
+		switch cs {
+		case 1:
+			goto st_case_1
+		case 2:
+			goto st_case_2
+		case 3:
+			goto st_case_3
+		case 4:
+			goto st_case_4
+		case 5:
+			goto st_case_5
+		case 6:
+			goto st_case_6
+		case 7:
+			goto st_case_7
+		case 8:
+			goto st_case_8
+		case 9:
+			goto st_case_9
+		case 10:
+			goto st_case_10
+		case 11:
+			goto st_case_11
+		case 12:
+			goto st_case_12
+		case 13:
+			goto st_case_13
+		case 14:
+			goto st_case_14
+		case 15:
+			goto st_case_15
+		case 16:
+			goto st_case_16
+		case 17:
+			goto st_case_17
+		case 18:
+			goto st_case_18
+		case 19:
+			goto st_case_19
+		case 20:
+			goto st_case_20
+		case 21:
+			goto st_case_21
+		case 22:
+			goto st_case_22
+		case 23:
+			goto st_case_23
+		case 24:
+			goto st_case_24
+		case 25:
+			goto st_case_25
+		case 26:
+			goto st_case_26
+		case 27:
+			goto st_case_27
+		case 28:
+			goto st_case_28
+		case 29:
+			goto st_case_29
+		case 30:
+			goto st_case_30
+		case 31:
+			goto st_case_31
+		case 32:
+			goto st_case_32
+		case 33:
+			goto st_case_33
+		case 34:
+			goto st_case_34
+		case 35:
+			goto st_case_35
+		case 36:
+			goto st_case_36
+		case 37:
+			goto st_case_37
+		case 38:
+			goto st_case_38
+		case 39:
+			goto st_case_39
+		case 40:
+			goto st_case_40
+		case 41:
+			goto st_case_41
+		case 42:
+			goto st_case_42
+		case 43:
+			goto st_case_43
+		case 44:
+			goto st_case_44
+		case 45:
+			goto st_case_45
+		case 46:
+			goto st_case_46
+		case 47:
+			goto st_case_47
+		case 48:
+			goto st_case_48
+		case 49:
+			goto st_case_49
+		case 50:
+			goto st_case_50
+		case 51:
+			goto st_case_51
+		case 52:
+			goto st_case_52
+		case 53:
+			goto st_case_53
+		case 54:
+			goto st_case_54
+		case 55:
+			goto st_case_55
+		case 56:
+			goto st_case_56
+		case 57:
+			goto st_case_57
+		case 58:
+			goto st_case_58
+		case 59:
+			goto st_case_59
+		case 60:
+			goto st_case_60
+		case 61:
+			goto st_case_61
+		case 62:
+			goto st_case_62
+		case 63:
+			goto st_case_63
+		case 64:
+			goto st_case_64
+		case 65:
+			goto st_case_65
+		case 66:
+			goto st_case_66
+		case 67:
+			goto st_case_67
+		case 68:
+			goto st_case_68
+		case 69:
+			goto st_case_69
+		case 70:
+			goto st_case_70
+		case 71:
+			goto st_case_71
+		case 72:
+			goto st_case_72
+		case 73:
+			goto st_case_73
+		case 74:
+			goto st_case_74
+		case 75:
+			goto st_case_75
+		case 76:
+			goto st_case_76
+		case 77:
+			goto st_case_77
+		case 78:
+			goto st_case_78
+		case 79:
+			goto st_case_79
+		case 80:
+			goto st_case_80
+		case 81:
+			goto st_case_81
+		case 82:
+			goto st_case_82
+		case 83:
+			goto st_case_83
+		case 84:
+			goto st_case_84
+		case 85:
+			goto st_case_85
+		case 86:
+			goto st_case_86
+		case 87:
+			goto st_case_87
+		case 88:
+			goto st_case_88
+		case 89:
+			goto st_case_89
+		case 90:
+			goto st_case_90
+		case 91:
+			goto st_case_91
+		case 92:
+			goto st_case_92
+		case 93:
+			goto st_case_93
+		case 94:
+			goto st_case_94
+		case 95:
+			goto st_case_95
+		case 96:
+			goto st_case_96
+		case 97:
+			goto st_case_97
+		case 98:
+			goto st_case_98
+		case 99:
+			goto st_case_99
+		case 100:
+			goto st_case_100
+		case 101:
+			goto st_case_101
+		case 102:
+			goto st_case_102
+		case 103:
+			goto st_case_103
+		case 104:
+			goto st_case_104
+		case 105:
+			goto st_case_105
+		case 106:
+			goto st_case_106
+		case 107:
+			goto st_case_107
+		case 108:
+			goto st_case_108
+		case 109:
+			goto st_case_109
+		case 110:
+			goto st_case_110
+		case 111:
+			goto st_case_111
+		case 112:
+			goto st_case_112
+		case 113:
+			goto st_case_113
+		case 114:
+			goto st_case_114
+		case 115:
+			goto st_case_115
+		case 116:
+			goto st_case_116
+		case 117:
+			goto st_case_117
+		case 118:
+			goto st_case_118
+		case 119:
+			goto st_case_119
+		case 120:
+			goto st_case_120
+		case 121:
+			goto st_case_121
+		case 122:
+			goto st_case_122
+		case 123:
+			goto st_case_123
+		case 124:
+			goto st_case_124
+		case 125:
+			goto st_case_125
+		case 126:
+			goto st_case_126
+		case 0:
+			goto st_case_0
+		}
+		goto st_out
+	tr0:
 //line use_machine.rl:131
-p = (te) - 1
-{ foundSyllable(USE_SymbolCluster) }
-	goto st1
-tr5:
+		p = (te) - 1
+		{
+			foundSyllable(USE_SymbolCluster)
+		}
+		goto st1
+	tr5:
 //line use_machine.rl:135
-te = p+1
-{ foundSyllable(USE_NonCluster) }
-	goto st1
-tr11:
+		te = p + 1
+		{
+			foundSyllable(USE_NonCluster)
+		}
+		goto st1
+	tr11:
 //line use_machine.rl:134
-te = p+1
-{ foundSyllable(USE_BrokenCluster); hasBroken = true }
-	goto st1
-tr39:
+		te = p + 1
+		{
+			foundSyllable(USE_BrokenCluster)
+			hasBroken = true
+		}
+		goto st1
+	tr39:
 //line use_machine.rl:131
-te = p
-p--
-{ foundSyllable(USE_SymbolCluster) }
-	goto st1
-tr42:
+		te = p
+		p--
+		{
+			foundSyllable(USE_SymbolCluster)
+		}
+		goto st1
+	tr42:
 //line use_machine.rl:131
-te = p+1
-{ foundSyllable(USE_SymbolCluster) }
-	goto st1
-tr69:
+		te = p + 1
+		{
+			foundSyllable(USE_SymbolCluster)
+		}
+		goto st1
+	tr69:
 //line use_machine.rl:128
-te = p
-p--
-{ foundSyllable(USE_StandardCluster) }
-	goto st1
-tr71:
+		te = p
+		p--
+		{
+			foundSyllable(USE_StandardCluster)
+		}
+		goto st1
+	tr71:
 //line use_machine.rl:128
-te = p+1
-{ foundSyllable(USE_StandardCluster) }
-	goto st1
-tr96:
+		te = p + 1
+		{
+			foundSyllable(USE_StandardCluster)
+		}
+		goto st1
+	tr96:
 //line use_machine.rl:127
-te = p
-p--
-{ foundSyllable(USE_SakotTerminatedCluster) }
-	goto st1
-tr98:
+		te = p
+		p--
+		{
+			foundSyllable(USE_SakotTerminatedCluster)
+		}
+		goto st1
+	tr98:
 //line use_machine.rl:127
-te = p+1
-{ foundSyllable(USE_SakotTerminatedCluster) }
-	goto st1
-tr100:
+		te = p + 1
+		{
+			foundSyllable(USE_SakotTerminatedCluster)
+		}
+		goto st1
+	tr100:
 //line use_machine.rl:126
-te = p
-p--
-{ foundSyllable(USE_ViramaTerminatedCluster) }
-	goto st1
-tr101:
+		te = p
+		p--
+		{
+			foundSyllable(USE_ViramaTerminatedCluster)
+		}
+		goto st1
+	tr101:
 //line use_machine.rl:126
-te = p+1
-{ foundSyllable(USE_ViramaTerminatedCluster) }
-	goto st1
-tr102:
+		te = p + 1
+		{
+			foundSyllable(USE_ViramaTerminatedCluster)
+		}
+		goto st1
+	tr102:
 //line use_machine.rl:130
-te = p
-p--
-{ foundSyllable(USE_NumeralCluster) }
-	goto st1
-tr104:
+		te = p
+		p--
+		{
+			foundSyllable(USE_NumeralCluster)
+		}
+		goto st1
+	tr104:
 //line use_machine.rl:130
-te = p+1
-{ foundSyllable(USE_NumeralCluster) }
-	goto st1
-tr105:
+		te = p + 1
+		{
+			foundSyllable(USE_NumeralCluster)
+		}
+		goto st1
+	tr105:
 //line use_machine.rl:129
-te = p
-p--
-{ foundSyllable(USE_NumberJoinerTerminatedCluster) }
-	goto st1
-tr106:
+		te = p
+		p--
+		{
+			foundSyllable(USE_NumberJoinerTerminatedCluster)
+		}
+		goto st1
+	tr106:
 //line use_machine.rl:129
-te = p+1
-{ foundSyllable(USE_NumberJoinerTerminatedCluster) }
-	goto st1
-tr135:
+		te = p + 1
+		{
+			foundSyllable(USE_NumberJoinerTerminatedCluster)
+		}
+		goto st1
+	tr135:
 //line use_machine.rl:134
-te = p
-p--
-{ foundSyllable(USE_BrokenCluster); hasBroken = true }
-	goto st1
-tr137:
+		te = p
+		p--
+		{
+			foundSyllable(USE_BrokenCluster)
+			hasBroken = true
+		}
+		goto st1
+	tr137:
 //line NONE:1
-	switch act {
-	case 8:
-	{p = (te) - 1
- foundSyllable(USE_NonCluster) }
-	case 9:
-	{p = (te) - 1
- foundSyllable(USE_BrokenCluster); hasBroken = true }
-	}
-	
-	goto st1
-tr141:
+		switch act {
+		case 8:
+			{
+				p = (te) - 1
+				foundSyllable(USE_NonCluster)
+			}
+		case 9:
+			{
+				p = (te) - 1
+				foundSyllable(USE_BrokenCluster)
+				hasBroken = true
+			}
+		}
+
+		goto st1
+	tr141:
 //line use_machine.rl:135
-te = p
-p--
-{ foundSyllable(USE_NonCluster) }
-	goto st1
-tr142:
+		te = p
+		p--
+		{
+			foundSyllable(USE_NonCluster)
+		}
+		goto st1
+	tr142:
 //line use_machine.rl:132
-te = p
-p--
-{ foundSyllable(USE_HieroglyphCluster) }
-	goto st1
-tr143:
+		te = p
+		p--
+		{
+			foundSyllable(USE_HieroglyphCluster)
+		}
+		goto st1
+	tr143:
 //line use_machine.rl:132
-te = p+1
-{ foundSyllable(USE_HieroglyphCluster) }
-	goto st1
+		te = p + 1
+		{
+			foundSyllable(USE_HieroglyphCluster)
+		}
+		goto st1
 	st1:
 //line NONE:1
-ts = 0
+		ts = 0
 
 		if p++; p == pe {
 			goto _test_eof1
 		}
 	st_case_1:
 //line NONE:1
-ts = p
+		ts = p
 
 //line use_machine_ragel.go:483
 		switch data[p] {
@@ -3509,20 +3547,20 @@ ts = p
 			goto st97
 		}
 		goto tr135
-tr35:
+	tr35:
 //line NONE:1
-te = p+1
+		te = p + 1
 
 //line use_machine.rl:133
-act = 8;
-	goto st98
-tr38:
+		act = 8
+		goto st98
+	tr38:
 //line NONE:1
-te = p+1
+		te = p + 1
 
 //line use_machine.rl:134
-act = 9;
-	goto st98
+		act = 9
+		goto st98
 	st98:
 		if p++; p == pe {
 			goto _test_eof98
@@ -4332,11 +4370,11 @@ act = 9;
 			goto st124
 		}
 		goto tr142
-tr36:
+	tr36:
 //line NONE:1
-te = p+1
+		te = p + 1
 
-	goto st126
+		goto st126
 	st126:
 		if p++; p == pe {
 			goto _test_eof126
@@ -4420,399 +4458,654 @@ te = p+1
 		}
 		goto tr0
 	st_out:
-	_test_eof1: cs = 1; goto _test_eof
-	_test_eof2: cs = 2; goto _test_eof
-	_test_eof3: cs = 3; goto _test_eof
-	_test_eof4: cs = 4; goto _test_eof
-	_test_eof5: cs = 5; goto _test_eof
-	_test_eof6: cs = 6; goto _test_eof
-	_test_eof7: cs = 7; goto _test_eof
-	_test_eof8: cs = 8; goto _test_eof
-	_test_eof9: cs = 9; goto _test_eof
-	_test_eof10: cs = 10; goto _test_eof
-	_test_eof11: cs = 11; goto _test_eof
-	_test_eof12: cs = 12; goto _test_eof
-	_test_eof13: cs = 13; goto _test_eof
-	_test_eof14: cs = 14; goto _test_eof
-	_test_eof15: cs = 15; goto _test_eof
-	_test_eof16: cs = 16; goto _test_eof
-	_test_eof17: cs = 17; goto _test_eof
-	_test_eof18: cs = 18; goto _test_eof
-	_test_eof19: cs = 19; goto _test_eof
-	_test_eof20: cs = 20; goto _test_eof
-	_test_eof21: cs = 21; goto _test_eof
-	_test_eof22: cs = 22; goto _test_eof
-	_test_eof23: cs = 23; goto _test_eof
-	_test_eof24: cs = 24; goto _test_eof
-	_test_eof25: cs = 25; goto _test_eof
-	_test_eof26: cs = 26; goto _test_eof
-	_test_eof27: cs = 27; goto _test_eof
-	_test_eof28: cs = 28; goto _test_eof
-	_test_eof29: cs = 29; goto _test_eof
-	_test_eof30: cs = 30; goto _test_eof
-	_test_eof31: cs = 31; goto _test_eof
-	_test_eof32: cs = 32; goto _test_eof
-	_test_eof33: cs = 33; goto _test_eof
-	_test_eof34: cs = 34; goto _test_eof
-	_test_eof35: cs = 35; goto _test_eof
-	_test_eof36: cs = 36; goto _test_eof
-	_test_eof37: cs = 37; goto _test_eof
-	_test_eof38: cs = 38; goto _test_eof
-	_test_eof39: cs = 39; goto _test_eof
-	_test_eof40: cs = 40; goto _test_eof
-	_test_eof41: cs = 41; goto _test_eof
-	_test_eof42: cs = 42; goto _test_eof
-	_test_eof43: cs = 43; goto _test_eof
-	_test_eof44: cs = 44; goto _test_eof
-	_test_eof45: cs = 45; goto _test_eof
-	_test_eof46: cs = 46; goto _test_eof
-	_test_eof47: cs = 47; goto _test_eof
-	_test_eof48: cs = 48; goto _test_eof
-	_test_eof49: cs = 49; goto _test_eof
-	_test_eof50: cs = 50; goto _test_eof
-	_test_eof51: cs = 51; goto _test_eof
-	_test_eof52: cs = 52; goto _test_eof
-	_test_eof53: cs = 53; goto _test_eof
-	_test_eof54: cs = 54; goto _test_eof
-	_test_eof55: cs = 55; goto _test_eof
-	_test_eof56: cs = 56; goto _test_eof
-	_test_eof57: cs = 57; goto _test_eof
-	_test_eof58: cs = 58; goto _test_eof
-	_test_eof59: cs = 59; goto _test_eof
-	_test_eof60: cs = 60; goto _test_eof
-	_test_eof61: cs = 61; goto _test_eof
-	_test_eof62: cs = 62; goto _test_eof
-	_test_eof63: cs = 63; goto _test_eof
-	_test_eof64: cs = 64; goto _test_eof
-	_test_eof65: cs = 65; goto _test_eof
-	_test_eof66: cs = 66; goto _test_eof
-	_test_eof67: cs = 67; goto _test_eof
-	_test_eof68: cs = 68; goto _test_eof
-	_test_eof69: cs = 69; goto _test_eof
-	_test_eof70: cs = 70; goto _test_eof
-	_test_eof71: cs = 71; goto _test_eof
-	_test_eof72: cs = 72; goto _test_eof
-	_test_eof73: cs = 73; goto _test_eof
-	_test_eof74: cs = 74; goto _test_eof
-	_test_eof75: cs = 75; goto _test_eof
-	_test_eof76: cs = 76; goto _test_eof
-	_test_eof77: cs = 77; goto _test_eof
-	_test_eof78: cs = 78; goto _test_eof
-	_test_eof79: cs = 79; goto _test_eof
-	_test_eof80: cs = 80; goto _test_eof
-	_test_eof81: cs = 81; goto _test_eof
-	_test_eof82: cs = 82; goto _test_eof
-	_test_eof83: cs = 83; goto _test_eof
-	_test_eof84: cs = 84; goto _test_eof
-	_test_eof85: cs = 85; goto _test_eof
-	_test_eof86: cs = 86; goto _test_eof
-	_test_eof87: cs = 87; goto _test_eof
-	_test_eof88: cs = 88; goto _test_eof
-	_test_eof89: cs = 89; goto _test_eof
-	_test_eof90: cs = 90; goto _test_eof
-	_test_eof91: cs = 91; goto _test_eof
-	_test_eof92: cs = 92; goto _test_eof
-	_test_eof93: cs = 93; goto _test_eof
-	_test_eof94: cs = 94; goto _test_eof
-	_test_eof95: cs = 95; goto _test_eof
-	_test_eof96: cs = 96; goto _test_eof
-	_test_eof97: cs = 97; goto _test_eof
-	_test_eof98: cs = 98; goto _test_eof
-	_test_eof99: cs = 99; goto _test_eof
-	_test_eof100: cs = 100; goto _test_eof
-	_test_eof101: cs = 101; goto _test_eof
-	_test_eof102: cs = 102; goto _test_eof
-	_test_eof103: cs = 103; goto _test_eof
-	_test_eof104: cs = 104; goto _test_eof
-	_test_eof105: cs = 105; goto _test_eof
-	_test_eof106: cs = 106; goto _test_eof
-	_test_eof107: cs = 107; goto _test_eof
-	_test_eof108: cs = 108; goto _test_eof
-	_test_eof109: cs = 109; goto _test_eof
-	_test_eof110: cs = 110; goto _test_eof
-	_test_eof111: cs = 111; goto _test_eof
-	_test_eof112: cs = 112; goto _test_eof
-	_test_eof113: cs = 113; goto _test_eof
-	_test_eof114: cs = 114; goto _test_eof
-	_test_eof115: cs = 115; goto _test_eof
-	_test_eof116: cs = 116; goto _test_eof
-	_test_eof117: cs = 117; goto _test_eof
-	_test_eof118: cs = 118; goto _test_eof
-	_test_eof119: cs = 119; goto _test_eof
-	_test_eof120: cs = 120; goto _test_eof
-	_test_eof121: cs = 121; goto _test_eof
-	_test_eof122: cs = 122; goto _test_eof
-	_test_eof123: cs = 123; goto _test_eof
-	_test_eof124: cs = 124; goto _test_eof
-	_test_eof125: cs = 125; goto _test_eof
-	_test_eof126: cs = 126; goto _test_eof
-	_test_eof0: cs = 0; goto _test_eof
+	_test_eof1:
+		cs = 1
+		goto _test_eof
+	_test_eof2:
+		cs = 2
+		goto _test_eof
+	_test_eof3:
+		cs = 3
+		goto _test_eof
+	_test_eof4:
+		cs = 4
+		goto _test_eof
+	_test_eof5:
+		cs = 5
+		goto _test_eof
+	_test_eof6:
+		cs = 6
+		goto _test_eof
+	_test_eof7:
+		cs = 7
+		goto _test_eof
+	_test_eof8:
+		cs = 8
+		goto _test_eof
+	_test_eof9:
+		cs = 9
+		goto _test_eof
+	_test_eof10:
+		cs = 10
+		goto _test_eof
+	_test_eof11:
+		cs = 11
+		goto _test_eof
+	_test_eof12:
+		cs = 12
+		goto _test_eof
+	_test_eof13:
+		cs = 13
+		goto _test_eof
+	_test_eof14:
+		cs = 14
+		goto _test_eof
+	_test_eof15:
+		cs = 15
+		goto _test_eof
+	_test_eof16:
+		cs = 16
+		goto _test_eof
+	_test_eof17:
+		cs = 17
+		goto _test_eof
+	_test_eof18:
+		cs = 18
+		goto _test_eof
+	_test_eof19:
+		cs = 19
+		goto _test_eof
+	_test_eof20:
+		cs = 20
+		goto _test_eof
+	_test_eof21:
+		cs = 21
+		goto _test_eof
+	_test_eof22:
+		cs = 22
+		goto _test_eof
+	_test_eof23:
+		cs = 23
+		goto _test_eof
+	_test_eof24:
+		cs = 24
+		goto _test_eof
+	_test_eof25:
+		cs = 25
+		goto _test_eof
+	_test_eof26:
+		cs = 26
+		goto _test_eof
+	_test_eof27:
+		cs = 27
+		goto _test_eof
+	_test_eof28:
+		cs = 28
+		goto _test_eof
+	_test_eof29:
+		cs = 29
+		goto _test_eof
+	_test_eof30:
+		cs = 30
+		goto _test_eof
+	_test_eof31:
+		cs = 31
+		goto _test_eof
+	_test_eof32:
+		cs = 32
+		goto _test_eof
+	_test_eof33:
+		cs = 33
+		goto _test_eof
+	_test_eof34:
+		cs = 34
+		goto _test_eof
+	_test_eof35:
+		cs = 35
+		goto _test_eof
+	_test_eof36:
+		cs = 36
+		goto _test_eof
+	_test_eof37:
+		cs = 37
+		goto _test_eof
+	_test_eof38:
+		cs = 38
+		goto _test_eof
+	_test_eof39:
+		cs = 39
+		goto _test_eof
+	_test_eof40:
+		cs = 40
+		goto _test_eof
+	_test_eof41:
+		cs = 41
+		goto _test_eof
+	_test_eof42:
+		cs = 42
+		goto _test_eof
+	_test_eof43:
+		cs = 43
+		goto _test_eof
+	_test_eof44:
+		cs = 44
+		goto _test_eof
+	_test_eof45:
+		cs = 45
+		goto _test_eof
+	_test_eof46:
+		cs = 46
+		goto _test_eof
+	_test_eof47:
+		cs = 47
+		goto _test_eof
+	_test_eof48:
+		cs = 48
+		goto _test_eof
+	_test_eof49:
+		cs = 49
+		goto _test_eof
+	_test_eof50:
+		cs = 50
+		goto _test_eof
+	_test_eof51:
+		cs = 51
+		goto _test_eof
+	_test_eof52:
+		cs = 52
+		goto _test_eof
+	_test_eof53:
+		cs = 53
+		goto _test_eof
+	_test_eof54:
+		cs = 54
+		goto _test_eof
+	_test_eof55:
+		cs = 55
+		goto _test_eof
+	_test_eof56:
+		cs = 56
+		goto _test_eof
+	_test_eof57:
+		cs = 57
+		goto _test_eof
+	_test_eof58:
+		cs = 58
+		goto _test_eof
+	_test_eof59:
+		cs = 59
+		goto _test_eof
+	_test_eof60:
+		cs = 60
+		goto _test_eof
+	_test_eof61:
+		cs = 61
+		goto _test_eof
+	_test_eof62:
+		cs = 62
+		goto _test_eof
+	_test_eof63:
+		cs = 63
+		goto _test_eof
+	_test_eof64:
+		cs = 64
+		goto _test_eof
+	_test_eof65:
+		cs = 65
+		goto _test_eof
+	_test_eof66:
+		cs = 66
+		goto _test_eof
+	_test_eof67:
+		cs = 67
+		goto _test_eof
+	_test_eof68:
+		cs = 68
+		goto _test_eof
+	_test_eof69:
+		cs = 69
+		goto _test_eof
+	_test_eof70:
+		cs = 70
+		goto _test_eof
+	_test_eof71:
+		cs = 71
+		goto _test_eof
+	_test_eof72:
+		cs = 72
+		goto _test_eof
+	_test_eof73:
+		cs = 73
+		goto _test_eof
+	_test_eof74:
+		cs = 74
+		goto _test_eof
+	_test_eof75:
+		cs = 75
+		goto _test_eof
+	_test_eof76:
+		cs = 76
+		goto _test_eof
+	_test_eof77:
+		cs = 77
+		goto _test_eof
+	_test_eof78:
+		cs = 78
+		goto _test_eof
+	_test_eof79:
+		cs = 79
+		goto _test_eof
+	_test_eof80:
+		cs = 80
+		goto _test_eof
+	_test_eof81:
+		cs = 81
+		goto _test_eof
+	_test_eof82:
+		cs = 82
+		goto _test_eof
+	_test_eof83:
+		cs = 83
+		goto _test_eof
+	_test_eof84:
+		cs = 84
+		goto _test_eof
+	_test_eof85:
+		cs = 85
+		goto _test_eof
+	_test_eof86:
+		cs = 86
+		goto _test_eof
+	_test_eof87:
+		cs = 87
+		goto _test_eof
+	_test_eof88:
+		cs = 88
+		goto _test_eof
+	_test_eof89:
+		cs = 89
+		goto _test_eof
+	_test_eof90:
+		cs = 90
+		goto _test_eof
+	_test_eof91:
+		cs = 91
+		goto _test_eof
+	_test_eof92:
+		cs = 92
+		goto _test_eof
+	_test_eof93:
+		cs = 93
+		goto _test_eof
+	_test_eof94:
+		cs = 94
+		goto _test_eof
+	_test_eof95:
+		cs = 95
+		goto _test_eof
+	_test_eof96:
+		cs = 96
+		goto _test_eof
+	_test_eof97:
+		cs = 97
+		goto _test_eof
+	_test_eof98:
+		cs = 98
+		goto _test_eof
+	_test_eof99:
+		cs = 99
+		goto _test_eof
+	_test_eof100:
+		cs = 100
+		goto _test_eof
+	_test_eof101:
+		cs = 101
+		goto _test_eof
+	_test_eof102:
+		cs = 102
+		goto _test_eof
+	_test_eof103:
+		cs = 103
+		goto _test_eof
+	_test_eof104:
+		cs = 104
+		goto _test_eof
+	_test_eof105:
+		cs = 105
+		goto _test_eof
+	_test_eof106:
+		cs = 106
+		goto _test_eof
+	_test_eof107:
+		cs = 107
+		goto _test_eof
+	_test_eof108:
+		cs = 108
+		goto _test_eof
+	_test_eof109:
+		cs = 109
+		goto _test_eof
+	_test_eof110:
+		cs = 110
+		goto _test_eof
+	_test_eof111:
+		cs = 111
+		goto _test_eof
+	_test_eof112:
+		cs = 112
+		goto _test_eof
+	_test_eof113:
+		cs = 113
+		goto _test_eof
+	_test_eof114:
+		cs = 114
+		goto _test_eof
+	_test_eof115:
+		cs = 115
+		goto _test_eof
+	_test_eof116:
+		cs = 116
+		goto _test_eof
+	_test_eof117:
+		cs = 117
+		goto _test_eof
+	_test_eof118:
+		cs = 118
+		goto _test_eof
+	_test_eof119:
+		cs = 119
+		goto _test_eof
+	_test_eof120:
+		cs = 120
+		goto _test_eof
+	_test_eof121:
+		cs = 121
+		goto _test_eof
+	_test_eof122:
+		cs = 122
+		goto _test_eof
+	_test_eof123:
+		cs = 123
+		goto _test_eof
+	_test_eof124:
+		cs = 124
+		goto _test_eof
+	_test_eof125:
+		cs = 125
+		goto _test_eof
+	_test_eof126:
+		cs = 126
+		goto _test_eof
+	_test_eof0:
+		cs = 0
+		goto _test_eof
 
-	_test_eof: {}
-	if p == eof {
-		switch cs {
-		case 2:
-			goto tr39
-		case 3:
-			goto tr39
-		case 4:
-			goto tr39
-		case 5:
-			goto tr39
-		case 6:
-			goto tr39
-		case 7:
-			goto tr39
-		case 8:
-			goto tr39
-		case 9:
-			goto tr39
-		case 10:
-			goto tr39
-		case 11:
-			goto tr39
-		case 12:
-			goto tr39
-		case 13:
-			goto tr39
-		case 14:
-			goto tr39
-		case 15:
-			goto tr39
-		case 16:
-			goto tr39
-		case 17:
-			goto tr39
-		case 18:
-			goto tr39
-		case 19:
-			goto tr39
-		case 20:
-			goto tr39
-		case 21:
-			goto tr39
-		case 22:
-			goto tr39
-		case 23:
-			goto tr39
-		case 24:
-			goto tr39
-		case 25:
-			goto tr39
-		case 26:
-			goto tr39
-		case 27:
-			goto tr39
-		case 28:
-			goto tr39
-		case 29:
-			goto tr39
-		case 30:
-			goto tr39
-		case 31:
-			goto tr69
-		case 32:
-			goto tr69
-		case 33:
-			goto tr69
-		case 34:
-			goto tr69
-		case 35:
-			goto tr69
-		case 36:
-			goto tr69
-		case 37:
-			goto tr69
-		case 38:
-			goto tr69
-		case 39:
-			goto tr69
-		case 40:
-			goto tr69
-		case 41:
-			goto tr69
-		case 42:
-			goto tr69
-		case 43:
-			goto tr96
-		case 44:
-			goto tr69
-		case 45:
-			goto tr69
-		case 46:
-			goto tr69
-		case 47:
-			goto tr69
-		case 48:
-			goto tr69
-		case 49:
-			goto tr69
-		case 50:
-			goto tr69
-		case 51:
-			goto tr69
-		case 52:
-			goto tr69
-		case 53:
-			goto tr69
-		case 54:
-			goto tr69
-		case 55:
-			goto tr100
-		case 56:
-			goto tr96
-		case 57:
-			goto tr69
-		case 58:
-			goto tr100
-		case 59:
-			goto tr102
-		case 60:
-			goto tr105
-		case 61:
-			goto tr69
-		case 62:
-			goto tr69
-		case 63:
-			goto tr69
-		case 64:
-			goto tr69
-		case 65:
-			goto tr69
-		case 66:
-			goto tr69
-		case 67:
-			goto tr69
-		case 68:
-			goto tr69
-		case 69:
-			goto tr69
-		case 70:
-			goto tr69
-		case 71:
-			goto tr69
-		case 72:
-			goto tr69
-		case 73:
-			goto tr69
-		case 74:
-			goto tr96
-		case 75:
-			goto tr69
-		case 76:
-			goto tr69
-		case 77:
-			goto tr69
-		case 78:
-			goto tr69
-		case 79:
-			goto tr69
-		case 80:
-			goto tr69
-		case 81:
-			goto tr69
-		case 82:
-			goto tr69
-		case 83:
-			goto tr69
-		case 84:
-			goto tr69
-		case 85:
-			goto tr69
-		case 86:
-			goto tr100
-		case 87:
-			goto tr96
-		case 88:
-			goto tr69
-		case 89:
-			goto tr100
-		case 90:
-			goto tr135
-		case 91:
-			goto tr135
-		case 92:
-			goto tr135
-		case 93:
-			goto tr135
-		case 94:
-			goto tr135
-		case 95:
-			goto tr135
-		case 96:
-			goto tr135
-		case 97:
-			goto tr135
-		case 98:
-			goto tr137
-		case 99:
-			goto tr135
-		case 100:
-			goto tr135
-		case 101:
-			goto tr135
-		case 102:
-			goto tr135
-		case 103:
-			goto tr135
-		case 104:
-			goto tr135
-		case 105:
-			goto tr135
-		case 106:
-			goto tr135
-		case 107:
-			goto tr135
-		case 108:
-			goto tr135
-		case 109:
-			goto tr135
-		case 110:
-			goto tr135
-		case 111:
-			goto tr135
-		case 112:
-			goto tr135
-		case 113:
-			goto tr135
-		case 114:
-			goto tr135
-		case 115:
-			goto tr135
-		case 116:
-			goto tr135
-		case 117:
-			goto tr135
-		case 118:
-			goto tr135
-		case 119:
-			goto tr135
-		case 120:
-			goto tr135
-		case 121:
-			goto tr141
-		case 122:
-			goto tr142
-		case 123:
-			goto tr142
-		case 124:
-			goto tr142
-		case 125:
-			goto tr142
-		case 126:
-			goto tr39
-		case 0:
-			goto tr0
+	_test_eof:
+		{
 		}
-	}
+		if p == eof {
+			switch cs {
+			case 2:
+				goto tr39
+			case 3:
+				goto tr39
+			case 4:
+				goto tr39
+			case 5:
+				goto tr39
+			case 6:
+				goto tr39
+			case 7:
+				goto tr39
+			case 8:
+				goto tr39
+			case 9:
+				goto tr39
+			case 10:
+				goto tr39
+			case 11:
+				goto tr39
+			case 12:
+				goto tr39
+			case 13:
+				goto tr39
+			case 14:
+				goto tr39
+			case 15:
+				goto tr39
+			case 16:
+				goto tr39
+			case 17:
+				goto tr39
+			case 18:
+				goto tr39
+			case 19:
+				goto tr39
+			case 20:
+				goto tr39
+			case 21:
+				goto tr39
+			case 22:
+				goto tr39
+			case 23:
+				goto tr39
+			case 24:
+				goto tr39
+			case 25:
+				goto tr39
+			case 26:
+				goto tr39
+			case 27:
+				goto tr39
+			case 28:
+				goto tr39
+			case 29:
+				goto tr39
+			case 30:
+				goto tr39
+			case 31:
+				goto tr69
+			case 32:
+				goto tr69
+			case 33:
+				goto tr69
+			case 34:
+				goto tr69
+			case 35:
+				goto tr69
+			case 36:
+				goto tr69
+			case 37:
+				goto tr69
+			case 38:
+				goto tr69
+			case 39:
+				goto tr69
+			case 40:
+				goto tr69
+			case 41:
+				goto tr69
+			case 42:
+				goto tr69
+			case 43:
+				goto tr96
+			case 44:
+				goto tr69
+			case 45:
+				goto tr69
+			case 46:
+				goto tr69
+			case 47:
+				goto tr69
+			case 48:
+				goto tr69
+			case 49:
+				goto tr69
+			case 50:
+				goto tr69
+			case 51:
+				goto tr69
+			case 52:
+				goto tr69
+			case 53:
+				goto tr69
+			case 54:
+				goto tr69
+			case 55:
+				goto tr100
+			case 56:
+				goto tr96
+			case 57:
+				goto tr69
+			case 58:
+				goto tr100
+			case 59:
+				goto tr102
+			case 60:
+				goto tr105
+			case 61:
+				goto tr69
+			case 62:
+				goto tr69
+			case 63:
+				goto tr69
+			case 64:
+				goto tr69
+			case 65:
+				goto tr69
+			case 66:
+				goto tr69
+			case 67:
+				goto tr69
+			case 68:
+				goto tr69
+			case 69:
+				goto tr69
+			case 70:
+				goto tr69
+			case 71:
+				goto tr69
+			case 72:
+				goto tr69
+			case 73:
+				goto tr69
+			case 74:
+				goto tr96
+			case 75:
+				goto tr69
+			case 76:
+				goto tr69
+			case 77:
+				goto tr69
+			case 78:
+				goto tr69
+			case 79:
+				goto tr69
+			case 80:
+				goto tr69
+			case 81:
+				goto tr69
+			case 82:
+				goto tr69
+			case 83:
+				goto tr69
+			case 84:
+				goto tr69
+			case 85:
+				goto tr69
+			case 86:
+				goto tr100
+			case 87:
+				goto tr96
+			case 88:
+				goto tr69
+			case 89:
+				goto tr100
+			case 90:
+				goto tr135
+			case 91:
+				goto tr135
+			case 92:
+				goto tr135
+			case 93:
+				goto tr135
+			case 94:
+				goto tr135
+			case 95:
+				goto tr135
+			case 96:
+				goto tr135
+			case 97:
+				goto tr135
+			case 98:
+				goto tr137
+			case 99:
+				goto tr135
+			case 100:
+				goto tr135
+			case 101:
+				goto tr135
+			case 102:
+				goto tr135
+			case 103:
+				goto tr135
+			case 104:
+				goto tr135
+			case 105:
+				goto tr135
+			case 106:
+				goto tr135
+			case 107:
+				goto tr135
+			case 108:
+				goto tr135
+			case 109:
+				goto tr135
+			case 110:
+				goto tr135
+			case 111:
+				goto tr135
+			case 112:
+				goto tr135
+			case 113:
+				goto tr135
+			case 114:
+				goto tr135
+			case 115:
+				goto tr135
+			case 116:
+				goto tr135
+			case 117:
+				goto tr135
+			case 118:
+				goto tr135
+			case 119:
+				goto tr135
+			case 120:
+				goto tr135
+			case 121:
+				goto tr141
+			case 122:
+				goto tr142
+			case 123:
+				goto tr142
+			case 124:
+				goto tr142
+			case 125:
+				goto tr142
+			case 126:
+				goto tr39
+			case 0:
+				goto tr0
+			}
+		}
 
 	}
 
 //line use_machine.rl:201
 
+	_ = cs            // Suppress unused variable warning
+	_ = foundSyllable // May be unused if no syllables found
 
-  _ = cs // Suppress unused variable warning
-  _ = foundSyllable // May be unused if no syllables found
-
-  return hasBroken
+	return hasBroken
 }

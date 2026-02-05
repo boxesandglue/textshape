@@ -206,6 +206,7 @@ var (
 	tagRlig = MakeTag('r', 'l', 'i', 'g') // Required Ligatures
 	tagCalt = MakeTag('c', 'a', 'l', 't') // Contextual Alternates
 	tagLiga = MakeTag('l', 'i', 'g', 'a') // Standard Ligatures
+	tagRclt = MakeTag('r', 'c', 'l', 't') // Required Contextual Alternates
 	tagCcmp = MakeTag('c', 'c', 'm', 'p') // Glyph Composition/Decomposition
 )
 
@@ -334,14 +335,11 @@ func (s *Shaper) arabicJoining(buf *Buffer) []ArabicAction {
 //
 // After this, lookups can check (glyph.mask & lookup.mask) to determine if they apply.
 func (s *Shaper) setupMasksArabic(buf *Buffer) []ArabicAction {
-	debugPrintf("setupMasksArabic: called with %d glyphs\n", len(buf.Info))
-
 	// Step 1: Set global mask on all glyphs
 	buf.ResetMasks(MaskGlobal)
 
 	// Step 2: Run Arabic joining analysis
 	actions := s.arabicJoining(buf)
-	debugPrintf("setupMasksArabic: actions len=%d\n", len(actions))
 
 	// Step 2.5: For Mongolian script, copy action from base to variation selectors
 	// HarfBuzz equivalent: mongolian_variation_selectors() in hb-ot-shaper-arabic.cc:377-385
@@ -357,8 +355,6 @@ func (s *Shaper) setupMasksArabic(buf *Buffer) []ArabicAction {
 		if i < len(buf.Info) {
 			mask := arabicActionToMask(action)
 			buf.Info[i].Mask |= mask
-			debugPrintf("setupMasksArabic: [%d] U+%04X action=%d mask=0x%X -> total=0x%X\n",
-				i, buf.Info[i].Codepoint, action, mask, buf.Info[i].Mask)
 		}
 	}
 
@@ -569,45 +565,71 @@ func (s *Shaper) applyArabicFeatures(buf *Buffer, userFeatures []Feature) {
 			nextBit := uint(8)
 			nextBit = applyFeatureWithMergedMask(tagRlig, userFeatures, nextBit, buf, s.gsub, s.gdef, s.font)
 			nextBit = applyFeatureWithMergedMask(tagCalt, userFeatures, nextBit, buf, s.gsub, s.gdef, s.font)
-			_ = applyFeatureWithMergedMask(tagLiga, userFeatures, nextBit, buf, s.gsub, s.gdef, s.font)
+			nextBit = applyFeatureWithMergedMask(tagLiga, userFeatures, nextBit, buf, s.gsub, s.gdef, s.font)
+			// Apply clig, rclt, and user features TOGETHER via CompileMap,
+			// sorted by lookup index. In HarfBuzz, these all go through the same
+			// OT map after the calt pause. User features (e.g., salt=2) must be
+			// in the same pass so their lookups are interleaved correctly.
+			// HarfBuzz: horizontal_features[] + user_features in hb-ot-shape.cc:308-376
+			s.applyPostCaltFeatures(buf, userFeatures)
 		} else {
 			// Mongolian and other scripts: Apply rlig+calt+liga TOGETHER
 			// All lookups sorted by index (no pause between features)
 			s.applyRligCaltLigaTogether(buf, userFeatures)
 		}
 	}
-
-	// Apply user GSUB features (e.g., salt=2, ss01)
-	// Standard Arabic features (ccmp, rlig, calt, liga, positional) are already applied above
-	// via CompileMap which handles merging. User features that add new features (e.g., salt=2)
-	// are applied here.
-	// HarfBuzz: In HarfBuzz, all features go through OT Map which deduplicates lookups.
-	s.applyUserArabicGSUBFeatures(buf, userFeatures)
 }
 
-// applyUserArabicGSUBFeatures applies user-requested GSUB features that are not
-// standard Arabic features. Standard Arabic features (ccmp, rlig, calt, liga, clig,
-// positional) are already applied by applyArabicFeatures, so they are filtered out.
-// HarfBuzz: In HarfBuzz, user features go through the same OT Map as standard features,
-// and lookup deduplication prevents double application. Since we apply standard features
-// separately, we filter them here to achieve the same result.
-func (s *Shaper) applyUserArabicGSUBFeatures(buf *Buffer, userFeatures []Feature) {
-	if s.gsub == nil || len(userFeatures) == 0 {
+// applyPostCaltFeatures applies clig, rclt, and user GSUB features together
+// using CompileMap, so all lookups are sorted by index. This matches HarfBuzz
+// where these features all go through the same OT map after the calt pause.
+// User features like salt=2 are interleaved with clig/rclt lookups by index.
+// HarfBuzz: horizontal_features[] + user features in hb-ot-shape.cc:308-376
+func (s *Shaper) applyPostCaltFeatures(buf *Buffer, userFeatures []Feature) {
+	if s.gsub == nil {
 		return
+	}
+
+	// Build feature list: clig + rclt + filtered user features
+	features := []Feature{
+		NewFeatureOn(tagClig),
+		NewFeatureOn(tagRclt),
 	}
 
 	for _, f := range userFeatures {
 		if f.Value == 0 {
 			continue
 		}
-		// Skip standard Arabic features that are already applied
+		// Skip standard Arabic features already applied by rlig/calt/liga passes
 		if isStandardArabicGSUBFeature(f.Tag) {
 			continue
 		}
-		// Apply the user feature
-		// TODO: Features with value > 1 (like salt=2) need special handling
-		// for AlternateSubst. For now, apply with standard mask.
-		s.gsub.ApplyFeatureToBufferWithMask(f.Tag, buf, s.gdef, MaskGlobal, s.font)
+		features = append(features, f)
+	}
+
+	otMap := CompileMap(s.gsub, nil, features, buf.Script, buf.Language)
+
+	// Apply GlobalMask to all glyphs so multi-valued features (e.g., salt=2)
+	// have their default value bits set. CompileMap encodes default values in
+	// GlobalMask, but glyph masks only have MaskGlobal (bit 31) set.
+	// HarfBuzz: hb_ot_shape_setup_masks() applies global_mask to all glyphs.
+	if otMap.GlobalMask != MaskGlobal {
+		savedMasks := make([]uint32, len(buf.Info))
+		for i := range buf.Info {
+			savedMasks[i] = buf.Info[i].Mask
+			buf.Info[i].Mask |= otMap.GlobalMask
+		}
+
+		otMap.ApplyGSUB(s.gsub, buf, s.font, s.gdef)
+
+		// Restore original glyph masks (buffer may have grown due to substitutions)
+		for i := range buf.Info {
+			if i < len(savedMasks) {
+				buf.Info[i].Mask = savedMasks[i]
+			}
+		}
+	} else {
+		otMap.ApplyGSUB(s.gsub, buf, s.font, s.gdef)
 	}
 }
 
@@ -688,11 +710,12 @@ func (s *Shaper) applyRligCaltLigaTogether(buf *Buffer, userFeatures []Feature) 
 		NewFeatureOn(tagRlig),
 		NewFeatureOn(tagCalt),
 		NewFeatureOn(tagLiga),
+		NewFeatureOn(tagClig),
+		NewFeatureOn(tagRclt),
 	}, userFeatures...)
 	otMap := CompileMap(s.gsub, nil, features, buf.Script, buf.Language)
 	otMap.ApplyGSUB(s.gsub, buf, s.font, s.gdef)
 }
-
 
 // isArabicScript returns true if the codepoint is in an Arabic-like script.
 func isArabicScript(cp Codepoint) bool {

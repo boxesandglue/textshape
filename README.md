@@ -1,16 +1,19 @@
 # textshape
 
-A pure Go implementation of text shaping, inspired by [HarfBuzz](https://harfbuzz.github.io/).
+A pure Go text shaping engine and font subsetter. The shaping logic is a port of [HarfBuzz](https://harfbuzz.github.io/).
+
+> **Status:** Beta. The library is actively used in [boxes and glue](https://github.com/boxesandglue/boxesandglue) for PDF typesetting. The API may still change.
 
 ## Features
 
-- **OpenType Shaping**: GSUB (substitution) and GPOS (positioning)
-- **Ligatures**: Standard ligatures (fi, fl, ffi, ffl, etc.)
-- **Kerning**: Pair adjustment positioning
-- **Mark positioning**: Base-to-mark, mark-to-mark attachment
-- **Font Subsetting**: Create minimal fonts for PDF embedding
-- **CFF Support**: OpenType/CFF font subsetting with subroutine optimization
-- **HarfBuzz-compatible API**: Similar concepts and data structures
+- **OpenType shaping**: Full GSUB and GPOS support (all lookup types)
+- **Complex scripts**: Arabic, Indic (Devanagari, Bengali, Gujarati, ...), Khmer, Myanmar, Hebrew, Thai, Hangul, USE
+- **Variable fonts**: fvar, gvar, HVAR, avar
+- **Vertical text**: vmtx, VORG, vertical origins
+- **Synthetic bold/slant**: HarfBuzz-compatible API
+- **Font subsetting**: Reduce fonts to needed glyphs, with variable font instancing
+- **CFF support**: CFF/CFF2 shaping and subsetting with subroutine optimization
+- **Kern fallback**: Legacy kern table when no GPOS kerning
 
 ## Installation
 
@@ -18,7 +21,7 @@ A pure Go implementation of text shaping, inspired by [HarfBuzz](https://harfbuz
 go get github.com/boxesandglue/textshape
 ```
 
-## Quick Start
+## Example
 
 ```go
 package main
@@ -31,148 +34,84 @@ import (
 )
 
 func main() {
-    // Load font
-    data, _ := os.ReadFile("Roboto-Regular.ttf")
+    data, _ := os.ReadFile("MyFont.ttf")
     font, _ := ot.ParseFont(data, 0)
-
-    // Create shaper
     shaper, _ := ot.NewShaper(font)
 
-    // Shape text
     buf := ot.NewBuffer()
     buf.AddString("office")
     buf.GuessSegmentProperties()
-    shaper.Shape(buf, nil) // nil = default features
+    shaper.Shape(buf, nil)
 
-    // Read results
     for i, info := range buf.Info {
         fmt.Printf("glyph=%d advance=%d\n", info.GlyphID, buf.Pos[i].XAdvance)
     }
 }
 ```
 
-## API Overview
+## Documentation
 
-### Buffer
+Full documentation with examples is available at: https://boxesandglue.dev/textshape/
 
-```go
-buf := ot.NewBuffer()
-buf.AddString("Hello")           // Add text
-buf.AddCodepoints([]Codepoint{}) // Or add codepoints directly
-buf.GuessSegmentProperties()     // Auto-detect direction/script
-buf.SetDirection(ot.DirectionRTL)
-buf.Flags = ot.BufferFlagRemoveDefaultIgnorables
+- [Getting Started](https://boxesandglue.dev/textshape/gettingstarted/) — Font loading, buffer, shaping, results
+- [Buffer](https://boxesandglue.dev/textshape/buffer/) — Direction, script, language, flags
+- [Features](https://boxesandglue.dev/textshape/features/) — OpenType feature control
+- [Variable Fonts](https://boxesandglue.dev/textshape/variablefonts/) — Axis variations and instancing
+- [Synthetic Bold/Slant](https://boxesandglue.dev/textshape/syntheticboldslant/) — Faux bold and italic
+- [Font Subsetting](https://boxesandglue.dev/textshape/subsetting/) — Reduce fonts for embedding
+- [API Reference](https://boxesandglue.dev/textshape/reference/) — Complete type and method reference
+
+## Hacking
+
+### Running tests
+
+```bash
+# Unit tests
+go test ./ot/...
+go test ./subset/...
+
+# HarfBuzz compatibility test suite (84 test files)
+go test ./harfbuzz-tests/...
+
+# Verbose output showing per-file results
+go test -v ./harfbuzz-tests/...
+
+# Run a single test file
+HB_TEST_FILE="arabic-fallback-shaping.tests" go test -v -run TestSingleFile ./harfbuzz-tests/
 ```
 
-### Shaper
+### HarfBuzz compatibility
 
-```go
-shaper, err := ot.NewShaper(font)
-shaper.Shape(buf, nil)           // Use default features
-shaper.Shape(buf, features)      // Use specific features
-shaper.ShapeString("text")       // Convenience method
-```
-
-### Features
-
-```go
-// Create features programmatically
-features := []ot.Feature{
-    ot.NewFeatureOn(ot.TagLiga),   // Enable ligatures
-    ot.NewFeatureOff(ot.TagKern),  // Disable kerning
-    ot.NewFeature(ot.TagAalt, 2),  // Alternate #2
-}
-
-// Or parse from string (HarfBuzz-compatible syntax)
-f, ok := ot.FeatureFromString("kern")      // kern=1
-f, ok := ot.FeatureFromString("-liga")     // liga=0
-f, ok := ot.FeatureFromString("aalt=2")    // aalt=2
-f, ok := ot.FeatureFromString("kern[3:5]") // kern for clusters 3-5
-
-// Parse comma-separated list
-features := ot.ParseFeatures("liga,kern,-smcp")
-```
-
-### Convenience Function
-
-```go
-// One-liner (caches shapers internally)
-err := ot.Shape(font, buf, features)
-```
-
-### Font Subsetting
-
-```go
-import "github.com/boxesandglue/textshape/subset"
-
-// Simple subsetting
-result, err := subset.SubsetString(font, "Hello World")
-
-// With options
-input := subset.NewInput()
-input.AddString("Hello World")
-input.Flags = subset.FlagDropLayoutTables // For PDF embedding
-
-plan, _ := subset.CreatePlan(font, input)
-result, _ := plan.Execute()
-```
-
-## Supported OpenType Features
-
-### GSUB (Glyph Substitution)
-
-| Type | Name | Status |
-|------|------|--------|
-| 1 | Single Substitution | ✓ |
-| 2 | Multiple Substitution | ✓ |
-| 3 | Alternate Substitution | ✓ |
-| 4 | Ligature Substitution | ✓ |
-| 5 | Context Substitution | ✓ |
-| 6 | Chaining Context | ✓ |
-| 7 | Extension | ✓ |
-| 8 | Reverse Chaining | ✓ |
-
-### GPOS (Glyph Positioning)
-
-| Type | Name | Status |
-|------|------|--------|
-| 1 | Single Adjustment | ✓ |
-| 2 | Pair Adjustment (Kerning) | ✓ |
-| 3 | Cursive Attachment | ✓ |
-| 4 | Mark-to-Base | ✓ |
-| 5 | Mark-to-Ligature | ✓ |
-| 6 | Mark-to-Mark | ✓ |
-| 7 | Context Positioning | ✓ |
-| 8 | Chaining Context | ✓ |
-| 9 | Extension | ✓ |
-
-## Comparison with HarfBuzz
-
-go-hb produces identical results to HarfBuzz for Latin scripts:
+The shaping engine aims for **identical output** to HarfBuzz. The test suite in `harfbuzz-tests/` runs the same test cases as HarfBuzz's own test suite (`hb-shape` format). Each `.tests` file in `harfbuzz-tests/tests/` contains lines like:
 
 ```
-Text      HarfBuzz                    go-hb
------     --------                    -----
-Hello     [44 73 80 80 83]           [44 73 80 80 83]    ✓
-office    [83 446 71 73]             [83 446 71 73]      ✓
-fi        [444]                       [444]               ✓
-AV        [37+1249 58+1303]          [37+1249 58+1303]   ✓
+../fonts/Roboto-Regular.ttf;;U+006F,U+0066,U+0066,U+0069,U+0063,U+0065;[o=0+1171|ffi=1+1551|c=4+1013|e=5+1107]
 ```
 
-## Limitations
+Tests are automatically skipped when the required font is not available or when the font file SHA1 hash does not match (font version pinning). This means the test suite runs on any machine — tests requiring unavailable fonts are skipped rather than failing.
 
-- **Complex scripts**: Arabic, Indic, Thai shapers not yet implemented
-- **Variable fonts**: Not yet supported
-- **Graphite**: Not supported
+### Project structure
 
-For complex scripts, consider using the full HarfBuzz via cgo or the [textlayout](https://github.com/boxesandglue/textlayout) package.
+```
+ot/               Main shaping package (Shaper, Buffer, Font, Face, ...)
+subset/           Font subsetting and variable font instancing
+harfbuzz-tests/   HarfBuzz compatibility test suite
+  tests/          .tests files (HarfBuzz hb-shape format)
+  fonts/          Test fonts (some via symlink)
+```
 
+### Key design decisions
+
+- **No cgo**: Pure Go, no HarfBuzz C dependency
+- **Font units only**: The shaper works in font units (no scaling). Callers scale by `fontSize / upem`.
+- **Shaper reuse**: A `Shaper` is created once per font and reused across shaping calls. Settings like synthetic bold, variations, and default features persist between calls.
+- **int16 positions**: Glyph positions use `int16` (matching the OpenType spec's typical value range), not `int32` or `float`.
 
 ## License
 
-MIT License - see [LICENSE](LICENSE)
+MIT License — see [LICENSE](LICENSE)
 
 ## Acknowledgments
 
-- [HarfBuzz](https://harfbuzz.github.io/) - The original text shaping engine
-- [textlayout](https://github.com/boxesandglue/textlayout) - Go port that inspired this implementation
+- [HarfBuzz](https://harfbuzz.github.io/) — The reference text shaping engine
+- [textlayout](https://github.com/boxesandglue/textlayout) — Earlier Go HarfBuzz port that inspired this implementation

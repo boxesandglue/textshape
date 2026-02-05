@@ -389,7 +389,8 @@ func (s *Shaper) reorderUSE(buf *Buffer, hasBroken bool) {
 		if s.insertSyllabicDottedCircles(buf, accessor,
 			uint8(USE_BrokenCluster),
 			uint8(USE_B),
-			int(USE_R)) {
+			int(USE_R),
+			-1) {
 			// Set USECategory on inserted dotted circles.
 			// The generic function copies Syllable but doesn't know about USECategory.
 			// We set it here: dotted circle (U+25CC) gets USE_B category.

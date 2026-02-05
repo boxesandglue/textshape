@@ -1,12 +1,8 @@
 package ot
 
 import (
-	"fmt"
 	"sort"
 )
-
-// Debug flag for Indic shaper
-var debugIndic = false
 
 // Script tags for Indic scripts
 // HarfBuzz equivalent: HB_SCRIPT_MALAYALAM, HB_SCRIPT_TAMIL, etc.
@@ -671,6 +667,9 @@ func (s *Shaper) initialReorderingIndic(buf *Buffer, indicInfo []IndicInfo, conf
 			s.initialReorderingConsonantSyllable(buf, indicInfo, start, end, config, indicPlan)
 		case IndicVowelSyllable:
 			s.initialReorderingVowelSyllable(buf, indicInfo, start, end, config)
+		case IndicBrokenCluster:
+			// HarfBuzz: "We already inserted dotted-circles, so just call the standalone_cluster."
+			s.initialReorderingStandaloneCluster(buf, indicInfo, start, end, config, indicPlan)
 		case IndicStandaloneCluster:
 			s.initialReorderingStandaloneCluster(buf, indicInfo, start, end, config, indicPlan)
 		}
@@ -1068,14 +1067,6 @@ func (s *Shaper) attachMiscMarks(buf *Buffer, indicInfo []IndicInfo, start, end,
 // indic_position value, with equal positions maintaining their original order.
 // Returns the new index of the base consonant after sorting.
 func (s *Shaper) stableSortIndicSyllable(buf *Buffer, indicInfo []IndicInfo, start, end int) int {
-	// DEBUG
-	if debugIndic {
-		fmt.Printf("stableSortIndicSyllable: start=%d end=%d\n", start, end)
-		for i := start; i < end; i++ {
-			fmt.Printf("  BEFORE [%d]: gid=%d cp=U+%04X pos=%d\n", i, buf.Info[i].GlyphID, buf.Info[i].Codepoint, indicInfo[i].Position)
-		}
-	}
-
 	if end-start <= 1 {
 		// Nothing to sort, but still set relative position for cluster tracking
 		for i := start; i < end; i++ {
@@ -1134,14 +1125,6 @@ func (s *Shaper) stableSortIndicSyllable(buf *Buffer, indicInfo []IndicInfo, sta
 		}
 		for i := 0; i < n; i++ {
 			buf.Pos[start+i] = tempPos[indices[i]]
-		}
-	}
-
-	// DEBUG
-	if debugIndic {
-		fmt.Printf("  AFTER sort:\n")
-		for i := start; i < end; i++ {
-			fmt.Printf("    [%d]: gid=%d cp=U+%04X pos=%d syllable(origPos)=%d\n", i, buf.Info[i].GlyphID, buf.Info[i].Codepoint, indicInfo[i].Position, buf.Info[i].Syllable)
 		}
 	}
 
@@ -1337,16 +1320,6 @@ func (s *Shaper) finalReorderingSyllable(buf *Buffer, indicInfo []IndicInfo, sta
 		}
 	}
 
-	if debugIndic {
-		fmt.Printf("finalReorderingSyllable [%d,%d):\n", start, end)
-		for i := start; i < end; i++ {
-			fmt.Printf("  [%d] gid=%d pos=%d cat=%d mask=0x%X props=0x%X ligated=%v multiplied=%v subst=%v\n",
-				i, buf.Info[i].GlyphID, buf.Info[i].IndicPosition, buf.Info[i].IndicCategory,
-				buf.Info[i].Mask, buf.Info[i].GlyphProps,
-				buf.Info[i].IsLigated(), buf.Info[i].IsMultiplied(),
-				(buf.Info[i].GlyphProps&GlyphPropsSubstituted) != 0)
-		}
-	}
 	// HarfBuzz: bool try_pref = !!indic_plan->mask_array[INDIC_PREF];
 	tryPref := indicPlan.maskArray[indicPref] != 0
 
@@ -1944,12 +1917,6 @@ func (s *Shaper) shapeIndic(buf *Buffer, features []Feature) {
 	// HarfBuzz equivalent: data_create_indic() and accessing plan->data()
 	indicPlan := s.getIndicPlan(script, config)
 
-	// DEBUG
-	if debugIndic {
-		fmt.Printf("isOldSpec: script=%s, isOldSpec=%v\n",
-			script.String(), indicPlan.isOldSpec)
-	}
-
 	// Step 1: Normalize Unicode
 	// HarfBuzz equivalent: _hb_ot_shape_normalize() in hb-ot-shape-normalize.cc
 	// Indic uses COMPOSED_DIACRITICS mode like USE
@@ -1969,19 +1936,38 @@ func (s *Shaper) shapeIndic(buf *Buffer, features []Feature) {
 	// Step 5: Find syllables
 	hasBroken := s.findSyllablesIndic(indicInfo)
 
+	// Sync syllable info to buf.Info so it persists through buffer operations.
+	// In HarfBuzz, syllable is stored directly on glyph_info_t. In Go, we store
+	// it on the separate indicInfo array, so we must sync before any buffer ops.
+	for i := range buf.Info {
+		buf.Info[i].Syllable = indicInfo[i].Syllable
+	}
+
 	// Step 5.5: Insert dotted circles for broken clusters
 	// HarfBuzz equivalent: hb_syllabic_insert_dotted_circles() in initial_reordering_indic()
 	if hasBroken {
 		accessor := &indicSyllableAccessor{indicInfo: indicInfo}
 		// ICatDOTTEDCIRCLE = 11, ICatRepha = 14
 		// HarfBuzz: hb-ot-shaper-indic.cc:978-982
-		s.insertSyllabicDottedCircles(buf, accessor,
+		// Note: Passes IPosEnd as dottedCirclePosition (6th parameter)
+		// HarfBuzz does NOT re-run setup/findSyllables after insertion.
+		if s.insertSyllabicDottedCircles(buf, accessor,
 			uint8(IndicBrokenCluster), // broken syllable type
 			uint8(ICatDOTTEDCIRCLE),   // dotted circle category
-			int(ICatRepha))            // repha category
-		// Update indicInfo after insertion (buffer length may have changed)
-		indicInfo = s.setupIndicProperties(buf, config)
-		s.findSyllablesIndic(indicInfo)
+			int(ICatRepha),            // repha category
+			int(IPosEnd)) {            // dotted circle position
+			// Buffer length changed; rebuild indicInfo from buf.Info fields.
+			// HarfBuzz does NOT re-run setup_masks/find_syllables after insertion,
+			// because category/position/syllable are stored directly on glyph_info.
+			// In Go, we must rebuild the separate indicInfo array from buf.Info fields
+			// which were preserved through the buffer clearOutput/nextGlyph/sync ops.
+			indicInfo = make([]IndicInfo, len(buf.Info))
+			for i := range buf.Info {
+				indicInfo[i].Category = IndicCategory(buf.Info[i].IndicCategory)
+				indicInfo[i].Position = IndicPosition(buf.Info[i].IndicPosition)
+				indicInfo[i].Syllable = buf.Info[i].Syllable
+			}
+		}
 	}
 
 	// Copy syllable info to GlyphInfo for per-syllable GSUB application
@@ -2136,14 +2122,6 @@ func (s *Shaper) applyIndicBasicFeatures(buf *Buffer, indicPlan *IndicPlan) {
 		return
 	}
 
-	// DEBUG
-	if debugIndic {
-		fmt.Println("applyIndicBasicFeatures: BEFORE any features:")
-		for i, info := range buf.Info {
-			fmt.Printf("  [%d] gid=%d cp=U+%04X mask=0x%X\n", i, info.GlyphID, info.Codepoint, info.Mask)
-		}
-	}
-
 	// Basic features in order (HarfBuzz: hb-ot-shaper-indic.cc basic_features[])
 	// Note: These are applied with pauses between some of them in HarfBuzz
 	// ALL basic features have F_PER_SYLLABLE flag - must be applied per-syllable
@@ -2239,24 +2217,18 @@ func (s *Shaper) applyIndicOtherFeatures(buf *Buffer, indicPlan *IndicPlan) {
 	}
 
 	// Standard horizontal features (HarfBuzz: hb-ot-shape.cc horizontal_features[])
-	// These use default flags: autoZWNJ=true, autoZWJ=true
+	// These are common features with F_GLOBAL only (NO F_PER_SYLLABLE).
+	// They must be applied globally, not per-syllable, to allow context matching
+	// across syllable boundaries. HarfBuzz applies them through the compiled map
+	// without per_syllable flag.
 	standardFeatures := []Tag{
 		tagCalt, // Contextual alternates
 		tagClig, // Contextual ligatures
 	}
 
 	for _, tag := range standardFeatures {
-		s.applyFeaturePerSyllable(buf, tag, MaskGlobal)
+		s.gsub.ApplyFeatureToBuffer(tag, buf, s.gdef, s.font)
 	}
-}
-
-// applyFeaturePerSyllable applies a GSUB feature respecting syllable boundaries.
-// HarfBuzz equivalent: F_PER_SYLLABLE flag in hb-ot-map.hh
-// This ensures that context-based lookups (ligatures, etc.) only match glyphs
-// within the same syllable, preventing cross-syllable substitutions.
-// Uses HarfBuzz defaults for auto_zwnj=true, auto_zwj=true.
-func (s *Shaper) applyFeaturePerSyllable(buf *Buffer, tag Tag, featureMask uint32) {
-	s.applyFeaturePerSyllableWithOpts(buf, tag, featureMask, true, true)
 }
 
 // applyFeaturePerSyllableWithOpts applies a GSUB feature per syllable with explicit
@@ -2338,13 +2310,13 @@ func isStandardIndicGSUBFeature(tag Tag) bool {
 		return true
 	// Other features (from applyIndicOtherFeatures)
 	case MakeTag('i', 'n', 'i', 't'), // init
-		tagPres,                     // pres
-		tagAbvs,                     // abvs
-		tagBlws,                     // blws
-		tagPsts,                     // psts
-		tagHaln,                     // haln
-		tagCalt,                     // calt
-		tagClig:                     // clig
+		tagPres, // pres
+		tagAbvs, // abvs
+		tagBlws, // blws
+		tagPsts, // psts
+		tagHaln, // haln
+		tagCalt, // calt
+		tagClig: // clig
 		return true
 	// Common features applied in basic/other phases
 	case MakeTag('l', 'o', 'c', 'l'), // locl

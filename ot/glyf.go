@@ -119,6 +119,38 @@ func (g *Glyf) GetGlyph(gid GlyphID) *GlyphData {
 	}
 }
 
+// GetContourPointCount returns the number of contour points for a glyph.
+// For empty glyphs (like space) returns 0.
+// For simple glyphs returns the number of outline points.
+// For composite glyphs, recursively counts component points.
+// HarfBuzz equivalent: get_points() in OT/glyf/Glyph.hh
+func (g *Glyf) GetContourPointCount(gid GlyphID) int {
+	glyph := g.GetGlyph(gid)
+	if glyph == nil || glyph.Data == nil {
+		return 0 // Empty glyph (like space)
+	}
+
+	if glyph.NumberOfContours >= 0 {
+		// Simple glyph: last endPtsOfContours + 1
+		if len(glyph.Data) < 10+int(glyph.NumberOfContours)*2 {
+			return 0
+		}
+		if glyph.NumberOfContours == 0 {
+			return 0
+		}
+		lastEndPt := int(binary.BigEndian.Uint16(glyph.Data[10+(int(glyph.NumberOfContours)-1)*2:]))
+		return lastEndPt + 1
+	}
+
+	// Composite glyph: sum of component point counts
+	components := g.parseComposite(glyph.Data)
+	total := 0
+	for _, comp := range components {
+		total += g.GetContourPointCount(comp.GlyphID)
+	}
+	return total
+}
+
 // GetGlyphBytes returns the raw bytes for a glyph.
 func (g *Glyf) GetGlyphBytes(gid GlyphID) []byte {
 	offset, length, ok := g.loca.GetOffset(gid)
@@ -158,9 +190,9 @@ func (g *Glyf) GetGlyphExtents(gid GlyphID) (GlyphExtents, bool) {
 
 	return GlyphExtents{
 		XBearing: xMin,
-		YBearing: yMax,                  // Top of glyph
+		YBearing: yMax, // Top of glyph
 		Width:    xMax - xMin,
-		Height:   -(yMax - yMin),        // Negative height (top to bottom)
+		Height:   -(yMax - yMin), // Negative height (top to bottom)
 	}, true
 }
 

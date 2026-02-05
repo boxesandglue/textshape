@@ -10,1035 +10,1035 @@ import "strings"
 // BCP47ToOpenType maps BCP 47 language tags to OpenType language system tags.
 // HarfBuzz equivalent: ot_languages2[] and ot_languages3[] in hb-ot-tag-table.hh
 var BCP47ToOpenType = map[string][]Tag{
-	"aa":  {MakeTag('A', 'F', 'R', ' ')},                                                                                                                     // Afar
-	"aaq": {MakeTag('A', 'A', 'Q', ' ')},                                                                                                                     // Eastern Abnaki
-	"ab":  {MakeTag('A', 'B', 'K', ' ')},                                                                                                                     // Abkhazian
-	"abq": {MakeTag('A', 'B', 'A', ' ')},                                                                                                                     // Abaza
-	"abs": {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Ambonese Malay
-	"acf": {MakeTag('C', 'P', 'P', ' '), MakeTag('F', 'A', 'N', ' ')},                                                                                        // Saint Lucian Creole French
-	"ach": {MakeTag('A', 'C', 'H', ' ')},                                                                                                                     // Acoli
-	"acr": {MakeTag('A', 'C', 'R', ' '), MakeTag('M', 'Y', 'N', ' ')},                                                                                        // Achi
-	"acy": {MakeTag('A', 'C', 'Y', ' ')},                                                                                                                     // Cypriot Arabic
-	"ada": {MakeTag('D', 'N', 'G', ' ')},                                                                                                                     // Adangme
-	"ady": {MakeTag('A', 'D', 'Y', ' ')},                                                                                                                     // Adyghe
-	"af":  {MakeTag('A', 'F', 'K', ' ')},                                                                                                                     // Afrikaans
-	"afs": {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Afro-Seminole Creole
-	"agu": {MakeTag('M', 'Y', 'N', ' ')},                                                                                                                     // Aguacateco
-	"ahg": {MakeTag('A', 'G', 'W', ' ')},                                                                                                                     // Qimant
-	"aht": {MakeTag('A', 'T', 'H', ' ')},                                                                                                                     // Ahtena
-	"aig": {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Antigua and Barbuda Creole English
-	"aii": {MakeTag('S', 'W', 'A', ' '), MakeTag('S', 'Y', 'R', ' ')},                                                                                        // Assyrian Neo-Aramaic
-	"aio": {MakeTag('A', 'I', 'O', ' ')},                                                                                                                     // Aiton
-	"aiw": {MakeTag('A', 'R', 'I', ' ')},                                                                                                                     // Aari
-	"ak":  {MakeTag('A', 'K', 'A', ' ')},                                                                                                                     // Akan
-	"akb": {MakeTag('A', 'K', 'B', ' '), MakeTag('B', 'T', 'K', ' ')},                                                                                        // Batak Angkola
-	"alt": {MakeTag('A', 'L', 'T', ' ')},                                                                                                                     // Southern Altai
-	"am":  {MakeTag('A', 'M', 'H', ' ')},                                                                                                                     // Amharic
-	"amf": {MakeTag('H', 'B', 'N', ' ')},                                                                                                                     // Hamer-Banna
-	"amw": {MakeTag('S', 'Y', 'R', ' ')},                                                                                                                     // Western Neo-Aramaic
-	"an":  {MakeTag('A', 'R', 'G', ' ')},                                                                                                                     // Aragonese
-	"ang": {MakeTag('A', 'N', 'G', ' ')},                                                                                                                     // Old English (ca. 450-1100)
-	"aoa": {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Angolar
-	"apa": {MakeTag('A', 'T', 'H', ' ')},                                                                                                                     // Apache languages
-	"apj": {MakeTag('A', 'T', 'H', ' ')},                                                                                                                     // Jicarilla Apache
-	"apk": {MakeTag('A', 'T', 'H', ' ')},                                                                                                                     // Kiowa Apache
-	"apl": {MakeTag('A', 'T', 'H', ' ')},                                                                                                                     // Lipan Apache
-	"apm": {MakeTag('A', 'T', 'H', ' ')},                                                                                                                     // Mescalero-Chiricahua Apache
-	"apw": {MakeTag('A', 'T', 'H', ' ')},                                                                                                                     // Western Apache
-	"ar":  {MakeTag('A', 'R', 'A', ' ')},                                                                                                                     // Arabic
-	"arn": {MakeTag('M', 'A', 'P', ' ')},                                                                                                                     // Mapudungun
-	"as":  {MakeTag('A', 'S', 'M', ' ')},                                                                                                                     // Assamese
-	"ast": {MakeTag('A', 'S', 'T', ' ')},                                                                                                                     // Asturian
-	"ath": {MakeTag('A', 'T', 'H', ' ')},                                                                                                                     // Athapascan languages
-	"atj": {MakeTag('R', 'C', 'R', ' ')},                                                                                                                     // Atikamekw
-	"ats": {MakeTag('A', 'T', 'S', ' ')},                                                                                                                     // Gros Ventre
-	"atv": {MakeTag('A', 'L', 'T', ' ')},                                                                                                                     // Northern Altai
-	"auj": {MakeTag('B', 'B', 'R', ' ')},                                                                                                                     // Awjilah
-	"av":  {MakeTag('A', 'V', 'R', ' ')},                                                                                                                     // Avaric
-	"avn": {MakeTag('A', 'V', 'N', ' ')},                                                                                                                     // Avatime
-	"awa": {MakeTag('A', 'W', 'A', ' ')},                                                                                                                     // Awadhi
-	"ay":  {MakeTag('A', 'Y', 'M', ' ')},                                                                                                                     // Aymara
-	"az":  {MakeTag('A', 'Z', 'E', ' ')},                                                                                                                     // Azerbaijani
-	"azb": {MakeTag('A', 'Z', 'B', ' ')},                                                                                                                     // South Azerbaijani
-	"azd": {MakeTag('N', 'A', 'H', ' ')},                                                                                                                     // Eastern Durango Nahuatl
-	"azn": {MakeTag('N', 'A', 'H', ' ')},                                                                                                                     // Western Durango Nahuatl
-	"azz": {MakeTag('N', 'A', 'H', ' ')},                                                                                                                     // Highland Puebla Nahuatl
-	"ba":  {MakeTag('B', 'S', 'H', ' ')},                                                                                                                     // Bashkir
-	"bad": {MakeTag('B', 'A', 'D', '0')},                                                                                                                     // Banda languages
-	"bah": {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Bahamas Creole English
-	"bai": {MakeTag('B', 'M', 'L', ' ')},                                                                                                                     // Bamileke languages
-	"bal": {MakeTag('B', 'L', 'I', ' ')},                                                                                                                     // Baluchi
-	"ban": {MakeTag('B', 'A', 'N', ' ')},                                                                                                                     // Balinese
-	"bar": {MakeTag('B', 'A', 'R', ' ')},                                                                                                                     // Bavarian
-	"bbc": {MakeTag('B', 'B', 'C', ' '), MakeTag('B', 'T', 'K', ' ')},                                                                                        // Batak Toba
-	"bbj": {MakeTag('B', 'M', 'L', ' ')},                                                                                                                     // Ghomálá'
-	"bbp": {MakeTag('B', 'A', 'D', '0')},                                                                                                                     // West Central Banda
-	"bci": {MakeTag('B', 'A', 'U', ' ')},                                                                                                                     // Baoulé
-	"bcl": {MakeTag('B', 'I', 'K', ' ')},                                                                                                                     // Central Bikol
-	"bcq": {MakeTag('B', 'C', 'H', ' ')},                                                                                                                     // Bench
-	"bcr": {MakeTag('A', 'T', 'H', ' ')},                                                                                                                     // Babine
-	"bdc": {MakeTag('B', 'D', 'C', ' ')},                                                                                                                     // Emberá-Baudó
-	"bdy": {MakeTag('B', 'D', 'Y', ' ')},                                                                                                                     // Bandjalang
-	"be":  {MakeTag('B', 'E', 'L', ' ')},                                                                                                                     // Belarusian
-	"bea": {MakeTag('A', 'T', 'H', ' ')},                                                                                                                     // Beaver
-	"beb": {MakeTag('B', 'T', 'I', ' ')},                                                                                                                     // Bebele
-	"bem": {MakeTag('B', 'E', 'M', ' ')},                                                                                                                     // Bemba (Zambia)
-	"ber": {MakeTag('B', 'B', 'R', ' ')},                                                                                                                     // Berber languages
-	"bew": {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Betawi
-	"bfl": {MakeTag('B', 'A', 'D', '0')},                                                                                                                     // Banda-Ndélé
-	"bfq": {MakeTag('B', 'A', 'D', ' ')},                                                                                                                     // Badaga
-	"bft": {MakeTag('B', 'L', 'T', ' ')},                                                                                                                     // Balti
-	"bfu": {MakeTag('L', 'A', 'H', ' ')},                                                                                                                     // Gahri
-	"bfy": {MakeTag('B', 'A', 'G', ' ')},                                                                                                                     // Bagheli
-	"bg":  {MakeTag('B', 'G', 'R', ' ')},                                                                                                                     // Bulgarian
-	"bgc": {MakeTag('B', 'G', 'C', ' ')},                                                                                                                     // Haryanvi
-	"bgq": {MakeTag('B', 'G', 'Q', ' ')},                                                                                                                     // Bagri
-	"bgr": {MakeTag('Q', 'I', 'N', ' ')},                                                                                                                     // Bawm Chin
-	"bhb": {MakeTag('B', 'H', 'I', ' ')},                                                                                                                     // Bhili
-	"bhi": {MakeTag('B', 'H', 'I', ' ')},                                                                                                                     // Bhilali
-	"bhk": {MakeTag('B', 'I', 'K', ' ')},                                                                                                                     // Albay Bicolano
-	"bho": {MakeTag('B', 'H', 'O', ' ')},                                                                                                                     // Bhojpuri
-	"bi":  {MakeTag('B', 'I', 'S', ' '), MakeTag('C', 'P', 'P', ' ')},                                                                                        // Bislama
-	"bik": {MakeTag('B', 'I', 'K', ' ')},                                                                                                                     // Bikol
-	"bin": {MakeTag('E', 'D', 'O', ' ')},                                                                                                                     // Bini
-	"biu": {MakeTag('Q', 'I', 'N', ' ')},                                                                                                                     // Biete
-	"bjj": {MakeTag('B', 'J', 'J', ' ')},                                                                                                                     // Kanauji
-	"bjo": {MakeTag('B', 'A', 'D', '0')},                                                                                                                     // Mid-Southern Banda
-	"bjs": {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Bajan
-	"bjt": {MakeTag('B', 'L', 'N', ' ')},                                                                                                                     // Balanta-Ganja
-	"bko": {MakeTag('B', 'M', 'L', ' ')},                                                                                                                     // Kwa'
-	"bla": {MakeTag('B', 'K', 'F', ' ')},                                                                                                                     // Siksika
-	"ble": {MakeTag('B', 'L', 'N', ' ')},                                                                                                                     // Balanta-Kentohe
-	"blk": {MakeTag('B', 'L', 'K', ' '), MakeTag('K', 'R', 'N', ' ')},                                                                                        // Pa'o Karen
-	"bln": {MakeTag('B', 'I', 'K', ' ')},                                                                                                                     // Southern Catanduanes Bikol
-	"bm":  {MakeTag('B', 'M', 'B', ' ')},                                                                                                                     // Bambara
-	"bn":  {MakeTag('B', 'E', 'N', ' ')},                                                                                                                     // Bengali
-	"bo":  {MakeTag('T', 'I', 'B', ' ')},                                                                                                                     // Tibetan
-	"bpd": {MakeTag('B', 'A', 'D', '0')},                                                                                                                     // Banda-Banda
-	"bpl": {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Broome Pearling Lugger Pidgin
-	"bpq": {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Banda Malay
-	"bpy": {MakeTag('B', 'P', 'Y', ' ')},                                                                                                                     // Bishnupriya
-	"bqi": {MakeTag('L', 'R', 'C', ' ')},                                                                                                                     // Bakhtiari
-	"bqk": {MakeTag('B', 'A', 'D', '0')},                                                                                                                     // Banda-Mbrès
-	"br":  {MakeTag('B', 'R', 'E', ' ')},                                                                                                                     // Breton
-	"bra": {MakeTag('B', 'R', 'I', ' ')},                                                                                                                     // Braj
-	"brc": {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Berbice Creole Dutch
-	"brh": {MakeTag('B', 'R', 'H', ' ')},                                                                                                                     // Brahui
-	"brx": {MakeTag('B', 'R', 'X', ' ')},                                                                                                                     // Bodo (India)
-	"bs":  {MakeTag('B', 'O', 'S', ' ')},                                                                                                                     // Bosnian
-	"bsk": {MakeTag('B', 'S', 'K', ' ')},                                                                                                                     // Burushaski
-	"btb": {MakeTag('B', 'T', 'I', ' ')},                                                                                                                     // Beti (Cameroon)
-	"btd": {MakeTag('B', 'T', 'D', ' '), MakeTag('B', 'T', 'K', ' ')},                                                                                        // Batak Dairi
-	"btk": {MakeTag('B', 'T', 'K', ' ')},                                                                                                                     // Batak languages
-	"btm": {MakeTag('B', 'T', 'K', ' '), MakeTag('B', 'T', 'M', ' ')},                                                                                        // Batak Mandailing
-	"bto": {MakeTag('B', 'I', 'K', ' ')},                                                                                                                     // Rinconada Bikol
-	"bts": {MakeTag('B', 'T', 'K', ' '), MakeTag('B', 'T', 'S', ' ')},                                                                                        // Batak Simalungun
-	"btx": {MakeTag('B', 'T', 'K', ' '), MakeTag('B', 'T', 'X', ' ')},                                                                                        // Batak Karo
-	"btz": {MakeTag('B', 'T', 'K', ' '), MakeTag('B', 'T', 'Z', ' ')},                                                                                        // Batak Alas-Kluet
-	"bug": {MakeTag('B', 'U', 'G', ' ')},                                                                                                                     // Buginese
-	"bum": {MakeTag('B', 'T', 'I', ' ')},                                                                                                                     // Bulu (Cameroon)
-	"bwe": {MakeTag('K', 'R', 'N', ' ')},                                                                                                                     // Bwe Karen
-	"bxo": {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Barikanchi
-	"bxp": {MakeTag('B', 'T', 'I', ' ')},                                                                                                                     // Bebil
-	"bxr": {MakeTag('R', 'B', 'U', ' ')},                                                                                                                     // Russia Buriat
-	"byn": {MakeTag('B', 'I', 'L', ' ')},                                                                                                                     // Bilin
-	"byv": {MakeTag('B', 'M', 'L', ' '), MakeTag('B', 'Y', 'V', ' ')},                                                                                        // Medumba
-	"bzj": {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Belize Kriol English
-	"bzk": {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Nicaragua Creole English
-	"ca":  {MakeTag('C', 'A', 'T', ' ')},                                                                                                                     // Catalan
-	"caa": {MakeTag('M', 'Y', 'N', ' ')},                                                                                                                     // Chortí
-	"cac": {MakeTag('M', 'Y', 'N', ' ')},                                                                                                                     // Chuj
-	"caf": {MakeTag('A', 'T', 'H', ' '), MakeTag('C', 'R', 'R', ' ')},                                                                                        // Southern Carrier
-	"cak": {MakeTag('C', 'A', 'K', ' '), MakeTag('M', 'Y', 'N', ' ')},                                                                                        // Kaqchikel
-	"cay": {MakeTag('C', 'A', 'Y', ' ')},                                                                                                                     // Cayuga
-	"cbg": {MakeTag('C', 'B', 'G', ' ')},                                                                                                                     // Chimila
-	"cbk": {MakeTag('C', 'B', 'K', ' '), MakeTag('C', 'P', 'P', ' ')},                                                                                        // Chavacano
-	"cbl": {MakeTag('Q', 'I', 'N', ' ')},                                                                                                                     // Bualkhaw Chin
-	"ccl": {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Cutchi-Swahili
-	"ccm": {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Malaccan Creole Malay
-	"cco": {MakeTag('C', 'C', 'H', 'N')},                                                                                                                     // Comaltepec Chinantec
-	"ce":  {MakeTag('C', 'H', 'E', ' ')},                                                                                                                     // Chechen
-	"ceb": {MakeTag('C', 'E', 'B', ' ')},                                                                                                                     // Cebuano
-	"cek": {MakeTag('Q', 'I', 'N', ' ')},                                                                                                                     // Eastern Khumi Chin
-	"cey": {MakeTag('Q', 'I', 'N', ' ')},                                                                                                                     // Ekai Chin
-	"cfm": {MakeTag('H', 'A', 'L', ' '), MakeTag('Q', 'I', 'N', ' ')},                                                                                        // Falam Chin
-	"cgg": {MakeTag('C', 'G', 'G', ' ')},                                                                                                                     // Chiga
-	"ch":  {MakeTag('C', 'H', 'A', ' ')},                                                                                                                     // Chamorro
-	"chf": {MakeTag('M', 'Y', 'N', ' ')},                                                                                                                     // Tabasco Chontal
-	"chj": {MakeTag('C', 'C', 'H', 'N')},                                                                                                                     // Ojitlán Chinantec
-	"chk": {MakeTag('C', 'H', 'K', '0')},                                                                                                                     // Chuukese
-	"chn": {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Chinook jargon
-	"cho": {MakeTag('C', 'H', 'O', ' ')},                                                                                                                     // Choctaw
-	"chp": {MakeTag('A', 'T', 'H', ' '), MakeTag('C', 'H', 'P', ' '), MakeTag('S', 'A', 'Y', ' ')},                                                           // Chipewyan
-	"chq": {MakeTag('C', 'C', 'H', 'N')},                                                                                                                     // Quiotepec Chinantec
-	"chr": {MakeTag('C', 'H', 'R', ' ')},                                                                                                                     // Cherokee
-	"chy": {MakeTag('C', 'H', 'Y', ' ')},                                                                                                                     // Cheyenne
-	"chz": {MakeTag('C', 'C', 'H', 'N')},                                                                                                                     // Ozumacín Chinantec
-	"cja": {MakeTag('C', 'J', 'A', ' ')},                                                                                                                     // Western Cham
-	"cjm": {MakeTag('C', 'J', 'M', ' ')},                                                                                                                     // Eastern Cham
-	"cka": {MakeTag('Q', 'I', 'N', ' ')},                                                                                                                     // Khumi Awa Chin
-	"ckn": {MakeTag('Q', 'I', 'N', ' ')},                                                                                                                     // Kaang Chin
-	"cks": {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Tayo
-	"ckt": {MakeTag('C', 'H', 'K', ' ')},                                                                                                                     // Chukot
-	"ckz": {MakeTag('M', 'Y', 'N', ' ')},                                                                                                                     // Cakchiquel-Quiché Mixed Language
-	"clc": {MakeTag('A', 'T', 'H', ' ')},                                                                                                                     // Chilcotin
-	"cld": {MakeTag('S', 'Y', 'R', ' ')},                                                                                                                     // Chaldean Neo-Aramaic
-	"cle": {MakeTag('C', 'C', 'H', 'N')},                                                                                                                     // Lealao Chinantec
-	"clj": {MakeTag('Q', 'I', 'N', ' ')},                                                                                                                     // Laitu Chin
-	"clt": {MakeTag('Q', 'I', 'N', ' ')},                                                                                                                     // Lautu Chin
-	"cmi": {MakeTag('C', 'M', 'I', ' ')},                                                                                                                     // Emberá-Chamí
-	"cmr": {MakeTag('Q', 'I', 'N', ' ')},                                                                                                                     // Mro-Khimi Chin
-	"cnb": {MakeTag('Q', 'I', 'N', ' ')},                                                                                                                     // Chinbon Chin
-	"cnh": {MakeTag('Q', 'I', 'N', ' ')},                                                                                                                     // Hakha Chin
-	"cnk": {MakeTag('Q', 'I', 'N', ' ')},                                                                                                                     // Khumi Chin
-	"cnl": {MakeTag('C', 'C', 'H', 'N')},                                                                                                                     // Lalana Chinantec
-	"cnr": {MakeTag('S', 'R', 'B', ' ')},                                                                                                                     // Montenegrin
-	"cnt": {MakeTag('C', 'C', 'H', 'N')},                                                                                                                     // Tepetotutla Chinantec
-	"cnu": {MakeTag('B', 'B', 'R', ' ')},                                                                                                                     // Chenoua
-	"cnw": {MakeTag('Q', 'I', 'N', ' ')},                                                                                                                     // Ngawn Chin
-	"co":  {MakeTag('C', 'O', 'S', ' ')},                                                                                                                     // Corsican
-	"cob": {MakeTag('M', 'Y', 'N', ' ')},                                                                                                                     // Chicomuceltec
-	"coo": {MakeTag('C', 'O', 'O', ' ')},                                                                                                                     // Comox
-	"cop": {MakeTag('C', 'O', 'P', ' ')},                                                                                                                     // Coptic
-	"coq": {MakeTag('A', 'T', 'H', ' ')},                                                                                                                     // Coquille
-	"cpa": {MakeTag('C', 'C', 'H', 'N')},                                                                                                                     // Palantla Chinantec
-	"cpe": {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // English-based creoles and pidgins
-	"cpf": {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // French-based creoles and pidgins
-	"cpi": {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Chinese Pidgin English
-	"cpp": {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Portuguese-based creoles and pidgins
-	"cr":  {MakeTag('C', 'R', 'E', ' ')},                                                                                                                     // Cree
-	"crh": {MakeTag('C', 'R', 'T', ' ')},                                                                                                                     // Crimean Tatar
-	"cri": {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Sãotomense
-	"crj": {MakeTag('E', 'C', 'R', ' '), MakeTag('Y', 'C', 'R', ' ')},                                                                                        // Southern East Cree
-	"crk": {MakeTag('W', 'C', 'R', ' '), MakeTag('Y', 'C', 'R', ' ')},                                                                                        // Plains Cree
-	"crl": {MakeTag('E', 'C', 'R', ' '), MakeTag('Y', 'C', 'R', ' ')},                                                                                        // Northern East Cree
-	"crm": {MakeTag('L', 'C', 'R', ' '), MakeTag('M', 'C', 'R', ' ')},                                                                                        // Moose Cree
-	"crp": {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Creoles and pidgins
-	"crs": {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Seselwa Creole French
-	"crx": {MakeTag('A', 'T', 'H', ' '), MakeTag('C', 'R', 'R', ' ')},                                                                                        // Carrier
-	"cs":  {MakeTag('C', 'S', 'Y', ' ')},                                                                                                                     // Czech
-	"csa": {MakeTag('C', 'C', 'H', 'N')},                                                                                                                     // Chiltepec Chinantec
-	"csb": {MakeTag('C', 'S', 'B', ' ')},                                                                                                                     // Kashubian
-	"csh": {MakeTag('Q', 'I', 'N', ' ')},                                                                                                                     // Asho Chin
-	"csj": {MakeTag('Q', 'I', 'N', ' ')},                                                                                                                     // Songlai Chin
-	"cso": {MakeTag('C', 'C', 'H', 'N')},                                                                                                                     // Sochiapam Chinantec
-	"csv": {MakeTag('Q', 'I', 'N', ' ')},                                                                                                                     // Sumtu Chin
-	"csw": {MakeTag('N', 'C', 'R', ' '), MakeTag('N', 'H', 'C', ' ')},                                                                                        // Swampy Cree
-	"csy": {MakeTag('Q', 'I', 'N', ' ')},                                                                                                                     // Siyin Chin
-	"ctc": {MakeTag('A', 'T', 'H', ' ')},                                                                                                                     // Chetco
-	"ctd": {MakeTag('Q', 'I', 'N', ' ')},                                                                                                                     // Tedim Chin
-	"cte": {MakeTag('C', 'C', 'H', 'N')},                                                                                                                     // Tepinapa Chinantec
-	"ctg": {MakeTag('C', 'T', 'G', ' ')},                                                                                                                     // Chittagonian
-	"cth": {MakeTag('Q', 'I', 'N', ' ')},                                                                                                                     // Thaiphum Chin
-	"ctl": {MakeTag('C', 'C', 'H', 'N')},                                                                                                                     // Tlacoatzintepec Chinantec
-	"cto": {MakeTag('C', 'T', 'O', ' ')},                                                                                                                     // Emberá-Catío
-	"cts": {MakeTag('B', 'I', 'K', ' ')},                                                                                                                     // Northern Catanduanes Bikol
-	"ctt": {MakeTag('C', 'T', 'T', ' ')},                                                                                                                     // Wayanad Chetti
-	"ctu": {MakeTag('M', 'Y', 'N', ' ')},                                                                                                                     // Chol
-	"cu":  {MakeTag('C', 'S', 'L', ' ')},                                                                                                                     // Church Slavic
-	"cuc": {MakeTag('C', 'C', 'H', 'N')},                                                                                                                     // Usila Chinantec
-	"cuk": {MakeTag('C', 'U', 'K', ' ')},                                                                                                                     // San Blas Kuna
-	"cv":  {MakeTag('C', 'H', 'U', ' ')},                                                                                                                     // Chuvash
-	"cvn": {MakeTag('C', 'C', 'H', 'N')},                                                                                                                     // Valle Nacional Chinantec
-	"cwd": {MakeTag('D', 'C', 'R', ' '), MakeTag('T', 'C', 'R', ' ')},                                                                                        // Woods Cree
-	"cy":  {MakeTag('W', 'E', 'L', ' ')},                                                                                                                     // Welsh
-	"czt": {MakeTag('Q', 'I', 'N', ' ')},                                                                                                                     // Zotung Chin
-	"da":  {MakeTag('D', 'A', 'N', ' ')},                                                                                                                     // Danish
-	"dag": {MakeTag('D', 'A', 'G', ' ')},                                                                                                                     // Dagbani
-	"dao": {MakeTag('Q', 'I', 'N', ' ')},                                                                                                                     // Daai Chin
-	"dap": {MakeTag('N', 'I', 'S', ' ')},                                                                                                                     // Nisi (India)
-	"dar": {MakeTag('D', 'A', 'R', ' ')},                                                                                                                     // Dargwa
-	"dax": {MakeTag('D', 'A', 'X', ' ')},                                                                                                                     // Dayi
-	"dcr": {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Negerhollands
-	"de":  {MakeTag('D', 'E', 'U', ' ')},                                                                                                                     // German
-	"den": {MakeTag('A', 'T', 'H', ' '), MakeTag('S', 'L', 'A', ' ')},                                                                                        // Slave (Athapascan)
-	"dep": {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Pidgin Delaware
-	"dgo": {MakeTag('D', 'G', 'O', ' ')},                                                                                                                     // Dogri (individual language)
-	"dgr": {MakeTag('A', 'T', 'H', ' ')},                                                                                                                     // Tlicho
-	"dhd": {MakeTag('M', 'A', 'W', ' ')},                                                                                                                     // Dhundari
-	"dhg": {MakeTag('D', 'H', 'G', ' ')},                                                                                                                     // Dhangu-Djangu
-	"din": {MakeTag('D', 'N', 'K', ' ')},                                                                                                                     // Dinka
-	"diq": {MakeTag('D', 'I', 'Q', ' ')},                                                                                                                     // Dimli (individual language)
-	"dje": {MakeTag('D', 'J', 'R', ' ')},                                                                                                                     // Zarma
-	"djk": {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Eastern Maroon Creole
-	"djr": {MakeTag('D', 'J', 'R', '0')},                                                                                                                     // Djambarrpuyngu
-	"dng": {MakeTag('D', 'U', 'N', ' ')},                                                                                                                     // Dungan
-	"dnj": {MakeTag('D', 'N', 'J', ' ')},                                                                                                                     // Dan
-	"doi": {MakeTag('D', 'G', 'R', ' ')},                                                                                                                     // Dogri (macrolanguage)
-	"dsb": {MakeTag('L', 'S', 'B', ' ')},                                                                                                                     // Lower Sorbian
-	"duj": {MakeTag('D', 'U', 'J', ' ')},                                                                                                                     // Dhuwal
-	"dv":  {MakeTag('D', 'I', 'V', ' '), MakeTag('D', 'H', 'V', ' ')},                                                                                       // Dhivehi (DIV=new, DHV=deprecated)
-	"dwu": {MakeTag('D', 'U', 'J', ' ')},                                                                                                                     // Dhuwal
-	"dwy": {MakeTag('D', 'U', 'J', ' ')},                                                                                                                     // Dhuwaya
-	"dyu": {MakeTag('J', 'U', 'L', ' ')},                                                                                                                     // Dyula
-	"dz":  {MakeTag('D', 'Z', 'N', ' ')},                                                                                                                     // Dzongkha
-	"ee":  {MakeTag('E', 'W', 'E', ' ')},                                                                                                                     // Ewe
-	"efi": {MakeTag('E', 'F', 'I', ' ')},                                                                                                                     // Efik
-	"eky": {MakeTag('K', 'R', 'N', ' ')},                                                                                                                     // Eastern Kayah
-	"el":  {MakeTag('E', 'L', 'L', ' '), MakeTag('P', 'G', 'R', ' ')},                                                                                        // Modern Greek (1453-)
-	"emk": {MakeTag('E', 'M', 'K', ' '), MakeTag('M', 'N', 'K', ' ')},                                                                                        // Eastern Maninkakan
-	"emp": {MakeTag('E', 'M', 'P', ' ')},                                                                                                                     // Northern Emberá
-	"emy": {MakeTag('M', 'Y', 'N', ' ')},                                                                                                                     // Epigraphic Mayan
-	"en":  {MakeTag('E', 'N', 'G', ' ')},                                                                                                                     // English
-	"enf": {MakeTag('F', 'N', 'E', ' ')},                                                                                                                     // Forest Enets
-	"enh": {MakeTag('T', 'N', 'E', ' ')},                                                                                                                     // Tundra Enets
-	"eo":  {MakeTag('N', 'T', 'O', ' ')},                                                                                                                     // Esperanto
-	"es":  {MakeTag('E', 'S', 'P', ' ')},                                                                                                                     // Spanish
-	"esu": {MakeTag('E', 'S', 'U', ' ')},                                                                                                                     // Central Yupik
-	"et":  {MakeTag('E', 'T', 'I', ' ')},                                                                                                                     // Estonian
-	"eto": {MakeTag('B', 'T', 'I', ' ')},                                                                                                                     // Eton (Cameroon)
-	"eu":  {MakeTag('E', 'U', 'Q', ' ')},                                                                                                                     // Basque
-	"eve": {MakeTag('E', 'V', 'N', ' ')},                                                                                                                     // Even
-	"evn": {MakeTag('E', 'V', 'K', ' ')},                                                                                                                     // Evenki
-	"ewo": {MakeTag('B', 'T', 'I', ' ')},                                                                                                                     // Ewondo
-	"fa":  {MakeTag('F', 'A', 'R', ' ')},                                                                                                                     // Persian
-	"fab": {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Fa d'Ambu
-	"fan": {MakeTag('F', 'A', 'N', '0')},                                                                                                                     // Fang (Equatorial Guinea)
-	"fat": {MakeTag('A', 'K', 'A', ' '), MakeTag('F', 'A', 'T', ' ')},                                                                                        // Fanti
-	"fbl": {MakeTag('B', 'I', 'K', ' ')},                                                                                                                     // West Albay Bikol
-	"ff":  {MakeTag('F', 'U', 'L', ' ')},                                                                                                                     // Fulah
-	"fi":  {MakeTag('F', 'I', 'N', ' ')},                                                                                                                     // Finnish
-	"fil": {MakeTag('P', 'I', 'L', ' ')},                                                                                                                     // Filipino
-	"fj":  {MakeTag('F', 'J', 'I', ' ')},                                                                                                                     // Fijian
-	"fmp": {MakeTag('B', 'M', 'L', ' '), MakeTag('F', 'M', 'P', ' ')},                                                                                        // Fe'fe'
-	"fng": {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Fanagalo
-	"fo":  {MakeTag('F', 'O', 'S', ' ')},                                                                                                                     // Faroese
-	"fon": {MakeTag('F', 'O', 'N', ' ')},                                                                                                                     // Fon
-	"fpe": {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Fernando Po Creole English
-	"fr":  {MakeTag('F', 'R', 'A', ' ')},                                                                                                                     // French
-	"frc": {MakeTag('F', 'R', 'C', ' ')},                                                                                                                     // Cajun French
-	"frp": {MakeTag('F', 'R', 'P', ' ')},                                                                                                                     // Arpitan
-	"fuf": {MakeTag('F', 'T', 'A', ' ')},                                                                                                                     // Pular
-	"fur": {MakeTag('F', 'R', 'L', ' ')},                                                                                                                     // Friulian
-	"fuv": {MakeTag('F', 'U', 'V', ' ')},                                                                                                                     // Nigerian Fulfulde
-	"fy":  {MakeTag('F', 'R', 'I', ' ')},                                                                                                                     // Western Frisian
-	"ga":  {MakeTag('I', 'R', 'I', ' '), MakeTag('I', 'R', 'T', ' ')},                                                                                        // Irish
-	"gaa": {MakeTag('G', 'A', 'D', ' ')},                                                                                                                     // Ga
-	"gac": {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Mixed Great Andamanese
-	"gag": {MakeTag('G', 'A', 'G', ' ')},                                                                                                                     // Gagauz
-	"gbm": {MakeTag('G', 'A', 'W', ' ')},                                                                                                                     // Garhwali
-	"gce": {MakeTag('A', 'T', 'H', ' ')},                                                                                                                     // Galice
-	"gcf": {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Guadeloupean Creole French
-	"gcl": {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Grenadian Creole English
-	"gcr": {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Guianese Creole French
-	"gd":  {MakeTag('G', 'A', 'E', ' ')},                                                                                                                     // Scottish Gaelic
-	"gez": {MakeTag('G', 'E', 'Z', ' ')},                                                                                                                     // Geez
-	"gha": {MakeTag('B', 'B', 'R', ' ')},                                                                                                                     // Ghadamès
-	"ghc": {MakeTag('I', 'R', 'T', ' ')},                                                                                                                     // Hiberno-Scottish Gaelic
-	"ghk": {MakeTag('K', 'R', 'N', ' ')},                                                                                                                     // Geko Karen
-	"gho": {MakeTag('B', 'B', 'R', ' ')},                                                                                                                     // Ghomara
-	"gib": {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Gibanawa
-	"gih": {MakeTag('G', 'I', 'H', ' ')},                                                                                                                     // Githabul
-	"gil": {MakeTag('G', 'I', 'L', '0')},                                                                                                                     // Gilbertese
-	"gkp": {MakeTag('G', 'K', 'P', ' ')},                                                                                                                     // Guinea Kpelle
-	"gl":  {MakeTag('G', 'A', 'L', ' ')},                                                                                                                     // Galician
-	"gld": {MakeTag('N', 'A', 'N', ' ')},                                                                                                                     // Nanai
-	"glk": {MakeTag('G', 'L', 'K', ' ')},                                                                                                                     // Gilaki
-	"gn":  {MakeTag('G', 'U', 'A', ' ')},                                                                                                                     // Guarani
-	"gnb": {MakeTag('Q', 'I', 'N', ' ')},                                                                                                                     // Gangte
-	"gnn": {MakeTag('G', 'N', 'N', ' ')},                                                                                                                     // Gumatj
-	"gog": {MakeTag('G', 'O', 'G', ' ')},                                                                                                                     // Gogo
-	"gon": {MakeTag('G', 'O', 'N', ' ')},                                                                                                                     // Gondi
-	"goq": {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Gorap
-	"gox": {MakeTag('B', 'A', 'D', '0')},                                                                                                                     // Gobu
-	"gpe": {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Ghanaian Pidgin English
-	"grr": {MakeTag('B', 'B', 'R', ' ')},                                                                                                                     // Taznatit
-	"grt": {MakeTag('G', 'R', 'O', ' ')},                                                                                                                     // Garo
-	"gru": {MakeTag('S', 'O', 'G', ' ')},                                                                                                                     // Kistane
-	"gsw": {MakeTag('A', 'L', 'S', ' ')},                                                                                                                     // Swiss German
-	"gu":  {MakeTag('G', 'U', 'J', ' ')},                                                                                                                     // Gujarati
-	"guc": {MakeTag('G', 'U', 'C', ' ')},                                                                                                                     // Wayuu
-	"guf": {MakeTag('G', 'U', 'F', ' ')},                                                                                                                     // Gupapuyngu
-	"guk": {MakeTag('G', 'M', 'Z', ' ')},                                                                                                                     // Gumuz
-	"gul": {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Sea Island Creole English
-	"guz": {MakeTag('G', 'U', 'Z', ' ')},                                                                                                                     // Gusii
-	"gv":  {MakeTag('M', 'N', 'X', ' ')},                                                                                                                     // Manx
-	"gwi": {MakeTag('A', 'T', 'H', ' ')},                                                                                                                     // Gwichʼin
-	"gyn": {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Guyanese Creole English
-	"ha":  {MakeTag('H', 'A', 'U', ' ')},                                                                                                                     // Hausa
-	"haa": {MakeTag('A', 'T', 'H', ' ')},                                                                                                                     // Hän
-	"hai": {MakeTag('H', 'A', 'I', '0')},                                                                                                                     // Haida
-	"har": {MakeTag('H', 'R', 'I', ' ')},                                                                                                                     // Harari
-	"haw": {MakeTag('H', 'A', 'W', ' ')},                                                                                                                     // Hawaiian
-	"hax": {MakeTag('H', 'A', 'I', '0')},                                                                                                                     // Southern Haida
-	"hay": {MakeTag('H', 'A', 'Y', ' ')},                                                                                                                     // Haya
-	"haz": {MakeTag('H', 'A', 'Z', ' ')},                                                                                                                     // Hazaragi
-	"hca": {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Andaman Creole Hindi
-	"hdn": {MakeTag('H', 'A', 'I', '0')},                                                                                                                     // Northern Haida
-	"he":  {MakeTag('I', 'W', 'R', ' ')},                                                                                                                     // Hebrew
-	"hei": {MakeTag('H', 'E', 'I', ' ')},                                                                                                                     // Heiltsuk
-	"hi":  {MakeTag('H', 'I', 'N', ' ')},                                                                                                                     // Hindi
-	"hil": {MakeTag('H', 'I', 'L', ' ')},                                                                                                                     // Hiligaynon
-	"hlt": {MakeTag('Q', 'I', 'N', ' ')},                                                                                                                     // Matu Chin
-	"hmd": {MakeTag('H', 'M', 'D', ' ')},                                                                                                                     // Large Flowery Miao
-	"hmn": {MakeTag('H', 'M', 'N', ' ')},                                                                                                                     // Hmong
-	"hmr": {MakeTag('Q', 'I', 'N', ' ')},                                                                                                                     // Hmar
-	"hmz": {MakeTag('H', 'M', 'Z', ' ')},                                                                                                                     // Hmong Shua
-	"hnd": {MakeTag('H', 'N', 'D', ' ')},                                                                                                                     // Southern Hindko
-	"hne": {MakeTag('C', 'H', 'H', ' ')},                                                                                                                     // Chhattisgarhi
-	"hno": {MakeTag('H', 'N', 'D', ' ')},                                                                                                                     // Northern Hindko
-	"ho":  {MakeTag('C', 'P', 'P', ' '), MakeTag('H', 'M', 'O', ' ')},                                                                                        // Hiri Motu
-	"hoi": {MakeTag('A', 'T', 'H', ' ')},                                                                                                                     // Holikachuk
-	"hoj": {MakeTag('H', 'A', 'R', ' ')},                                                                                                                     // Hadothi
-	"hr":  {MakeTag('H', 'R', 'V', ' ')},                                                                                                                     // Croatian
-	"hra": {MakeTag('Q', 'I', 'N', ' ')},                                                                                                                     // Hrangkhol
-	"hsb": {MakeTag('U', 'S', 'B', ' ')},                                                                                                                     // Upper Sorbian
-	"ht":  {MakeTag('C', 'P', 'P', ' '), MakeTag('H', 'A', 'I', ' ')},                                                                                        // Haitian
-	"hu":  {MakeTag('H', 'U', 'N', ' ')},                                                                                                                     // Hungarian
-	"hup": {MakeTag('A', 'T', 'H', ' ')},                                                                                                                     // Hupa
-	"hur": {MakeTag('H', 'U', 'R', ' ')},                                                                                                                     // Halkomelem
-	"hus": {MakeTag('M', 'Y', 'N', ' ')},                                                                                                                     // Huastec
-	"hwc": {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Hawai'i Creole English
-	"hy":  {MakeTag('H', 'Y', 'E', ' '), MakeTag('H', 'Y', 'E', '0')},                                                                                        // Armenian
-	"hyw": {MakeTag('H', 'Y', 'E', ' ')},                                                                                                                     // Western Armenian
-	"hz":  {MakeTag('H', 'E', 'R', ' ')},                                                                                                                     // Herero
-	"ia":  {MakeTag('I', 'N', 'A', ' ')},                                                                                                                     // Interlingua (International Auxiliary Language
-	"iba": {MakeTag('I', 'B', 'A', ' ')},                                                                                                                     // Iban
-	"ibb": {MakeTag('I', 'B', 'B', ' ')},                                                                                                                     // Ibibio
-	"iby": {MakeTag('I', 'J', 'O', ' ')},                                                                                                                     // Ibani
-	"icr": {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Islander Creole English
-	"id":  {MakeTag('I', 'N', 'D', ' ')},                                                                                                                     // Indonesian
-	"idb": {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Indo-Portuguese
-	"ie":  {MakeTag('I', 'L', 'E', ' ')},                                                                                                                     // Interlingue
-	"ig":  {MakeTag('I', 'B', 'O', ' ')},                                                                                                                     // Igbo
-	"igb": {MakeTag('E', 'B', 'I', ' ')},                                                                                                                     // Ebira
-	"ihb": {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Iha Based Pidgin
-	"ii":  {MakeTag('Y', 'I', 'M', ' ')},                                                                                                                     // Sichuan Yi
-	"ijc": {MakeTag('I', 'J', 'O', ' ')},                                                                                                                     // Izon
-	"ije": {MakeTag('I', 'J', 'O', ' ')},                                                                                                                     // Biseni
-	"ijn": {MakeTag('I', 'J', 'O', ' ')},                                                                                                                     // Kalabari
-	"ijo": {MakeTag('I', 'J', 'O', ' ')},                                                                                                                     // Ijo languages
-	"ijs": {MakeTag('I', 'J', 'O', ' ')},                                                                                                                     // Southeast Ijo
-	"ik":  {MakeTag('I', 'P', 'K', ' ')},                                                                                                                     // Inupiaq
-	"ike": {MakeTag('I', 'N', 'U', 'K')},                                                                                                                     // Eastern Canadian Inuktitut
-	"ilo": {MakeTag('I', 'L', 'O', ' ')},                                                                                                                     // Iloko
-	"ing": {MakeTag('A', 'T', 'H', ' ')},                                                                                                                     // Degexit'an
-	"inh": {MakeTag('I', 'N', 'G', ' ')},                                                                                                                     // Ingush
-	"io":  {MakeTag('I', 'D', 'O', ' ')},                                                                                                                     // Ido
-	"iru": {MakeTag('I', 'R', 'U', ' ')},                                                                                                                     // Irula
-	"is":  {MakeTag('I', 'S', 'L', ' ')},                                                                                                                     // Icelandic
-	"it":  {MakeTag('I', 'T', 'A', ' ')},                                                                                                                     // Italian
-	"itz": {MakeTag('M', 'Y', 'N', ' ')},                                                                                                                     // Itzá
-	"iu":  {MakeTag('I', 'N', 'U', ' '), MakeTag('I', 'N', 'U', 'K')},                                                                                        // Inuktitut
-	"ixl": {MakeTag('M', 'Y', 'N', ' ')},                                                                                                                     // Ixil
-	"ja":  {MakeTag('J', 'A', 'N', ' ')},                                                                                                                     // Japanese
-	"jac": {MakeTag('M', 'Y', 'N', ' ')},                                                                                                                     // Popti'
-	"jam": {MakeTag('C', 'P', 'P', ' '), MakeTag('J', 'A', 'M', ' ')},                                                                                        // Jamaican Creole English
-	"jbe": {MakeTag('B', 'B', 'R', ' ')},                                                                                                                     // Judeo-Berber
-	"jbn": {MakeTag('B', 'B', 'R', ' ')},                                                                                                                     // Nafusi
-	"jbo": {MakeTag('J', 'B', 'O', ' ')},                                                                                                                     // Lojban
-	"jct": {MakeTag('J', 'C', 'T', ' ')},                                                                                                                     // Krymchak
-	"jdt": {MakeTag('J', 'D', 'T', ' ')},                                                                                                                     // Judeo-Tat
-	"jgo": {MakeTag('B', 'M', 'L', ' ')},                                                                                                                     // Ngomba
-	"jkm": {MakeTag('K', 'R', 'N', ' ')},                                                                                                                     // Mobwa Karen
-	"jkp": {MakeTag('K', 'R', 'N', ' ')},                                                                                                                     // Paku Karen
-	"jv":  {MakeTag('J', 'A', 'V', ' ')},                                                                                                                     // Javanese
-	"jvd": {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Javindo
-	"ka":  {MakeTag('K', 'A', 'T', ' '), MakeTag('K', 'G', 'E', ' ')},                                                                                        // Georgian
-	"kaa": {MakeTag('K', 'R', 'K', ' ')},                                                                                                                     // Kara-Kalpak
-	"kab": {MakeTag('B', 'B', 'R', ' '), MakeTag('K', 'A', 'B', '0')},                                                                                        // Kabyle
-	"kam": {MakeTag('K', 'M', 'B', ' ')},                                                                                                                     // Kamba (Kenya)
-	"kar": {MakeTag('K', 'R', 'N', ' ')},                                                                                                                     // Karen languages
-	"kaw": {MakeTag('K', 'A', 'W', ' ')},                                                                                                                     // Kawi
-	"kbc": {MakeTag('K', 'B', 'C', ' ')},                                                                                                                     // Kadiwéu
-	"kbd": {MakeTag('K', 'A', 'B', ' ')},                                                                                                                     // Kabardian
-	"kca": {MakeTag('K', 'H', 'K', ' '), MakeTag('K', 'H', 'S', ' '), MakeTag('K', 'H', 'V', ' ')},                                                           // Khanty
-	"kcn": {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Nubi
-	"kde": {MakeTag('K', 'D', 'E', ' ')},                                                                                                                     // Makonde
-	"kdr": {MakeTag('K', 'R', 'M', ' ')},                                                                                                                     // Karaim
-	"kdt": {MakeTag('K', 'U', 'Y', ' ')},                                                                                                                     // Kuy
-	"kea": {MakeTag('C', 'P', 'P', ' '), MakeTag('K', 'E', 'A', ' ')},                                                                                        // Kabuverdianu
-	"kek": {MakeTag('K', 'E', 'K', ' '), MakeTag('M', 'Y', 'N', ' ')},                                                                                        // Kekchí
-	"kex": {MakeTag('K', 'K', 'N', ' ')},                                                                                                                     // Kukna
-	"kfa": {MakeTag('K', 'O', 'D', ' ')},                                                                                                                     // Kodava
-	"kfr": {MakeTag('K', 'A', 'C', ' ')},                                                                                                                     // Kachhi
-	"kfx": {MakeTag('K', 'U', 'L', ' ')},                                                                                                                     // Kullu Pahari
-	"kfy": {MakeTag('K', 'M', 'N', ' ')},                                                                                                                     // Kumaoni
-	"kg":  {MakeTag('K', 'O', 'N', '0')},                                                                                                                     // Kongo
-	"kgf": {MakeTag('K', 'G', 'F', ' ')},                                                                                                                     // Kube
-	"kha": {MakeTag('K', 'S', 'I', ' ')},                                                                                                                     // Khasi
-	"khb": {MakeTag('X', 'B', 'D', ' ')},                                                                                                                     // Lü
-	"kht": {MakeTag('K', 'H', 'T', ' ')},                                                                                                                     // Khamti
-	"khw": {MakeTag('K', 'H', 'W', ' ')},                                                                                                                     // Khowar
-	"ki":  {MakeTag('K', 'I', 'K', ' ')},                                                                                                                     // Kikuyu
-	"kiu": {MakeTag('K', 'I', 'U', ' ')},                                                                                                                     // Kirmanjki (individual language)
-	"kj":  {MakeTag('K', 'U', 'A', ' ')},                                                                                                                     // Kuanyama
-	"kjb": {MakeTag('M', 'Y', 'N', ' ')},                                                                                                                     // Q'anjob'al
-	"kjd": {MakeTag('K', 'J', 'D', ' ')},                                                                                                                     // Southern Kiwai
-	"kjh": {MakeTag('K', 'H', 'A', ' ')},                                                                                                                     // Khakas
-	"kjj": {MakeTag('K', 'J', 'J', ' ')},                                                                                                                     // Khinalugh
-	"kjp": {MakeTag('K', 'J', 'P', ' '), MakeTag('K', 'R', 'N', ' ')},                                                                                        // Pwo Eastern Karen
-	"kjt": {MakeTag('K', 'R', 'N', ' ')},                                                                                                                     // Phrae Pwo Karen
-	"kjz": {MakeTag('K', 'J', 'Z', ' ')},                                                                                                                     // Bumthangkha
-	"kk":  {MakeTag('K', 'A', 'Z', ' ')},                                                                                                                     // Kazakh
-	"kkz": {MakeTag('A', 'T', 'H', ' ')},                                                                                                                     // Kaska
-	"kl":  {MakeTag('G', 'R', 'N', ' ')},                                                                                                                     // Kalaallisut
-	"kln": {MakeTag('K', 'A', 'L', ' ')},                                                                                                                     // Kalenjin
-	"km":  {MakeTag('K', 'H', 'M', ' ')},                                                                                                                     // Khmer
-	"kmb": {MakeTag('M', 'B', 'N', ' ')},                                                                                                                     // Kimbundu
-	"kmg": {MakeTag('K', 'M', 'G', ' ')},                                                                                                                     // Kâte
-	"kmv": {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Karipúna Creole French
-	"kmw": {MakeTag('K', 'M', 'O', ' ')},                                                                                                                     // Komo (Democratic Republic of Congo)
-	"kmz": {MakeTag('K', 'M', 'Z', ' ')},                                                                                                                     // Khorasani Turkish
-	"kn":  {MakeTag('K', 'A', 'N', ' ')},                                                                                                                     // Kannada
-	"knj": {MakeTag('M', 'Y', 'N', ' ')},                                                                                                                     // Western Kanjobal
-	"ko":  {MakeTag('K', 'O', 'H', ' '), MakeTag('K', 'O', 'R', ' ')},                                                                                        // Korean
-	"koi": {MakeTag('K', 'O', 'P', ' ')},                                                                                                                     // Komi-Permyak
-	"kok": {MakeTag('K', 'O', 'K', ' ')},                                                                                                                     // Konkani (macrolanguage)
-	"kos": {MakeTag('K', 'O', 'S', ' ')},                                                                                                                     // Kosraean
-	"koy": {MakeTag('A', 'T', 'H', ' ')},                                                                                                                     // Koyukon
-	"kpe": {MakeTag('K', 'P', 'L', ' ')},                                                                                                                     // Kpelle
-	"kpv": {MakeTag('K', 'O', 'Z', ' ')},                                                                                                                     // Komi-Zyrian
-	"kpy": {MakeTag('K', 'Y', 'K', ' ')},                                                                                                                     // Koryak
-	"kqs": {MakeTag('K', 'I', 'S', ' ')},                                                                                                                     // Northern Kissi
-	"kqy": {MakeTag('K', 'R', 'T', ' ')},                                                                                                                     // Koorete
-	"kr":  {MakeTag('K', 'N', 'R', ' ')},                                                                                                                     // Kanuri
-	"krc": {MakeTag('B', 'A', 'L', ' '), MakeTag('K', 'A', 'R', ' ')},                                                                                        // Karachay-Balkar
-	"kri": {MakeTag('C', 'P', 'P', ' '), MakeTag('K', 'R', 'I', ' ')},                                                                                        // Krio
-	"krl": {MakeTag('K', 'R', 'L', ' ')},                                                                                                                     // Karelian
-	"kru": {MakeTag('K', 'U', 'U', ' ')},                                                                                                                     // Kurukh
-	"ks":  {MakeTag('K', 'S', 'H', ' ')},                                                                                                                     // Kashmiri
-	"ksh": {MakeTag('K', 'S', 'H', '0')},                                                                                                                     // Kölsch
-	"kss": {MakeTag('K', 'I', 'S', ' ')},                                                                                                                     // Southern Kisi
-	"ksu": {MakeTag('K', 'S', 'U', ' ')},                                                                                                                     // Khamyang
-	"ksw": {MakeTag('K', 'R', 'N', ' '), MakeTag('K', 'S', 'W', ' ')},                                                                                        // S'gaw Karen
-	"ktb": {MakeTag('K', 'E', 'B', ' ')},                                                                                                                     // Kambaata
-	"ktu": {MakeTag('K', 'O', 'N', ' ')},                                                                                                                     // Kituba (Democratic Republic of Congo)
-	"ktw": {MakeTag('A', 'T', 'H', ' ')},                                                                                                                     // Kato
-	"ku":  {MakeTag('K', 'U', 'R', ' ')},                                                                                                                     // Kurdish
-	"kum": {MakeTag('K', 'U', 'M', ' ')},                                                                                                                     // Kumyk
-	"kuu": {MakeTag('A', 'T', 'H', ' ')},                                                                                                                     // Upper Kuskokwim
-	"kuw": {MakeTag('B', 'A', 'D', '0')},                                                                                                                     // Kpagua
-	"kv":  {MakeTag('K', 'O', 'M', ' ')},                                                                                                                     // Komi
-	"kvl": {MakeTag('K', 'R', 'N', ' ')},                                                                                                                     // Kayaw
-	"kvq": {MakeTag('K', 'R', 'N', ' '), MakeTag('K', 'V', 'Q', ' ')},                                                                                        // Geba Karen
-	"kvt": {MakeTag('K', 'R', 'N', ' ')},                                                                                                                     // Lahta Karen
-	"kvu": {MakeTag('K', 'R', 'N', ' ')},                                                                                                                     // Yinbaw Karen
-	"kvy": {MakeTag('K', 'R', 'N', ' ')},                                                                                                                     // Yintale Karen
-	"kw":  {MakeTag('C', 'O', 'R', ' ')},                                                                                                                     // Cornish
-	"kwk": {MakeTag('K', 'W', 'K', ' ')},                                                                                                                     // Kwak'wala
-	"kww": {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Kwinti
-	"kxc": {MakeTag('K', 'M', 'S', ' ')},                                                                                                                     // Konso
-	"kxf": {MakeTag('K', 'R', 'N', ' ')},                                                                                                                     // Manumanaw Karen
-	"kxk": {MakeTag('K', 'R', 'N', ' ')},                                                                                                                     // Zayein Karen
-	"kxu": {MakeTag('K', 'U', 'I', ' ')},                                                                                                                     // Kui (India)
-	"ky":  {MakeTag('K', 'I', 'R', ' ')},                                                                                                                     // Kirghiz
-	"kyu": {MakeTag('K', 'R', 'N', ' '), MakeTag('K', 'Y', 'U', ' ')},                                                                                        // Western Kayah
-	"la":  {MakeTag('L', 'A', 'T', ' ')},                                                                                                                     // Latin
-	"lac": {MakeTag('M', 'Y', 'N', ' ')},                                                                                                                     // Lacandon
-	"lad": {MakeTag('J', 'U', 'D', ' ')},                                                                                                                     // Ladino
-	"lb":  {MakeTag('L', 'T', 'Z', ' ')},                                                                                                                     // Luxembourgish
-	"lbe": {MakeTag('L', 'A', 'K', ' ')},                                                                                                                     // Lak
-	"lbj": {MakeTag('L', 'D', 'K', ' ')},                                                                                                                     // Ladakhi
-	"lbl": {MakeTag('B', 'I', 'K', ' ')},                                                                                                                     // Libon Bikol
-	"lef": {MakeTag('L', 'E', 'F', ' ')},                                                                                                                     // Lelemi
-	"lez": {MakeTag('L', 'E', 'Z', ' ')},                                                                                                                     // Lezghian
-	"lg":  {MakeTag('L', 'U', 'G', ' ')},                                                                                                                     // Ganda
-	"li":  {MakeTag('L', 'I', 'M', ' ')},                                                                                                                     // Limburgan
-	"lif": {MakeTag('L', 'M', 'B', ' ')},                                                                                                                     // Limbu
-	"lij": {MakeTag('L', 'I', 'J', ' ')},                                                                                                                     // Ligurian
-	"lir": {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Liberian English
-	"lis": {MakeTag('L', 'I', 'S', ' ')},                                                                                                                     // Lisu
-	"liv": {MakeTag('L', 'I', 'V', ' ')},                                                                                                                     // Liv
-	"liy": {MakeTag('B', 'A', 'D', '0')},                                                                                                                     // Banda-Bambari
-	"ljp": {MakeTag('L', 'J', 'P', ' ')},                                                                                                                     // Lampung Api
-	"lki": {MakeTag('L', 'K', 'I', ' ')},                                                                                                                     // Laki
-	"lld": {MakeTag('L', 'A', 'D', ' ')},                                                                                                                     // Ladin
-	"lmn": {MakeTag('L', 'A', 'M', ' ')},                                                                                                                     // Lambadi
-	"lmo": {MakeTag('L', 'M', 'O', ' ')},                                                                                                                     // Lombard
-	"ln":  {MakeTag('L', 'I', 'N', ' ')},                                                                                                                     // Lingala
-	"lna": {MakeTag('B', 'A', 'D', '0')},                                                                                                                     // Langbashe
-	"lnl": {MakeTag('B', 'A', 'D', '0')},                                                                                                                     // South Central Banda
-	"lo":  {MakeTag('L', 'A', 'O', ' ')},                                                                                                                     // Lao
-	"lom": {MakeTag('L', 'O', 'M', ' ')},                                                                                                                     // Loma (Liberia)
-	"lou": {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Louisiana Creole
-	"lpo": {MakeTag('L', 'P', 'O', ' ')},                                                                                                                     // Lipo
-	"lrc": {MakeTag('L', 'R', 'C', ' ')},                                                                                                                     // Northern Luri
-	"lrt": {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Larantuka Malay
-	"lt":  {MakeTag('L', 'T', 'H', ' ')},                                                                                                                     // Lithuanian
-	"lu":  {MakeTag('L', 'U', 'B', ' ')},                                                                                                                     // Luba-Katanga
-	"lua": {MakeTag('L', 'U', 'A', ' ')},                                                                                                                     // Luba-Lulua
-	"luo": {MakeTag('L', 'U', 'O', ' ')},                                                                                                                     // Luo (Kenya and Tanzania)
-	"lus": {MakeTag('M', 'I', 'Z', ' '), MakeTag('Q', 'I', 'N', ' ')},                                                                                        // Lushai
-	"lut": {MakeTag('L', 'U', 'T', ' ')},                                                                                                                     // Lushootseed
-	"luy": {MakeTag('L', 'U', 'H', ' ')},                                                                                                                     // Luyia
-	"luz": {MakeTag('L', 'R', 'C', ' ')},                                                                                                                     // Southern Luri
-	"lv":  {MakeTag('L', 'V', 'I', ' ')},                                                                                                                     // Latvian
-	"lzz": {MakeTag('L', 'A', 'Z', ' ')},                                                                                                                     // Laz
-	"mad": {MakeTag('M', 'A', 'D', ' ')},                                                                                                                     // Madurese
-	"mag": {MakeTag('M', 'A', 'G', ' ')},                                                                                                                     // Magahi
-	"mai": {MakeTag('M', 'T', 'H', ' ')},                                                                                                                     // Maithili
-	"mak": {MakeTag('M', 'K', 'R', ' ')},                                                                                                                     // Makasar
-	"mam": {MakeTag('M', 'A', 'M', ' '), MakeTag('M', 'Y', 'N', ' ')},                                                                                        // Mam
-	"man": {MakeTag('M', 'N', 'K', ' ')},                                                                                                                     // Mandingo
-	"max": {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // North Moluccan Malay
-	"mbf": {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Baba Malay
-	"mbo": {MakeTag('M', 'B', 'O', ' ')},                                                                                                                     // Mbo (Cameroon)
-	"mcm": {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Malaccan Creole Portuguese
-	"mct": {MakeTag('B', 'T', 'I', ' ')},                                                                                                                     // Mengisa
-	"mdf": {MakeTag('M', 'O', 'K', ' ')},                                                                                                                     // Moksha
-	"mdr": {MakeTag('M', 'D', 'R', ' ')},                                                                                                                     // Mandar
-	"mdy": {MakeTag('M', 'L', 'E', ' ')},                                                                                                                     // Male (Ethiopia)
-	"men": {MakeTag('M', 'D', 'E', ' ')},                                                                                                                     // Mende (Sierra Leone)
-	"mer": {MakeTag('M', 'E', 'R', ' ')},                                                                                                                     // Meru
-	"mev": {MakeTag('M', 'E', 'V', ' ')},                                                                                                                     // Mano
-	"mfa": {MakeTag('M', 'F', 'A', ' ')},                                                                                                                     // Pattani Malay
-	"mfe": {MakeTag('C', 'P', 'P', ' '), MakeTag('M', 'F', 'E', ' ')},                                                                                        // Morisyen
-	"mfp": {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Makassar Malay
-	"mg":  {MakeTag('M', 'L', 'G', ' ')},                                                                                                                     // Malagasy
-	"mga": {MakeTag('S', 'G', 'A', ' ')},                                                                                                                     // Middle Irish (900-1200)
-	"mh":  {MakeTag('M', 'A', 'H', ' ')},                                                                                                                     // Marshallese
-	"mhc": {MakeTag('M', 'Y', 'N', ' ')},                                                                                                                     // Mocho
-	"mhr": {MakeTag('L', 'M', 'A', ' ')},                                                                                                                     // Eastern Mari
-	"mhv": {MakeTag('A', 'R', 'K', ' ')},                                                                                                                     // mhv
-	"mi":  {MakeTag('M', 'R', 'I', ' ')},                                                                                                                     // Maori
-	"min": {MakeTag('M', 'I', 'N', ' ')},                                                                                                                     // Minangkabau
-	"mk":  {MakeTag('M', 'K', 'D', ' ')},                                                                                                                     // Macedonian
-	"mkn": {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Kupang Malay
-	"mku": {MakeTag('M', 'N', 'K', ' ')},                                                                                                                     // Konyanka Maninka
-	"mkw": {MakeTag('M', 'K', 'W', ' ')},                                                                                                                     // Kituba (Congo)
-	"ml":  {MakeTag('M', 'A', 'L', ' '), MakeTag('M', 'L', 'R', ' ')},                                                                                        // Malayalam
-	"mlq": {MakeTag('M', 'L', 'N', ' '), MakeTag('M', 'N', 'K', ' ')},                                                                                        // Western Maninkakan
-	"mn":  {MakeTag('M', 'N', 'G', ' ')},                                                                                                                     // Mongolian
-	"mnc": {MakeTag('M', 'C', 'H', ' ')},                                                                                                                     // Manchu
-	"mnh": {MakeTag('B', 'A', 'D', '0')},                                                                                                                     // Mono (Democratic Republic of Congo)
-	"mni": {MakeTag('M', 'N', 'I', ' ')},                                                                                                                     // Manipuri
-	"mnk": {MakeTag('M', 'N', 'D', ' '), MakeTag('M', 'N', 'K', ' ')},                                                                                        // Mandinka
-	"mns": {MakeTag('M', 'A', 'N', ' ')},                                                                                                                     // Mansi
-	"mnw": {MakeTag('M', 'O', 'N', ' ')},                                                                                                                     // Mon
-	"mo":  {MakeTag('M', 'O', 'L', ' ')},                                                                                                                     // Moldavian
-	"mod": {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Mobilian
-	"moh": {MakeTag('M', 'O', 'H', ' ')},                                                                                                                     // Mohawk
-	"mop": {MakeTag('M', 'Y', 'N', ' ')},                                                                                                                     // Mopán Maya
-	"mos": {MakeTag('M', 'O', 'S', ' ')},                                                                                                                     // Mossi
-	"mpe": {MakeTag('M', 'A', 'J', ' ')},                                                                                                                     // Majang
-	"mr":  {MakeTag('M', 'A', 'R', ' ')},                                                                                                                     // Marathi
-	"mrh": {MakeTag('Q', 'I', 'N', ' ')},                                                                                                                     // Mara Chin
-	"mrj": {MakeTag('H', 'M', 'A', ' ')},                                                                                                                     // Western Mari
-	"ms":  {MakeTag('M', 'L', 'Y', ' ')},                                                                                                                     // Malay (macrolanguage)
-	"msc": {MakeTag('M', 'N', 'K', ' ')},                                                                                                                     // Sankaran Maninka
-	"msi": {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Sabah Malay
-	"mt":  {MakeTag('M', 'T', 'S', ' ')},                                                                                                                     // Maltese
-	"mtr": {MakeTag('M', 'A', 'W', ' ')},                                                                                                                     // Mewari
-	"mud": {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Mednyj Aleut
-	"mus": {MakeTag('M', 'U', 'S', ' ')},                                                                                                                     // Creek
-	"mvb": {MakeTag('A', 'T', 'H', ' ')},                                                                                                                     // Mattole
-	"mve": {MakeTag('M', 'A', 'W', ' ')},                                                                                                                     // Marwari (Pakistan)
-	"mwk": {MakeTag('M', 'N', 'K', ' ')},                                                                                                                     // Kita Maninkakan
-	"mwl": {MakeTag('M', 'W', 'L', ' ')},                                                                                                                     // Mirandese
-	"mwq": {MakeTag('Q', 'I', 'N', ' ')},                                                                                                                     // Mün Chin
-	"mwr": {MakeTag('M', 'A', 'W', ' ')},                                                                                                                     // Marwari
-	"mww": {MakeTag('M', 'W', 'W', ' ')},                                                                                                                     // Hmong Daw
-	"my":  {MakeTag('B', 'R', 'M', ' ')},                                                                                                                     // Burmese
-	"mym": {MakeTag('M', 'E', 'N', ' ')},                                                                                                                     // Me'en
-	"myn": {MakeTag('M', 'Y', 'N', ' ')},                                                                                                                     // Mayan languages
-	"myq": {MakeTag('M', 'N', 'K', ' ')},                                                                                                                     // Forest Maninka
-	"myv": {MakeTag('E', 'R', 'Z', ' ')},                                                                                                                     // Erzya
-	"mzb": {MakeTag('B', 'B', 'R', ' ')},                                                                                                                     // Tumzabt
-	"mzn": {MakeTag('M', 'Z', 'N', ' ')},                                                                                                                     // Mazanderani
-	"mzs": {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Macanese
-	"na":  {MakeTag('N', 'A', 'U', ' ')},                                                                                                                     // Nauru
-	"nag": {MakeTag('C', 'P', 'P', ' '), MakeTag('N', 'A', 'G', ' ')},                                                                                        // Naga Pidgin
-	"nah": {MakeTag('N', 'A', 'H', ' ')},                                                                                                                     // Nahuatl languages
-	"nap": {MakeTag('N', 'A', 'P', ' ')},                                                                                                                     // Neapolitan
-	"naz": {MakeTag('N', 'A', 'H', ' ')},                                                                                                                     // Coatepec Nahuatl
-	"nb":  {MakeTag('N', 'O', 'R', ' ')},                                                                                                                     // Norwegian Bokmål
-	"nch": {MakeTag('N', 'A', 'H', ' ')},                                                                                                                     // Central Huasteca Nahuatl
-	"nci": {MakeTag('N', 'A', 'H', ' ')},                                                                                                                     // Classical Nahuatl
-	"ncj": {MakeTag('N', 'A', 'H', ' ')},                                                                                                                     // Northern Puebla Nahuatl
-	"ncl": {MakeTag('N', 'A', 'H', ' ')},                                                                                                                     // Michoacán Nahuatl
-	"ncx": {MakeTag('N', 'A', 'H', ' ')},                                                                                                                     // Central Puebla Nahuatl
-	"nd":  {MakeTag('N', 'D', 'B', ' ')},                                                                                                                     // North Ndebele
-	"ndc": {MakeTag('N', 'D', 'C', ' ')},                                                                                                                     // Ndau
-	"nds": {MakeTag('N', 'D', 'S', ' ')},                                                                                                                     // Low German
-	"ne":  {MakeTag('N', 'E', 'P', ' ')},                                                                                                                     // Nepali (macrolanguage)
-	"nef": {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Nefamese
-	"new": {MakeTag('N', 'E', 'W', ' ')},                                                                                                                     // Nepal Bhasa
-	"ng":  {MakeTag('N', 'D', 'G', ' ')},                                                                                                                     // Ndonga
-	"nga": {MakeTag('N', 'G', 'A', ' ')},                                                                                                                     // Ngbaka
-	"ngl": {MakeTag('L', 'M', 'W', ' ')},                                                                                                                     // Lomwe
-	"ngm": {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Ngatik Men's Creole
-	"ngo": {MakeTag('S', 'X', 'T', ' ')},                                                                                                                     // Ngoni
-	"ngu": {MakeTag('N', 'A', 'H', ' ')},                                                                                                                     // Guerrero Nahuatl
-	"nhc": {MakeTag('N', 'A', 'H', ' ')},                                                                                                                     // Tabasco Nahuatl
-	"nhe": {MakeTag('N', 'A', 'H', ' ')},                                                                                                                     // Eastern Huasteca Nahuatl
-	"nhg": {MakeTag('N', 'A', 'H', ' ')},                                                                                                                     // Tetelcingo Nahuatl
-	"nhi": {MakeTag('N', 'A', 'H', ' ')},                                                                                                                     // Zacatlán-Ahuacatlán-Tepetzintla Nahuatl
-	"nhk": {MakeTag('N', 'A', 'H', ' ')},                                                                                                                     // Isthmus-Cosoleacaque Nahuatl
-	"nhm": {MakeTag('N', 'A', 'H', ' ')},                                                                                                                     // Morelos Nahuatl
-	"nhn": {MakeTag('N', 'A', 'H', ' ')},                                                                                                                     // Central Nahuatl
-	"nhp": {MakeTag('N', 'A', 'H', ' ')},                                                                                                                     // Isthmus-Pajapan Nahuatl
-	"nhq": {MakeTag('N', 'A', 'H', ' ')},                                                                                                                     // Huaxcaleca Nahuatl
-	"nht": {MakeTag('N', 'A', 'H', ' ')},                                                                                                                     // Ometepec Nahuatl
-	"nhv": {MakeTag('N', 'A', 'H', ' ')},                                                                                                                     // Temascaltepec Nahuatl
-	"nhw": {MakeTag('N', 'A', 'H', ' ')},                                                                                                                     // Western Huasteca Nahuatl
-	"nhx": {MakeTag('N', 'A', 'H', ' ')},                                                                                                                     // Isthmus-Mecayapan Nahuatl
-	"nhy": {MakeTag('N', 'A', 'H', ' ')},                                                                                                                     // Northern Oaxaca Nahuatl
-	"nhz": {MakeTag('N', 'A', 'H', ' ')},                                                                                                                     // Santa María La Alta Nahuatl
-	"niu": {MakeTag('N', 'I', 'U', ' ')},                                                                                                                     // Niuean
-	"niv": {MakeTag('G', 'I', 'L', ' ')},                                                                                                                     // Gilyak
-	"njt": {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Ndyuka-Trio Pidgin
-	"njz": {MakeTag('N', 'I', 'S', ' ')},                                                                                                                     // Nyishi
-	"nkx": {MakeTag('I', 'J', 'O', ' ')},                                                                                                                     // Nkoroo
-	"nl":  {MakeTag('N', 'L', 'D', ' ')},                                                                                                                     // Dutch
-	"nla": {MakeTag('B', 'M', 'L', ' ')},                                                                                                                     // Ngombale
-	"nlv": {MakeTag('N', 'A', 'H', ' ')},                                                                                                                     // Orizaba Nahuatl
-	"nn":  {MakeTag('N', 'Y', 'N', ' ')},                                                                                                                     // Norwegian Nynorsk
-	"nnh": {MakeTag('B', 'M', 'L', ' ')},                                                                                                                     // Ngiemboon
-	"nnz": {MakeTag('B', 'M', 'L', ' ')},                                                                                                                     // Nda'nda'
-	"nod": {MakeTag('N', 'T', 'A', ' ')},                                                                                                                     // Northern Thai
-	"noe": {MakeTag('N', 'O', 'E', ' ')},                                                                                                                     // Nimadi
-	"nog": {MakeTag('N', 'O', 'G', ' ')},                                                                                                                     // Nogai
-	"nop": {MakeTag('N', 'O', 'P', ' ')},                                                                                                                     // Numanggang
-	"nov": {MakeTag('N', 'O', 'V', ' ')},                                                                                                                     // Novial
-	"npl": {MakeTag('N', 'A', 'H', ' ')},                                                                                                                     // Southeastern Puebla Nahuatl
-	"nqo": {MakeTag('N', 'K', 'O', ' ')},                                                                                                                     // N'Ko
-	"nr":  {MakeTag('N', 'D', 'B', ' ')},                                                                                                                     // South Ndebele
-	"nsk": {MakeTag('N', 'A', 'S', ' ')},                                                                                                                     // Naskapi
-	"nso": {MakeTag('N', 'S', 'O', ' ')},                                                                                                                     // Pedi
-	"nsu": {MakeTag('N', 'A', 'H', ' ')},                                                                                                                     // Sierra Negra Nahuatl
-	"nue": {MakeTag('B', 'A', 'D', '0')},                                                                                                                     // Ngundu
-	"nuk": {MakeTag('N', 'U', 'K', ' ')},                                                                                                                     // Nuu-chah-nulth
-	"nuu": {MakeTag('B', 'A', 'D', '0')},                                                                                                                     // Ngbundu
-	"nuz": {MakeTag('N', 'A', 'H', ' ')},                                                                                                                     // Tlamacazapa Nahuatl
-	"nv":  {MakeTag('A', 'T', 'H', ' '), MakeTag('N', 'A', 'V', ' ')},                                                                                        // Navajo
-	"nwe": {MakeTag('B', 'M', 'L', ' ')},                                                                                                                     // Ngwe
-	"ny":  {MakeTag('C', 'H', 'I', ' ')},                                                                                                                     // Nyanja
-	"nym": {MakeTag('N', 'Y', 'M', ' ')},                                                                                                                     // Nyamwezi
-	"nyn": {MakeTag('N', 'K', 'L', ' ')},                                                                                                                     // Nyankole
-	"nza": {MakeTag('N', 'Z', 'A', ' ')},                                                                                                                     // Tigon Mbembe
-	"oc":  {MakeTag('O', 'C', 'I', ' ')},                                                                                                                     // Occitan (post 1500)
-	"oj":  {MakeTag('O', 'J', 'B', ' ')},                                                                                                                     // Ojibwa
-	"ojs": {MakeTag('O', 'C', 'R', ' ')},                                                                                                                     // Severn Ojibwa
-	"okd": {MakeTag('I', 'J', 'O', ' ')},                                                                                                                     // Okodia
-	"okm": {MakeTag('K', 'O', 'H', ' ')},                                                                                                                     // Middle Korean (10th-16th cent.)
-	"okr": {MakeTag('I', 'J', 'O', ' ')},                                                                                                                     // Kirike
-	"om":  {MakeTag('O', 'R', 'O', ' ')},                                                                                                                     // Oromo
-	"one": {MakeTag('O', 'N', 'E', ' ')},                                                                                                                     // Oneida
-	"ono": {MakeTag('O', 'N', 'O', ' ')},                                                                                                                     // Onondaga
-	"onx": {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Onin Based Pidgin
-	"oor": {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Oorlams
-	"or":  {MakeTag('O', 'R', 'I', ' ')},                                                                                                                     // Oriya (macrolanguage)
-	"orr": {MakeTag('I', 'J', 'O', ' ')},                                                                                                                     // Oruma
-	"os":  {MakeTag('O', 'S', 'S', ' ')},                                                                                                                     // Ossetian
-	"oua": {MakeTag('B', 'B', 'R', ' ')},                                                                                                                     // Tagargrent
-	"pa":  {MakeTag('P', 'A', 'N', ' ')},                                                                                                                     // Panjabi
-	"pag": {MakeTag('P', 'A', 'G', ' ')},                                                                                                                     // Pangasinan
-	"pam": {MakeTag('P', 'A', 'M', ' ')},                                                                                                                     // Pampanga
-	"pap": {MakeTag('C', 'P', 'P', ' '), MakeTag('P', 'A', 'P', '0')},                                                                                        // Papiamento
-	"pau": {MakeTag('P', 'A', 'U', ' ')},                                                                                                                     // Palauan
-	"pcc": {MakeTag('P', 'C', 'C', ' ')},                                                                                                                     // Bouyei
-	"pcd": {MakeTag('P', 'C', 'D', ' ')},                                                                                                                     // Picard
-	"pce": {MakeTag('P', 'L', 'G', ' ')},                                                                                                                     // Ruching Palaung
-	"pck": {MakeTag('Q', 'I', 'N', ' ')},                                                                                                                     // Paite Chin
-	"pcm": {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Nigerian Pidgin
-	"pdc": {MakeTag('P', 'D', 'C', ' ')},                                                                                                                     // Pennsylvania German
-	"pdu": {MakeTag('K', 'R', 'N', ' ')},                                                                                                                     // Kayan
-	"pea": {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Peranakan Indonesian
-	"pey": {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Petjo
-	"pga": {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Sudanese Creole Arabic
-	"phk": {MakeTag('P', 'H', 'K', ' ')},                                                                                                                     // Phake
-	"pi":  {MakeTag('P', 'A', 'L', ' ')},                                                                                                                     // Pali
-	"pih": {MakeTag('C', 'P', 'P', ' '), MakeTag('P', 'I', 'H', ' ')},                                                                                        // Pitcairn-Norfolk
-	"pis": {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Pijin
-	"pkh": {MakeTag('Q', 'I', 'N', ' ')},                                                                                                                     // Pankhu
-	"pl":  {MakeTag('P', 'L', 'K', ' ')},                                                                                                                     // Polish
-	"plg": {MakeTag('P', 'L', 'G', '0')},                                                                                                                     // Pilagá
-	"pll": {MakeTag('P', 'L', 'G', ' ')},                                                                                                                     // Shwe Palaung
-	"pln": {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Palenquero
-	"plp": {MakeTag('P', 'A', 'P', ' ')},                                                                                                                     // Palpa
-	"pml": {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Lingua Franca
-	"pms": {MakeTag('P', 'M', 'S', ' ')},                                                                                                                     // Piemontese
-	"pmy": {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Papuan Malay
-	"pnb": {MakeTag('P', 'N', 'B', ' ')},                                                                                                                     // Western Panjabi
-	"poc": {MakeTag('M', 'Y', 'N', ' ')},                                                                                                                     // Poqomam
-	"poh": {MakeTag('M', 'Y', 'N', ' '), MakeTag('P', 'O', 'H', ' ')},                                                                                        // Poqomchi'
-	"pon": {MakeTag('P', 'O', 'N', ' ')},                                                                                                                     // Pohnpeian
-	"pov": {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Upper Guinea Crioulo
-	"pre": {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Principense
-	"pro": {MakeTag('P', 'R', 'O', ' ')},                                                                                                                     // Old Provençal (to 1500)
-	"prs": {MakeTag('D', 'R', 'I', ' ')},                                                                                                                     // Dari
-	"ps":  {MakeTag('P', 'A', 'S', ' ')},                                                                                                                     // Pushto
-	"pt":  {MakeTag('P', 'T', 'G', ' ')},                                                                                                                     // Portuguese
-	"pub": {MakeTag('Q', 'I', 'N', ' ')},                                                                                                                     // Purum
-	"pwo": {MakeTag('K', 'R', 'N', ' '), MakeTag('P', 'W', 'O', ' ')},                                                                                        // Pwo Western Karen
-	"pww": {MakeTag('K', 'R', 'N', ' ')},                                                                                                                     // Pwo Northern Karen
-	"quc": {MakeTag('M', 'Y', 'N', ' '), MakeTag('Q', 'U', 'C', ' ')},                                                                                        // K'iche'
-	"quh": {MakeTag('Q', 'U', 'H', ' ')},                                                                                                                     // South Bolivian Quechua
-	"qum": {MakeTag('M', 'Y', 'N', ' ')},                                                                                                                     // Sipacapense
-	"quv": {MakeTag('M', 'Y', 'N', ' ')},                                                                                                                     // Sacapulteco
-	"quz": {MakeTag('Q', 'U', 'Z', ' ')},                                                                                                                     // Cusco Quechua
-	"qvi": {MakeTag('Q', 'V', 'I', ' ')},                                                                                                                     // Imbabura Highland Quichua
-	"qwh": {MakeTag('Q', 'W', 'H', ' ')},                                                                                                                     // Huaylas Ancash Quechua
-	"qwt": {MakeTag('A', 'T', 'H', ' ')},                                                                                                                     // Kwalhioqua-Tlatskanai
-	"raj": {MakeTag('R', 'A', 'J', ' ')},                                                                                                                     // Rajasthani
-	"ral": {MakeTag('Q', 'I', 'N', ' ')},                                                                                                                     // Ralte
-	"rar": {MakeTag('R', 'A', 'R', ' ')},                                                                                                                     // Rarotongan
-	"rbb": {MakeTag('P', 'L', 'G', ' ')},                                                                                                                     // Rumai Palaung
-	"rbl": {MakeTag('B', 'I', 'K', ' ')},                                                                                                                     // Miraya Bikol
-	"rcf": {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Réunion Creole French
-	"rej": {MakeTag('R', 'E', 'J', ' ')},                                                                                                                     // Rejang
-	"rhg": {MakeTag('R', 'H', 'G', ' ')},                                                                                                                     // Rohingya
-	"ria": {MakeTag('R', 'I', 'A', ' ')},                                                                                                                     // Riang (India)
-	"rif": {MakeTag('B', 'B', 'R', ' '), MakeTag('R', 'I', 'F', ' ')},                                                                                        // Tarifit
-	"rit": {MakeTag('R', 'I', 'T', ' ')},                                                                                                                     // Ritharrngu
-	"rki": {MakeTag('A', 'R', 'K', ' ')},                                                                                                                     // Rakhine
-	"rkw": {MakeTag('R', 'K', 'W', ' ')},                                                                                                                     // Arakwal
-	"rm":  {MakeTag('R', 'M', 'S', ' ')},                                                                                                                     // Romansh
-	"rmy": {MakeTag('R', 'M', 'Y', ' ')},                                                                                                                     // Vlax Romani
-	"rmz": {MakeTag('A', 'R', 'K', ' ')},                                                                                                                     // Marma
-	"rn":  {MakeTag('R', 'U', 'N', ' ')},                                                                                                                     // Rundi
-	"ro":  {MakeTag('R', 'O', 'M', ' ')},                                                                                                                     // Romanian
-	"rom": {MakeTag('R', 'O', 'Y', ' ')},                                                                                                                     // Romany
-	"rop": {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Kriol
-	"rtc": {MakeTag('Q', 'I', 'N', ' ')},                                                                                                                     // Rungtu Chin
-	"rtm": {MakeTag('R', 'T', 'M', ' ')},                                                                                                                     // Rotuman
-	"ru":  {MakeTag('R', 'U', 'S', ' ')},                                                                                                                     // Russian
-	"rue": {MakeTag('R', 'S', 'Y', ' ')},                                                                                                                     // Rusyn
-	"rup": {MakeTag('R', 'U', 'P', ' ')},                                                                                                                     // Macedo-Romanian
-	"rw":  {MakeTag('R', 'U', 'A', ' ')},                                                                                                                     // Kinyarwanda
-	"rwr": {MakeTag('M', 'A', 'W', ' ')},                                                                                                                     // Marwari (India)
-	"sa":  {MakeTag('S', 'A', 'N', ' ')},                                                                                                                     // Sanskrit
-	"sah": {MakeTag('Y', 'A', 'K', ' ')},                                                                                                                     // Yakut
-	"sam": {MakeTag('P', 'A', 'A', ' ')},                                                                                                                     // Samaritan Aramaic
-	"sas": {MakeTag('S', 'A', 'S', ' ')},                                                                                                                     // Sasak
-	"sat": {MakeTag('S', 'A', 'T', ' ')},                                                                                                                     // Santali
-	"sc":  {MakeTag('S', 'R', 'D', ' ')},                                                                                                                     // Sardinian
-	"scf": {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // San Miguel Creole French
-	"sch": {MakeTag('Q', 'I', 'N', ' ')},                                                                                                                     // Sakachep
-	"sci": {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Sri Lankan Creole Malay
-	"sck": {MakeTag('S', 'A', 'D', ' ')},                                                                                                                     // Sadri
-	"scn": {MakeTag('S', 'C', 'N', ' ')},                                                                                                                     // Sicilian
-	"sco": {MakeTag('S', 'C', 'O', ' ')},                                                                                                                     // Scots
-	"scs": {MakeTag('A', 'T', 'H', ' '), MakeTag('S', 'C', 'S', ' '), MakeTag('S', 'L', 'A', ' ')},                                                           // North Slavey
-	"sd":  {MakeTag('S', 'N', 'D', ' ')},                                                                                                                     // Sindhi
-	"sds": {MakeTag('B', 'B', 'R', ' ')},                                                                                                                     // Sened
-	"se":  {MakeTag('N', 'S', 'M', ' ')},                                                                                                                     // Northern Sami
-	"see": {MakeTag('S', 'E', 'E', ' ')},                                                                                                                     // Seneca
-	"seh": {MakeTag('S', 'N', 'A', ' ')},                                                                                                                     // Sena
-	"sek": {MakeTag('A', 'T', 'H', ' ')},                                                                                                                     // Sekani
-	"sel": {MakeTag('S', 'E', 'L', ' ')},                                                                                                                     // Selkup
-	"sez": {MakeTag('Q', 'I', 'N', ' ')},                                                                                                                     // Senthang Chin
-	"sfm": {MakeTag('S', 'F', 'M', ' ')},                                                                                                                     // Small Flowery Miao
-	"sg":  {MakeTag('S', 'G', 'O', ' ')},                                                                                                                     // Sango
-	"sga": {MakeTag('S', 'G', 'A', ' ')},                                                                                                                     // Old Irish (to 900)
-	"sgs": {MakeTag('S', 'G', 'S', ' ')},                                                                                                                     // Samogitian
-	"sgw": {MakeTag('C', 'H', 'G', ' ')},                                                                                                                     // Sebat Bet Gurage
-	"shi": {MakeTag('B', 'B', 'R', ' '), MakeTag('S', 'H', 'I', ' ')},                                                                                        // Tachelhit
-	"shl": {MakeTag('Q', 'I', 'N', ' ')},                                                                                                                     // Shendu
-	"shn": {MakeTag('S', 'H', 'N', ' ')},                                                                                                                     // Shan
-	"shy": {MakeTag('B', 'B', 'R', ' ')},                                                                                                                     // Tachawit
-	"si":  {MakeTag('S', 'N', 'H', ' ')},                                                                                                                     // Sinhala
-	"sid": {MakeTag('S', 'I', 'D', ' ')},                                                                                                                     // Sidamo
-	"siz": {MakeTag('B', 'B', 'R', ' ')},                                                                                                                     // Siwi
-	"sja": {MakeTag('S', 'J', 'A', ' ')},                                                                                                                     // Epena
-	"sjd": {MakeTag('K', 'S', 'M', ' ')},                                                                                                                     // Kildin Sami
-	"sje": {MakeTag('S', 'J', 'E', ' ')},                                                                                                                     // Pite Sami
-	"sjo": {MakeTag('S', 'I', 'B', ' ')},                                                                                                                     // Xibe
-	"sjs": {MakeTag('B', 'B', 'R', ' ')},                                                                                                                     // Senhaja De Srair
-	"sju": {MakeTag('S', 'J', 'U', ' ')},                                                                                                                     // Ume Sami
-	"sk":  {MakeTag('S', 'K', 'Y', ' ')},                                                                                                                     // Slovak
-	"skr": {MakeTag('S', 'R', 'K', ' ')},                                                                                                                     // Saraiki
-	"skw": {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Skepi Creole Dutch
-	"sl":  {MakeTag('S', 'L', 'V', ' ')},                                                                                                                     // Slovenian
-	"sm":  {MakeTag('S', 'M', 'O', ' ')},                                                                                                                     // Samoan
-	"sma": {MakeTag('S', 'S', 'M', ' ')},                                                                                                                     // Southern Sami
-	"smj": {MakeTag('L', 'S', 'M', ' ')},                                                                                                                     // Lule Sami
-	"smn": {MakeTag('I', 'S', 'M', ' ')},                                                                                                                     // Inari Sami
-	"sms": {MakeTag('S', 'K', 'S', ' ')},                                                                                                                     // Skolt Sami
-	"smt": {MakeTag('Q', 'I', 'N', ' ')},                                                                                                                     // Simte
-	"sn":  {MakeTag('S', 'N', 'A', '0')},                                                                                                                     // Shona
-	"snk": {MakeTag('S', 'N', 'K', ' ')},                                                                                                                     // Soninke
-	"so":  {MakeTag('S', 'M', 'L', ' ')},                                                                                                                     // Somali
-	"sop": {MakeTag('S', 'O', 'P', ' ')},                                                                                                                     // Songe
-	"sq":  {MakeTag('S', 'Q', 'I', ' ')},                                                                                                                     // Albanian
-	"sr":  {MakeTag('S', 'R', 'B', ' ')},                                                                                                                     // Serbian
-	"srm": {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Saramaccan
-	"srn": {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Sranan Tongo
-	"srr": {MakeTag('S', 'R', 'R', ' ')},                                                                                                                     // Serer
-	"srs": {MakeTag('A', 'T', 'H', ' ')},                                                                                                                     // Sarsi
-	"ss":  {MakeTag('S', 'W', 'Z', ' ')},                                                                                                                     // Swati
-	"st":  {MakeTag('S', 'O', 'T', ' ')},                                                                                                                     // Southern Sotho
-	"sta": {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Settla
-	"stq": {MakeTag('S', 'T', 'Q', ' ')},                                                                                                                     // Saterfriesisch
-	"str": {MakeTag('S', 'T', 'R', ' ')},                                                                                                                     // Straits Salish
-	"stv": {MakeTag('S', 'I', 'G', ' ')},                                                                                                                     // Silt'e
-	"su":  {MakeTag('S', 'U', 'N', ' ')},                                                                                                                     // Sundanese
-	"suk": {MakeTag('S', 'U', 'K', ' ')},                                                                                                                     // Sukuma
-	"suq": {MakeTag('S', 'U', 'R', ' ')},                                                                                                                     // Tirmaga-Chai Suri
-	"sv":  {MakeTag('S', 'V', 'E', ' ')},                                                                                                                     // Swedish
-	"sva": {MakeTag('S', 'V', 'A', ' ')},                                                                                                                     // Svan
-	"svc": {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Vincentian Creole English
-	"sw":  {MakeTag('S', 'W', 'K', ' ')},                                                                                                                     // Swahili (macrolanguage)
-	"swb": {MakeTag('C', 'M', 'R', ' ')},                                                                                                                     // Maore Comorian
-	"swn": {MakeTag('B', 'B', 'R', ' ')},                                                                                                                     // Sawknah
-	"swv": {MakeTag('M', 'A', 'W', ' ')},                                                                                                                     // Shekhawati
-	"sxu": {MakeTag('S', 'X', 'U', ' ')},                                                                                                                     // Upper Saxon
-	"syc": {MakeTag('S', 'Y', 'R', ' '), MakeTag('S', 'Y', 'R', 'E'), MakeTag('S', 'Y', 'R', 'J'), MakeTag('S', 'Y', 'R', 'N')},                              // Classical Syriac
-	"syl": {MakeTag('S', 'Y', 'L', ' ')},                                                                                                                     // Sylheti
-	"syr": {MakeTag('S', 'Y', 'R', ' '), MakeTag('S', 'Y', 'R', 'E'), MakeTag('S', 'Y', 'R', 'J'), MakeTag('S', 'Y', 'R', 'N')},                              // Syriac
-	"szl": {MakeTag('S', 'Z', 'L', ' ')},                                                                                                                     // Silesian
-	"ta":  {MakeTag('T', 'A', 'M', ' ')},                                                                                                                     // Tamil
-	"taa": {MakeTag('A', 'T', 'H', ' ')},                                                                                                                     // Lower Tanana
-	"tab": {MakeTag('T', 'A', 'B', ' ')},                                                                                                                     // Tabassaran
-	"taq": {MakeTag('B', 'B', 'R', ' '), MakeTag('T', 'A', 'Q', ' '), MakeTag('T', 'M', 'H', ' ')},                                                           // Tamasheq
-	"tas": {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Tay Boi
-	"tau": {MakeTag('A', 'T', 'H', ' ')},                                                                                                                     // Upper Tanana
-	"tbv": {MakeTag('T', 'B', 'V', ' ')},                                                                                                                     // Tobo
-	"tcb": {MakeTag('A', 'T', 'H', ' ')},                                                                                                                     // Tanacross
-	"tce": {MakeTag('A', 'T', 'H', ' ')},                                                                                                                     // Southern Tutchone
-	"tch": {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Turks And Caicos Creole English
-	"tcp": {MakeTag('Q', 'I', 'N', ' ')},                                                                                                                     // Tawr Chin
-	"tcs": {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Torres Strait Creole
-	"tcy": {MakeTag('T', 'U', 'L', ' ')},                                                                                                                     // Tulu
-	"tcz": {MakeTag('Q', 'I', 'N', ' ')},                                                                                                                     // Thado Chin
-	"tdc": {MakeTag('T', 'D', 'C', ' ')},                                                                                                                     // Emberá-Tadó
-	"tdd": {MakeTag('T', 'D', 'D', ' ')},                                                                                                                     // Tai Nüa
-	"te":  {MakeTag('T', 'E', 'L', ' ')},                                                                                                                     // Telugu
-	"tem": {MakeTag('T', 'M', 'N', ' ')},                                                                                                                     // Timne
-	"tet": {MakeTag('T', 'E', 'T', ' ')},                                                                                                                     // Tetum
-	"tez": {MakeTag('B', 'B', 'R', ' ')},                                                                                                                     // Tetserret
-	"tfn": {MakeTag('A', 'T', 'H', ' ')},                                                                                                                     // Tanaina
-	"tg":  {MakeTag('T', 'A', 'J', ' ')},                                                                                                                     // Tajik
-	"tgh": {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Tobagonian Creole English
-	"tgj": {MakeTag('N', 'I', 'S', ' ')},                                                                                                                     // Tagin
-	"tgx": {MakeTag('A', 'T', 'H', ' ')},                                                                                                                     // Tagish
-	"th":  {MakeTag('T', 'H', 'A', ' ')},                                                                                                                     // Thai
-	"thp": {MakeTag('T', 'H', 'P', ' ')},                                                                                                                     // Thompson
-	"tht": {MakeTag('A', 'T', 'H', ' ')},                                                                                                                     // Tahltan
-	"thv": {MakeTag('B', 'B', 'R', ' '), MakeTag('T', 'H', 'V', ' '), MakeTag('T', 'M', 'H', ' ')},                                                           // Tahaggart Tamahaq
-	"thz": {MakeTag('B', 'B', 'R', ' '), MakeTag('T', 'H', 'Z', ' '), MakeTag('T', 'M', 'H', ' ')},                                                           // Tayart Tamajeq
-	"ti":  {MakeTag('T', 'G', 'Y', ' ')},                                                                                                                     // Tigrinya
-	"tia": {MakeTag('B', 'B', 'R', ' ')},                                                                                                                     // Tidikelt Tamazight
-	"tig": {MakeTag('T', 'G', 'R', ' ')},                                                                                                                     // Tigre
-	"tiv": {MakeTag('T', 'I', 'V', ' ')},                                                                                                                     // Tiv
-	"tjl": {MakeTag('T', 'J', 'L', ' ')},                                                                                                                     // Tai Laing
-	"tjo": {MakeTag('B', 'B', 'R', ' ')},                                                                                                                     // Temacine Tamazight
-	"tk":  {MakeTag('T', 'K', 'M', ' ')},                                                                                                                     // Turkmen
-	"tl":  {MakeTag('T', 'G', 'L', ' ')},                                                                                                                     // Tagalog
-	"tli": {MakeTag('T', 'L', 'I', ' ')},                                                                                                                     // Tlingit
-	"tly": {MakeTag('T', 'L', 'Y', ' ')},                                                                                                                     // Talysh
-	"tmg": {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Ternateño
-	"tmh": {MakeTag('B', 'B', 'R', ' '), MakeTag('T', 'M', 'H', ' ')},                                                                                        // Tamashek
-	"tn":  {MakeTag('T', 'N', 'A', ' ')},                                                                                                                     // Tswana
-	"to":  {MakeTag('T', 'G', 'N', ' ')},                                                                                                                     // Tonga (Tonga Islands)
-	"tod": {MakeTag('T', 'O', 'D', '0')},                                                                                                                     // Toma
-	"toi": {MakeTag('T', 'N', 'G', ' ')},                                                                                                                     // Tonga (Zambia)
-	"toj": {MakeTag('M', 'Y', 'N', ' ')},                                                                                                                     // Tojolabal
-	"tol": {MakeTag('A', 'T', 'H', ' ')},                                                                                                                     // Tolowa
-	"tor": {MakeTag('B', 'A', 'D', '0')},                                                                                                                     // Togbo-Vara Banda
-	"tpi": {MakeTag('C', 'P', 'P', ' '), MakeTag('T', 'P', 'I', ' ')},                                                                                        // Tok Pisin
-	"tr":  {MakeTag('T', 'R', 'K', ' ')},                                                                                                                     // Turkish
-	"trf": {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Trinidadian Creole English
-	"tru": {MakeTag('S', 'Y', 'R', ' '), MakeTag('T', 'U', 'A', ' ')},                                                                                        // Turoyo
-	"ts":  {MakeTag('T', 'S', 'G', ' ')},                                                                                                                     // Tsonga
-	"tsj": {MakeTag('T', 'S', 'J', ' ')},                                                                                                                     // Tshangla
-	"tt":  {MakeTag('T', 'A', 'T', ' ')},                                                                                                                     // Tatar
-	"ttc": {MakeTag('M', 'Y', 'N', ' ')},                                                                                                                     // Tektiteko
-	"ttm": {MakeTag('A', 'T', 'H', ' ')},                                                                                                                     // Northern Tutchone
-	"ttq": {MakeTag('B', 'B', 'R', ' '), MakeTag('T', 'M', 'H', ' '), MakeTag('T', 'T', 'Q', ' ')},                                                           // Tawallammat Tamajaq
-	"tum": {MakeTag('T', 'U', 'M', ' ')},                                                                                                                     // Tumbuka
-	"tus": {MakeTag('T', 'U', 'S', ' ')},                                                                                                                     // Tuscarora
-	"tuu": {MakeTag('A', 'T', 'H', ' ')},                                                                                                                     // Tututni
-	"tvl": {MakeTag('T', 'V', 'L', ' ')},                                                                                                                     // Tuvalu
-	"tvy": {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Timor Pidgin
-	"tw":  {MakeTag('A', 'K', 'A', ' '), MakeTag('T', 'W', 'I', ' ')},                                                                                        // Twi
-	"txc": {MakeTag('A', 'T', 'H', ' ')},                                                                                                                     // Tsetsaut
-	"ty":  {MakeTag('T', 'H', 'T', ' ')},                                                                                                                     // Tahitian
-	"tyv": {MakeTag('T', 'U', 'V', ' ')},                                                                                                                     // Tuvinian
-	"tyz": {MakeTag('T', 'Y', 'Z', ' ')},                                                                                                                     // Tày
-	"tzh": {MakeTag('M', 'Y', 'N', ' ')},                                                                                                                     // Tzeltal
-	"tzj": {MakeTag('M', 'Y', 'N', ' ')},                                                                                                                     // Tz'utujil
-	"tzm": {MakeTag('B', 'B', 'R', ' '), MakeTag('T', 'Z', 'M', ' ')},                                                                                        // Central Atlas Tamazight
-	"tzo": {MakeTag('M', 'Y', 'N', ' '), MakeTag('T', 'Z', 'O', ' ')},                                                                                        // Tzotzil
-	"ubl": {MakeTag('B', 'I', 'K', ' ')},                                                                                                                     // Buhi'non Bikol
-	"udi": {MakeTag('U', 'D', 'I', ' ')},                                                                                                                     // Udi
-	"udm": {MakeTag('U', 'D', 'M', ' ')},                                                                                                                     // Udmurt
-	"ug":  {MakeTag('U', 'Y', 'G', ' ')},                                                                                                                     // Uighur
-	"uk":  {MakeTag('U', 'K', 'R', ' ')},                                                                                                                     // Ukrainian
-	"uln": {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Unserdeutsch
-	"umb": {MakeTag('U', 'M', 'B', ' ')},                                                                                                                     // Umbundu
-	"unr": {MakeTag('M', 'U', 'N', ' ')},                                                                                                                     // Mundari
-	"ur":  {MakeTag('U', 'R', 'D', ' ')},                                                                                                                     // Urdu
-	"usp": {MakeTag('M', 'Y', 'N', ' ')},                                                                                                                     // Uspanteco
-	"uz":  {MakeTag('U', 'Z', 'B', ' ')},                                                                                                                     // Uzbek
-	"vap": {MakeTag('Q', 'I', 'N', ' ')},                                                                                                                     // Vaiphei
-	"ve":  {MakeTag('V', 'E', 'N', ' ')},                                                                                                                     // Venda
-	"vec": {MakeTag('V', 'E', 'C', ' ')},                                                                                                                     // Venetian
-	"vi":  {MakeTag('V', 'I', 'T', ' ')},                                                                                                                     // Vietnamese
-	"vic": {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Virgin Islands Creole English
-	"vkp": {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Korlai Creole Portuguese
-	"vls": {MakeTag('F', 'L', 'E', ' ')},                                                                                                                     // Vlaams
-	"vmw": {MakeTag('M', 'A', 'K', ' ')},                                                                                                                     // Makhuwa
-	"vo":  {MakeTag('V', 'O', 'L', ' ')},                                                                                                                     // Volapük
-	"vro": {MakeTag('V', 'R', 'O', ' ')},                                                                                                                     // Võro
-	"wa":  {MakeTag('W', 'L', 'N', ' ')},                                                                                                                     // Walloon
-	"war": {MakeTag('W', 'A', 'R', ' ')},                                                                                                                     // Waray (Philippines)
-	"wbl": {MakeTag('W', 'B', 'L', ' ')},                                                                                                                     // Wakhi
-	"wbr": {MakeTag('W', 'A', 'G', ' ')},                                                                                                                     // Wagdi
-	"wci": {MakeTag('W', 'C', 'I', ' ')},                                                                                                                     // Waci Gbe
-	"wdt": {MakeTag('W', 'D', 'T', ' ')},                                                                                                                     // Wendat
-	"wea": {MakeTag('K', 'R', 'N', ' ')},                                                                                                                     // Wewaw
-	"wes": {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Cameroon Pidgin
-	"weu": {MakeTag('Q', 'I', 'N', ' ')},                                                                                                                     // Rawngtu Chin
-	"wlc": {MakeTag('C', 'M', 'R', ' ')},                                                                                                                     // Mwali Comorian
-	"wle": {MakeTag('S', 'I', 'G', ' ')},                                                                                                                     // Wolane
-	"wlk": {MakeTag('A', 'T', 'H', ' ')},                                                                                                                     // Wailaki
-	"wni": {MakeTag('C', 'M', 'R', ' ')},                                                                                                                     // Ndzwani Comorian
-	"wo":  {MakeTag('W', 'L', 'F', ' ')},                                                                                                                     // Wolof
-	"wry": {MakeTag('M', 'A', 'W', ' ')},                                                                                                                     // Merwari
-	"wtm": {MakeTag('W', 'T', 'M', ' ')},                                                                                                                     // Mewati
-	"wyn": {MakeTag('W', 'Y', 'N', ' ')},                                                                                                                     // Wyandot
-	"xal": {MakeTag('K', 'L', 'M', ' '), MakeTag('T', 'O', 'D', ' ')},                                                                                        // Kalmyk
-	"xan": {MakeTag('S', 'E', 'K', ' ')},                                                                                                                     // Xamtanga
-	"xh":  {MakeTag('X', 'H', 'S', ' ')},                                                                                                                     // Xhosa
-	"xjb": {MakeTag('X', 'J', 'B', ' ')},                                                                                                                     // Minjungbal
-	"xkf": {MakeTag('X', 'K', 'F', ' ')},                                                                                                                     // Khengkha
-	"xmg": {MakeTag('B', 'M', 'L', ' ')},                                                                                                                     // Mengaka
-	"xmm": {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Manado Malay
-	"xnj": {MakeTag('S', 'X', 'T', ' ')},                                                                                                                     // Ngoni (Tanzania)
-	"xnq": {MakeTag('S', 'X', 'T', ' ')},                                                                                                                     // Ngoni (Mozambique)
-	"xog": {MakeTag('X', 'O', 'G', ' ')},                                                                                                                     // Soga
-	"xpe": {MakeTag('X', 'P', 'E', ' ')},                                                                                                                     // Liberia Kpelle
-	"xsl": {MakeTag('A', 'T', 'H', ' '), MakeTag('S', 'L', 'A', ' '), MakeTag('S', 'S', 'L', ' ')},                                                           // South Slavey
-	"xst": {MakeTag('S', 'I', 'G', ' ')},                                                                                                                     // xst
-	"xub": {MakeTag('X', 'U', 'B', ' ')},                                                                                                                     // Betta Kurumba
-	"xuj": {MakeTag('X', 'U', 'J', ' ')},                                                                                                                     // Jennu Kurumba
-	"xup": {MakeTag('A', 'T', 'H', ' ')},                                                                                                                     // Upper Umpqua
-	"yaj": {MakeTag('B', 'A', 'D', '0')},                                                                                                                     // Banda-Yangere
-	"yao": {MakeTag('Y', 'A', 'O', ' ')},                                                                                                                     // Yao
-	"yap": {MakeTag('Y', 'A', 'P', ' ')},                                                                                                                     // Yapese
-	"ybb": {MakeTag('B', 'M', 'L', ' ')},                                                                                                                     // Yemba
-	"ycr": {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Yilan Creole
-	"ygp": {MakeTag('Y', 'G', 'P', ' ')},                                                                                                                     // Gepo
-	"yi":  {MakeTag('J', 'I', 'I', ' ')},                                                                                                                     // Yiddish
-	"yna": {MakeTag('Y', 'N', 'A', ' ')},                                                                                                                     // Aluo
-	"yo":  {MakeTag('Y', 'B', 'A', ' ')},                                                                                                                     // Yoruba
-	"yua": {MakeTag('M', 'Y', 'N', ' ')},                                                                                                                     // Yucateco
-	"yuf": {MakeTag('Y', 'U', 'F', ' ')},                                                                                                                     // Havasupai-Walapai-Yavapai
-	"ywq": {MakeTag('Y', 'W', 'Q', ' ')},                                                                                                                     // Wuding-Luquan Yi
-	"za":  {MakeTag('Z', 'H', 'A', ' ')},                                                                                                                     // Zhuang
-	"zdj": {MakeTag('C', 'M', 'R', ' ')},                                                                                                                     // Ngazidja Comorian
-	"zea": {MakeTag('Z', 'E', 'A', ' ')},                                                                                                                     // Zeeuws
-	"zen": {MakeTag('B', 'B', 'R', ' ')},                                                                                                                     // Zenaga
-	"zgh": {MakeTag('B', 'B', 'R', ' '), MakeTag('Z', 'G', 'H', ' ')},                                                                                        // Standard Moroccan Tamazight
+	"aa":         {MakeTag('A', 'F', 'R', ' ')},                                                                                                                     // Afar
+	"aaq":        {MakeTag('A', 'A', 'Q', ' ')},                                                                                                                     // Eastern Abnaki
+	"ab":         {MakeTag('A', 'B', 'K', ' ')},                                                                                                                     // Abkhazian
+	"abq":        {MakeTag('A', 'B', 'A', ' ')},                                                                                                                     // Abaza
+	"abs":        {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Ambonese Malay
+	"acf":        {MakeTag('C', 'P', 'P', ' '), MakeTag('F', 'A', 'N', ' ')},                                                                                        // Saint Lucian Creole French
+	"ach":        {MakeTag('A', 'C', 'H', ' ')},                                                                                                                     // Acoli
+	"acr":        {MakeTag('A', 'C', 'R', ' '), MakeTag('M', 'Y', 'N', ' ')},                                                                                        // Achi
+	"acy":        {MakeTag('A', 'C', 'Y', ' ')},                                                                                                                     // Cypriot Arabic
+	"ada":        {MakeTag('D', 'N', 'G', ' ')},                                                                                                                     // Adangme
+	"ady":        {MakeTag('A', 'D', 'Y', ' ')},                                                                                                                     // Adyghe
+	"af":         {MakeTag('A', 'F', 'K', ' ')},                                                                                                                     // Afrikaans
+	"afs":        {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Afro-Seminole Creole
+	"agu":        {MakeTag('M', 'Y', 'N', ' ')},                                                                                                                     // Aguacateco
+	"ahg":        {MakeTag('A', 'G', 'W', ' ')},                                                                                                                     // Qimant
+	"aht":        {MakeTag('A', 'T', 'H', ' ')},                                                                                                                     // Ahtena
+	"aig":        {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Antigua and Barbuda Creole English
+	"aii":        {MakeTag('S', 'W', 'A', ' '), MakeTag('S', 'Y', 'R', ' ')},                                                                                        // Assyrian Neo-Aramaic
+	"aio":        {MakeTag('A', 'I', 'O', ' ')},                                                                                                                     // Aiton
+	"aiw":        {MakeTag('A', 'R', 'I', ' ')},                                                                                                                     // Aari
+	"ak":         {MakeTag('A', 'K', 'A', ' ')},                                                                                                                     // Akan
+	"akb":        {MakeTag('A', 'K', 'B', ' '), MakeTag('B', 'T', 'K', ' ')},                                                                                        // Batak Angkola
+	"alt":        {MakeTag('A', 'L', 'T', ' ')},                                                                                                                     // Southern Altai
+	"am":         {MakeTag('A', 'M', 'H', ' ')},                                                                                                                     // Amharic
+	"amf":        {MakeTag('H', 'B', 'N', ' ')},                                                                                                                     // Hamer-Banna
+	"amw":        {MakeTag('S', 'Y', 'R', ' ')},                                                                                                                     // Western Neo-Aramaic
+	"an":         {MakeTag('A', 'R', 'G', ' ')},                                                                                                                     // Aragonese
+	"ang":        {MakeTag('A', 'N', 'G', ' ')},                                                                                                                     // Old English (ca. 450-1100)
+	"aoa":        {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Angolar
+	"apa":        {MakeTag('A', 'T', 'H', ' ')},                                                                                                                     // Apache languages
+	"apj":        {MakeTag('A', 'T', 'H', ' ')},                                                                                                                     // Jicarilla Apache
+	"apk":        {MakeTag('A', 'T', 'H', ' ')},                                                                                                                     // Kiowa Apache
+	"apl":        {MakeTag('A', 'T', 'H', ' ')},                                                                                                                     // Lipan Apache
+	"apm":        {MakeTag('A', 'T', 'H', ' ')},                                                                                                                     // Mescalero-Chiricahua Apache
+	"apw":        {MakeTag('A', 'T', 'H', ' ')},                                                                                                                     // Western Apache
+	"ar":         {MakeTag('A', 'R', 'A', ' ')},                                                                                                                     // Arabic
+	"arn":        {MakeTag('M', 'A', 'P', ' ')},                                                                                                                     // Mapudungun
+	"as":         {MakeTag('A', 'S', 'M', ' ')},                                                                                                                     // Assamese
+	"ast":        {MakeTag('A', 'S', 'T', ' ')},                                                                                                                     // Asturian
+	"ath":        {MakeTag('A', 'T', 'H', ' ')},                                                                                                                     // Athapascan languages
+	"atj":        {MakeTag('R', 'C', 'R', ' ')},                                                                                                                     // Atikamekw
+	"ats":        {MakeTag('A', 'T', 'S', ' ')},                                                                                                                     // Gros Ventre
+	"atv":        {MakeTag('A', 'L', 'T', ' ')},                                                                                                                     // Northern Altai
+	"auj":        {MakeTag('B', 'B', 'R', ' ')},                                                                                                                     // Awjilah
+	"av":         {MakeTag('A', 'V', 'R', ' ')},                                                                                                                     // Avaric
+	"avn":        {MakeTag('A', 'V', 'N', ' ')},                                                                                                                     // Avatime
+	"awa":        {MakeTag('A', 'W', 'A', ' ')},                                                                                                                     // Awadhi
+	"ay":         {MakeTag('A', 'Y', 'M', ' ')},                                                                                                                     // Aymara
+	"az":         {MakeTag('A', 'Z', 'E', ' ')},                                                                                                                     // Azerbaijani
+	"azb":        {MakeTag('A', 'Z', 'B', ' ')},                                                                                                                     // South Azerbaijani
+	"azd":        {MakeTag('N', 'A', 'H', ' ')},                                                                                                                     // Eastern Durango Nahuatl
+	"azn":        {MakeTag('N', 'A', 'H', ' ')},                                                                                                                     // Western Durango Nahuatl
+	"azz":        {MakeTag('N', 'A', 'H', ' ')},                                                                                                                     // Highland Puebla Nahuatl
+	"ba":         {MakeTag('B', 'S', 'H', ' ')},                                                                                                                     // Bashkir
+	"bad":        {MakeTag('B', 'A', 'D', '0')},                                                                                                                     // Banda languages
+	"bah":        {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Bahamas Creole English
+	"bai":        {MakeTag('B', 'M', 'L', ' ')},                                                                                                                     // Bamileke languages
+	"bal":        {MakeTag('B', 'L', 'I', ' ')},                                                                                                                     // Baluchi
+	"ban":        {MakeTag('B', 'A', 'N', ' ')},                                                                                                                     // Balinese
+	"bar":        {MakeTag('B', 'A', 'R', ' ')},                                                                                                                     // Bavarian
+	"bbc":        {MakeTag('B', 'B', 'C', ' '), MakeTag('B', 'T', 'K', ' ')},                                                                                        // Batak Toba
+	"bbj":        {MakeTag('B', 'M', 'L', ' ')},                                                                                                                     // Ghomálá'
+	"bbp":        {MakeTag('B', 'A', 'D', '0')},                                                                                                                     // West Central Banda
+	"bci":        {MakeTag('B', 'A', 'U', ' ')},                                                                                                                     // Baoulé
+	"bcl":        {MakeTag('B', 'I', 'K', ' ')},                                                                                                                     // Central Bikol
+	"bcq":        {MakeTag('B', 'C', 'H', ' ')},                                                                                                                     // Bench
+	"bcr":        {MakeTag('A', 'T', 'H', ' ')},                                                                                                                     // Babine
+	"bdc":        {MakeTag('B', 'D', 'C', ' ')},                                                                                                                     // Emberá-Baudó
+	"bdy":        {MakeTag('B', 'D', 'Y', ' ')},                                                                                                                     // Bandjalang
+	"be":         {MakeTag('B', 'E', 'L', ' ')},                                                                                                                     // Belarusian
+	"bea":        {MakeTag('A', 'T', 'H', ' ')},                                                                                                                     // Beaver
+	"beb":        {MakeTag('B', 'T', 'I', ' ')},                                                                                                                     // Bebele
+	"bem":        {MakeTag('B', 'E', 'M', ' ')},                                                                                                                     // Bemba (Zambia)
+	"ber":        {MakeTag('B', 'B', 'R', ' ')},                                                                                                                     // Berber languages
+	"bew":        {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Betawi
+	"bfl":        {MakeTag('B', 'A', 'D', '0')},                                                                                                                     // Banda-Ndélé
+	"bfq":        {MakeTag('B', 'A', 'D', ' ')},                                                                                                                     // Badaga
+	"bft":        {MakeTag('B', 'L', 'T', ' ')},                                                                                                                     // Balti
+	"bfu":        {MakeTag('L', 'A', 'H', ' ')},                                                                                                                     // Gahri
+	"bfy":        {MakeTag('B', 'A', 'G', ' ')},                                                                                                                     // Bagheli
+	"bg":         {MakeTag('B', 'G', 'R', ' ')},                                                                                                                     // Bulgarian
+	"bgc":        {MakeTag('B', 'G', 'C', ' ')},                                                                                                                     // Haryanvi
+	"bgq":        {MakeTag('B', 'G', 'Q', ' ')},                                                                                                                     // Bagri
+	"bgr":        {MakeTag('Q', 'I', 'N', ' ')},                                                                                                                     // Bawm Chin
+	"bhb":        {MakeTag('B', 'H', 'I', ' ')},                                                                                                                     // Bhili
+	"bhi":        {MakeTag('B', 'H', 'I', ' ')},                                                                                                                     // Bhilali
+	"bhk":        {MakeTag('B', 'I', 'K', ' ')},                                                                                                                     // Albay Bicolano
+	"bho":        {MakeTag('B', 'H', 'O', ' ')},                                                                                                                     // Bhojpuri
+	"bi":         {MakeTag('B', 'I', 'S', ' '), MakeTag('C', 'P', 'P', ' ')},                                                                                        // Bislama
+	"bik":        {MakeTag('B', 'I', 'K', ' ')},                                                                                                                     // Bikol
+	"bin":        {MakeTag('E', 'D', 'O', ' ')},                                                                                                                     // Bini
+	"biu":        {MakeTag('Q', 'I', 'N', ' ')},                                                                                                                     // Biete
+	"bjj":        {MakeTag('B', 'J', 'J', ' ')},                                                                                                                     // Kanauji
+	"bjo":        {MakeTag('B', 'A', 'D', '0')},                                                                                                                     // Mid-Southern Banda
+	"bjs":        {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Bajan
+	"bjt":        {MakeTag('B', 'L', 'N', ' ')},                                                                                                                     // Balanta-Ganja
+	"bko":        {MakeTag('B', 'M', 'L', ' ')},                                                                                                                     // Kwa'
+	"bla":        {MakeTag('B', 'K', 'F', ' ')},                                                                                                                     // Siksika
+	"ble":        {MakeTag('B', 'L', 'N', ' ')},                                                                                                                     // Balanta-Kentohe
+	"blk":        {MakeTag('B', 'L', 'K', ' '), MakeTag('K', 'R', 'N', ' ')},                                                                                        // Pa'o Karen
+	"bln":        {MakeTag('B', 'I', 'K', ' ')},                                                                                                                     // Southern Catanduanes Bikol
+	"bm":         {MakeTag('B', 'M', 'B', ' ')},                                                                                                                     // Bambara
+	"bn":         {MakeTag('B', 'E', 'N', ' ')},                                                                                                                     // Bengali
+	"bo":         {MakeTag('T', 'I', 'B', ' ')},                                                                                                                     // Tibetan
+	"bpd":        {MakeTag('B', 'A', 'D', '0')},                                                                                                                     // Banda-Banda
+	"bpl":        {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Broome Pearling Lugger Pidgin
+	"bpq":        {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Banda Malay
+	"bpy":        {MakeTag('B', 'P', 'Y', ' ')},                                                                                                                     // Bishnupriya
+	"bqi":        {MakeTag('L', 'R', 'C', ' ')},                                                                                                                     // Bakhtiari
+	"bqk":        {MakeTag('B', 'A', 'D', '0')},                                                                                                                     // Banda-Mbrès
+	"br":         {MakeTag('B', 'R', 'E', ' ')},                                                                                                                     // Breton
+	"bra":        {MakeTag('B', 'R', 'I', ' ')},                                                                                                                     // Braj
+	"brc":        {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Berbice Creole Dutch
+	"brh":        {MakeTag('B', 'R', 'H', ' ')},                                                                                                                     // Brahui
+	"brx":        {MakeTag('B', 'R', 'X', ' ')},                                                                                                                     // Bodo (India)
+	"bs":         {MakeTag('B', 'O', 'S', ' ')},                                                                                                                     // Bosnian
+	"bsk":        {MakeTag('B', 'S', 'K', ' ')},                                                                                                                     // Burushaski
+	"btb":        {MakeTag('B', 'T', 'I', ' ')},                                                                                                                     // Beti (Cameroon)
+	"btd":        {MakeTag('B', 'T', 'D', ' '), MakeTag('B', 'T', 'K', ' ')},                                                                                        // Batak Dairi
+	"btk":        {MakeTag('B', 'T', 'K', ' ')},                                                                                                                     // Batak languages
+	"btm":        {MakeTag('B', 'T', 'K', ' '), MakeTag('B', 'T', 'M', ' ')},                                                                                        // Batak Mandailing
+	"bto":        {MakeTag('B', 'I', 'K', ' ')},                                                                                                                     // Rinconada Bikol
+	"bts":        {MakeTag('B', 'T', 'K', ' '), MakeTag('B', 'T', 'S', ' ')},                                                                                        // Batak Simalungun
+	"btx":        {MakeTag('B', 'T', 'K', ' '), MakeTag('B', 'T', 'X', ' ')},                                                                                        // Batak Karo
+	"btz":        {MakeTag('B', 'T', 'K', ' '), MakeTag('B', 'T', 'Z', ' ')},                                                                                        // Batak Alas-Kluet
+	"bug":        {MakeTag('B', 'U', 'G', ' ')},                                                                                                                     // Buginese
+	"bum":        {MakeTag('B', 'T', 'I', ' ')},                                                                                                                     // Bulu (Cameroon)
+	"bwe":        {MakeTag('K', 'R', 'N', ' ')},                                                                                                                     // Bwe Karen
+	"bxo":        {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Barikanchi
+	"bxp":        {MakeTag('B', 'T', 'I', ' ')},                                                                                                                     // Bebil
+	"bxr":        {MakeTag('R', 'B', 'U', ' ')},                                                                                                                     // Russia Buriat
+	"byn":        {MakeTag('B', 'I', 'L', ' ')},                                                                                                                     // Bilin
+	"byv":        {MakeTag('B', 'M', 'L', ' '), MakeTag('B', 'Y', 'V', ' ')},                                                                                        // Medumba
+	"bzj":        {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Belize Kriol English
+	"bzk":        {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Nicaragua Creole English
+	"ca":         {MakeTag('C', 'A', 'T', ' ')},                                                                                                                     // Catalan
+	"caa":        {MakeTag('M', 'Y', 'N', ' ')},                                                                                                                     // Chortí
+	"cac":        {MakeTag('M', 'Y', 'N', ' ')},                                                                                                                     // Chuj
+	"caf":        {MakeTag('A', 'T', 'H', ' '), MakeTag('C', 'R', 'R', ' ')},                                                                                        // Southern Carrier
+	"cak":        {MakeTag('C', 'A', 'K', ' '), MakeTag('M', 'Y', 'N', ' ')},                                                                                        // Kaqchikel
+	"cay":        {MakeTag('C', 'A', 'Y', ' ')},                                                                                                                     // Cayuga
+	"cbg":        {MakeTag('C', 'B', 'G', ' ')},                                                                                                                     // Chimila
+	"cbk":        {MakeTag('C', 'B', 'K', ' '), MakeTag('C', 'P', 'P', ' ')},                                                                                        // Chavacano
+	"cbl":        {MakeTag('Q', 'I', 'N', ' ')},                                                                                                                     // Bualkhaw Chin
+	"ccl":        {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Cutchi-Swahili
+	"ccm":        {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Malaccan Creole Malay
+	"cco":        {MakeTag('C', 'C', 'H', 'N')},                                                                                                                     // Comaltepec Chinantec
+	"ce":         {MakeTag('C', 'H', 'E', ' ')},                                                                                                                     // Chechen
+	"ceb":        {MakeTag('C', 'E', 'B', ' ')},                                                                                                                     // Cebuano
+	"cek":        {MakeTag('Q', 'I', 'N', ' ')},                                                                                                                     // Eastern Khumi Chin
+	"cey":        {MakeTag('Q', 'I', 'N', ' ')},                                                                                                                     // Ekai Chin
+	"cfm":        {MakeTag('H', 'A', 'L', ' '), MakeTag('Q', 'I', 'N', ' ')},                                                                                        // Falam Chin
+	"cgg":        {MakeTag('C', 'G', 'G', ' ')},                                                                                                                     // Chiga
+	"ch":         {MakeTag('C', 'H', 'A', ' ')},                                                                                                                     // Chamorro
+	"chf":        {MakeTag('M', 'Y', 'N', ' ')},                                                                                                                     // Tabasco Chontal
+	"chj":        {MakeTag('C', 'C', 'H', 'N')},                                                                                                                     // Ojitlán Chinantec
+	"chk":        {MakeTag('C', 'H', 'K', '0')},                                                                                                                     // Chuukese
+	"chn":        {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Chinook jargon
+	"cho":        {MakeTag('C', 'H', 'O', ' ')},                                                                                                                     // Choctaw
+	"chp":        {MakeTag('A', 'T', 'H', ' '), MakeTag('C', 'H', 'P', ' '), MakeTag('S', 'A', 'Y', ' ')},                                                           // Chipewyan
+	"chq":        {MakeTag('C', 'C', 'H', 'N')},                                                                                                                     // Quiotepec Chinantec
+	"chr":        {MakeTag('C', 'H', 'R', ' ')},                                                                                                                     // Cherokee
+	"chy":        {MakeTag('C', 'H', 'Y', ' ')},                                                                                                                     // Cheyenne
+	"chz":        {MakeTag('C', 'C', 'H', 'N')},                                                                                                                     // Ozumacín Chinantec
+	"cja":        {MakeTag('C', 'J', 'A', ' ')},                                                                                                                     // Western Cham
+	"cjm":        {MakeTag('C', 'J', 'M', ' ')},                                                                                                                     // Eastern Cham
+	"cka":        {MakeTag('Q', 'I', 'N', ' ')},                                                                                                                     // Khumi Awa Chin
+	"ckn":        {MakeTag('Q', 'I', 'N', ' ')},                                                                                                                     // Kaang Chin
+	"cks":        {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Tayo
+	"ckt":        {MakeTag('C', 'H', 'K', ' ')},                                                                                                                     // Chukot
+	"ckz":        {MakeTag('M', 'Y', 'N', ' ')},                                                                                                                     // Cakchiquel-Quiché Mixed Language
+	"clc":        {MakeTag('A', 'T', 'H', ' ')},                                                                                                                     // Chilcotin
+	"cld":        {MakeTag('S', 'Y', 'R', ' ')},                                                                                                                     // Chaldean Neo-Aramaic
+	"cle":        {MakeTag('C', 'C', 'H', 'N')},                                                                                                                     // Lealao Chinantec
+	"clj":        {MakeTag('Q', 'I', 'N', ' ')},                                                                                                                     // Laitu Chin
+	"clt":        {MakeTag('Q', 'I', 'N', ' ')},                                                                                                                     // Lautu Chin
+	"cmi":        {MakeTag('C', 'M', 'I', ' ')},                                                                                                                     // Emberá-Chamí
+	"cmr":        {MakeTag('Q', 'I', 'N', ' ')},                                                                                                                     // Mro-Khimi Chin
+	"cnb":        {MakeTag('Q', 'I', 'N', ' ')},                                                                                                                     // Chinbon Chin
+	"cnh":        {MakeTag('Q', 'I', 'N', ' ')},                                                                                                                     // Hakha Chin
+	"cnk":        {MakeTag('Q', 'I', 'N', ' ')},                                                                                                                     // Khumi Chin
+	"cnl":        {MakeTag('C', 'C', 'H', 'N')},                                                                                                                     // Lalana Chinantec
+	"cnr":        {MakeTag('S', 'R', 'B', ' ')},                                                                                                                     // Montenegrin
+	"cnt":        {MakeTag('C', 'C', 'H', 'N')},                                                                                                                     // Tepetotutla Chinantec
+	"cnu":        {MakeTag('B', 'B', 'R', ' ')},                                                                                                                     // Chenoua
+	"cnw":        {MakeTag('Q', 'I', 'N', ' ')},                                                                                                                     // Ngawn Chin
+	"co":         {MakeTag('C', 'O', 'S', ' ')},                                                                                                                     // Corsican
+	"cob":        {MakeTag('M', 'Y', 'N', ' ')},                                                                                                                     // Chicomuceltec
+	"coo":        {MakeTag('C', 'O', 'O', ' ')},                                                                                                                     // Comox
+	"cop":        {MakeTag('C', 'O', 'P', ' ')},                                                                                                                     // Coptic
+	"coq":        {MakeTag('A', 'T', 'H', ' ')},                                                                                                                     // Coquille
+	"cpa":        {MakeTag('C', 'C', 'H', 'N')},                                                                                                                     // Palantla Chinantec
+	"cpe":        {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // English-based creoles and pidgins
+	"cpf":        {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // French-based creoles and pidgins
+	"cpi":        {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Chinese Pidgin English
+	"cpp":        {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Portuguese-based creoles and pidgins
+	"cr":         {MakeTag('C', 'R', 'E', ' ')},                                                                                                                     // Cree
+	"crh":        {MakeTag('C', 'R', 'T', ' ')},                                                                                                                     // Crimean Tatar
+	"cri":        {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Sãotomense
+	"crj":        {MakeTag('E', 'C', 'R', ' '), MakeTag('Y', 'C', 'R', ' ')},                                                                                        // Southern East Cree
+	"crk":        {MakeTag('W', 'C', 'R', ' '), MakeTag('Y', 'C', 'R', ' ')},                                                                                        // Plains Cree
+	"crl":        {MakeTag('E', 'C', 'R', ' '), MakeTag('Y', 'C', 'R', ' ')},                                                                                        // Northern East Cree
+	"crm":        {MakeTag('L', 'C', 'R', ' '), MakeTag('M', 'C', 'R', ' ')},                                                                                        // Moose Cree
+	"crp":        {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Creoles and pidgins
+	"crs":        {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Seselwa Creole French
+	"crx":        {MakeTag('A', 'T', 'H', ' '), MakeTag('C', 'R', 'R', ' ')},                                                                                        // Carrier
+	"cs":         {MakeTag('C', 'S', 'Y', ' ')},                                                                                                                     // Czech
+	"csa":        {MakeTag('C', 'C', 'H', 'N')},                                                                                                                     // Chiltepec Chinantec
+	"csb":        {MakeTag('C', 'S', 'B', ' ')},                                                                                                                     // Kashubian
+	"csh":        {MakeTag('Q', 'I', 'N', ' ')},                                                                                                                     // Asho Chin
+	"csj":        {MakeTag('Q', 'I', 'N', ' ')},                                                                                                                     // Songlai Chin
+	"cso":        {MakeTag('C', 'C', 'H', 'N')},                                                                                                                     // Sochiapam Chinantec
+	"csv":        {MakeTag('Q', 'I', 'N', ' ')},                                                                                                                     // Sumtu Chin
+	"csw":        {MakeTag('N', 'C', 'R', ' '), MakeTag('N', 'H', 'C', ' ')},                                                                                        // Swampy Cree
+	"csy":        {MakeTag('Q', 'I', 'N', ' ')},                                                                                                                     // Siyin Chin
+	"ctc":        {MakeTag('A', 'T', 'H', ' ')},                                                                                                                     // Chetco
+	"ctd":        {MakeTag('Q', 'I', 'N', ' ')},                                                                                                                     // Tedim Chin
+	"cte":        {MakeTag('C', 'C', 'H', 'N')},                                                                                                                     // Tepinapa Chinantec
+	"ctg":        {MakeTag('C', 'T', 'G', ' ')},                                                                                                                     // Chittagonian
+	"cth":        {MakeTag('Q', 'I', 'N', ' ')},                                                                                                                     // Thaiphum Chin
+	"ctl":        {MakeTag('C', 'C', 'H', 'N')},                                                                                                                     // Tlacoatzintepec Chinantec
+	"cto":        {MakeTag('C', 'T', 'O', ' ')},                                                                                                                     // Emberá-Catío
+	"cts":        {MakeTag('B', 'I', 'K', ' ')},                                                                                                                     // Northern Catanduanes Bikol
+	"ctt":        {MakeTag('C', 'T', 'T', ' ')},                                                                                                                     // Wayanad Chetti
+	"ctu":        {MakeTag('M', 'Y', 'N', ' ')},                                                                                                                     // Chol
+	"cu":         {MakeTag('C', 'S', 'L', ' ')},                                                                                                                     // Church Slavic
+	"cuc":        {MakeTag('C', 'C', 'H', 'N')},                                                                                                                     // Usila Chinantec
+	"cuk":        {MakeTag('C', 'U', 'K', ' ')},                                                                                                                     // San Blas Kuna
+	"cv":         {MakeTag('C', 'H', 'U', ' ')},                                                                                                                     // Chuvash
+	"cvn":        {MakeTag('C', 'C', 'H', 'N')},                                                                                                                     // Valle Nacional Chinantec
+	"cwd":        {MakeTag('D', 'C', 'R', ' '), MakeTag('T', 'C', 'R', ' ')},                                                                                        // Woods Cree
+	"cy":         {MakeTag('W', 'E', 'L', ' ')},                                                                                                                     // Welsh
+	"czt":        {MakeTag('Q', 'I', 'N', ' ')},                                                                                                                     // Zotung Chin
+	"da":         {MakeTag('D', 'A', 'N', ' ')},                                                                                                                     // Danish
+	"dag":        {MakeTag('D', 'A', 'G', ' ')},                                                                                                                     // Dagbani
+	"dao":        {MakeTag('Q', 'I', 'N', ' ')},                                                                                                                     // Daai Chin
+	"dap":        {MakeTag('N', 'I', 'S', ' ')},                                                                                                                     // Nisi (India)
+	"dar":        {MakeTag('D', 'A', 'R', ' ')},                                                                                                                     // Dargwa
+	"dax":        {MakeTag('D', 'A', 'X', ' ')},                                                                                                                     // Dayi
+	"dcr":        {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Negerhollands
+	"de":         {MakeTag('D', 'E', 'U', ' ')},                                                                                                                     // German
+	"den":        {MakeTag('A', 'T', 'H', ' '), MakeTag('S', 'L', 'A', ' ')},                                                                                        // Slave (Athapascan)
+	"dep":        {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Pidgin Delaware
+	"dgo":        {MakeTag('D', 'G', 'O', ' ')},                                                                                                                     // Dogri (individual language)
+	"dgr":        {MakeTag('A', 'T', 'H', ' ')},                                                                                                                     // Tlicho
+	"dhd":        {MakeTag('M', 'A', 'W', ' ')},                                                                                                                     // Dhundari
+	"dhg":        {MakeTag('D', 'H', 'G', ' ')},                                                                                                                     // Dhangu-Djangu
+	"din":        {MakeTag('D', 'N', 'K', ' ')},                                                                                                                     // Dinka
+	"diq":        {MakeTag('D', 'I', 'Q', ' ')},                                                                                                                     // Dimli (individual language)
+	"dje":        {MakeTag('D', 'J', 'R', ' ')},                                                                                                                     // Zarma
+	"djk":        {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Eastern Maroon Creole
+	"djr":        {MakeTag('D', 'J', 'R', '0')},                                                                                                                     // Djambarrpuyngu
+	"dng":        {MakeTag('D', 'U', 'N', ' ')},                                                                                                                     // Dungan
+	"dnj":        {MakeTag('D', 'N', 'J', ' ')},                                                                                                                     // Dan
+	"doi":        {MakeTag('D', 'G', 'R', ' ')},                                                                                                                     // Dogri (macrolanguage)
+	"dsb":        {MakeTag('L', 'S', 'B', ' ')},                                                                                                                     // Lower Sorbian
+	"duj":        {MakeTag('D', 'U', 'J', ' ')},                                                                                                                     // Dhuwal
+	"dv":         {MakeTag('D', 'I', 'V', ' '), MakeTag('D', 'H', 'V', ' ')},                                                                                        // Dhivehi (DIV=new, DHV=deprecated)
+	"dwu":        {MakeTag('D', 'U', 'J', ' ')},                                                                                                                     // Dhuwal
+	"dwy":        {MakeTag('D', 'U', 'J', ' ')},                                                                                                                     // Dhuwaya
+	"dyu":        {MakeTag('J', 'U', 'L', ' ')},                                                                                                                     // Dyula
+	"dz":         {MakeTag('D', 'Z', 'N', ' ')},                                                                                                                     // Dzongkha
+	"ee":         {MakeTag('E', 'W', 'E', ' ')},                                                                                                                     // Ewe
+	"efi":        {MakeTag('E', 'F', 'I', ' ')},                                                                                                                     // Efik
+	"eky":        {MakeTag('K', 'R', 'N', ' ')},                                                                                                                     // Eastern Kayah
+	"el":         {MakeTag('E', 'L', 'L', ' '), MakeTag('P', 'G', 'R', ' ')},                                                                                        // Modern Greek (1453-)
+	"emk":        {MakeTag('E', 'M', 'K', ' '), MakeTag('M', 'N', 'K', ' ')},                                                                                        // Eastern Maninkakan
+	"emp":        {MakeTag('E', 'M', 'P', ' ')},                                                                                                                     // Northern Emberá
+	"emy":        {MakeTag('M', 'Y', 'N', ' ')},                                                                                                                     // Epigraphic Mayan
+	"en":         {MakeTag('E', 'N', 'G', ' ')},                                                                                                                     // English
+	"enf":        {MakeTag('F', 'N', 'E', ' ')},                                                                                                                     // Forest Enets
+	"enh":        {MakeTag('T', 'N', 'E', ' ')},                                                                                                                     // Tundra Enets
+	"eo":         {MakeTag('N', 'T', 'O', ' ')},                                                                                                                     // Esperanto
+	"es":         {MakeTag('E', 'S', 'P', ' ')},                                                                                                                     // Spanish
+	"esu":        {MakeTag('E', 'S', 'U', ' ')},                                                                                                                     // Central Yupik
+	"et":         {MakeTag('E', 'T', 'I', ' ')},                                                                                                                     // Estonian
+	"eto":        {MakeTag('B', 'T', 'I', ' ')},                                                                                                                     // Eton (Cameroon)
+	"eu":         {MakeTag('E', 'U', 'Q', ' ')},                                                                                                                     // Basque
+	"eve":        {MakeTag('E', 'V', 'N', ' ')},                                                                                                                     // Even
+	"evn":        {MakeTag('E', 'V', 'K', ' ')},                                                                                                                     // Evenki
+	"ewo":        {MakeTag('B', 'T', 'I', ' ')},                                                                                                                     // Ewondo
+	"fa":         {MakeTag('F', 'A', 'R', ' ')},                                                                                                                     // Persian
+	"fab":        {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Fa d'Ambu
+	"fan":        {MakeTag('F', 'A', 'N', '0')},                                                                                                                     // Fang (Equatorial Guinea)
+	"fat":        {MakeTag('A', 'K', 'A', ' '), MakeTag('F', 'A', 'T', ' ')},                                                                                        // Fanti
+	"fbl":        {MakeTag('B', 'I', 'K', ' ')},                                                                                                                     // West Albay Bikol
+	"ff":         {MakeTag('F', 'U', 'L', ' ')},                                                                                                                     // Fulah
+	"fi":         {MakeTag('F', 'I', 'N', ' ')},                                                                                                                     // Finnish
+	"fil":        {MakeTag('P', 'I', 'L', ' ')},                                                                                                                     // Filipino
+	"fj":         {MakeTag('F', 'J', 'I', ' ')},                                                                                                                     // Fijian
+	"fmp":        {MakeTag('B', 'M', 'L', ' '), MakeTag('F', 'M', 'P', ' ')},                                                                                        // Fe'fe'
+	"fng":        {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Fanagalo
+	"fo":         {MakeTag('F', 'O', 'S', ' ')},                                                                                                                     // Faroese
+	"fon":        {MakeTag('F', 'O', 'N', ' ')},                                                                                                                     // Fon
+	"fpe":        {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Fernando Po Creole English
+	"fr":         {MakeTag('F', 'R', 'A', ' ')},                                                                                                                     // French
+	"frc":        {MakeTag('F', 'R', 'C', ' ')},                                                                                                                     // Cajun French
+	"frp":        {MakeTag('F', 'R', 'P', ' ')},                                                                                                                     // Arpitan
+	"fuf":        {MakeTag('F', 'T', 'A', ' ')},                                                                                                                     // Pular
+	"fur":        {MakeTag('F', 'R', 'L', ' ')},                                                                                                                     // Friulian
+	"fuv":        {MakeTag('F', 'U', 'V', ' ')},                                                                                                                     // Nigerian Fulfulde
+	"fy":         {MakeTag('F', 'R', 'I', ' ')},                                                                                                                     // Western Frisian
+	"ga":         {MakeTag('I', 'R', 'I', ' '), MakeTag('I', 'R', 'T', ' ')},                                                                                        // Irish
+	"gaa":        {MakeTag('G', 'A', 'D', ' ')},                                                                                                                     // Ga
+	"gac":        {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Mixed Great Andamanese
+	"gag":        {MakeTag('G', 'A', 'G', ' ')},                                                                                                                     // Gagauz
+	"gbm":        {MakeTag('G', 'A', 'W', ' ')},                                                                                                                     // Garhwali
+	"gce":        {MakeTag('A', 'T', 'H', ' ')},                                                                                                                     // Galice
+	"gcf":        {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Guadeloupean Creole French
+	"gcl":        {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Grenadian Creole English
+	"gcr":        {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Guianese Creole French
+	"gd":         {MakeTag('G', 'A', 'E', ' ')},                                                                                                                     // Scottish Gaelic
+	"gez":        {MakeTag('G', 'E', 'Z', ' ')},                                                                                                                     // Geez
+	"gha":        {MakeTag('B', 'B', 'R', ' ')},                                                                                                                     // Ghadamès
+	"ghc":        {MakeTag('I', 'R', 'T', ' ')},                                                                                                                     // Hiberno-Scottish Gaelic
+	"ghk":        {MakeTag('K', 'R', 'N', ' ')},                                                                                                                     // Geko Karen
+	"gho":        {MakeTag('B', 'B', 'R', ' ')},                                                                                                                     // Ghomara
+	"gib":        {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Gibanawa
+	"gih":        {MakeTag('G', 'I', 'H', ' ')},                                                                                                                     // Githabul
+	"gil":        {MakeTag('G', 'I', 'L', '0')},                                                                                                                     // Gilbertese
+	"gkp":        {MakeTag('G', 'K', 'P', ' ')},                                                                                                                     // Guinea Kpelle
+	"gl":         {MakeTag('G', 'A', 'L', ' ')},                                                                                                                     // Galician
+	"gld":        {MakeTag('N', 'A', 'N', ' ')},                                                                                                                     // Nanai
+	"glk":        {MakeTag('G', 'L', 'K', ' ')},                                                                                                                     // Gilaki
+	"gn":         {MakeTag('G', 'U', 'A', ' ')},                                                                                                                     // Guarani
+	"gnb":        {MakeTag('Q', 'I', 'N', ' ')},                                                                                                                     // Gangte
+	"gnn":        {MakeTag('G', 'N', 'N', ' ')},                                                                                                                     // Gumatj
+	"gog":        {MakeTag('G', 'O', 'G', ' ')},                                                                                                                     // Gogo
+	"gon":        {MakeTag('G', 'O', 'N', ' ')},                                                                                                                     // Gondi
+	"goq":        {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Gorap
+	"gox":        {MakeTag('B', 'A', 'D', '0')},                                                                                                                     // Gobu
+	"gpe":        {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Ghanaian Pidgin English
+	"grr":        {MakeTag('B', 'B', 'R', ' ')},                                                                                                                     // Taznatit
+	"grt":        {MakeTag('G', 'R', 'O', ' ')},                                                                                                                     // Garo
+	"gru":        {MakeTag('S', 'O', 'G', ' ')},                                                                                                                     // Kistane
+	"gsw":        {MakeTag('A', 'L', 'S', ' ')},                                                                                                                     // Swiss German
+	"gu":         {MakeTag('G', 'U', 'J', ' ')},                                                                                                                     // Gujarati
+	"guc":        {MakeTag('G', 'U', 'C', ' ')},                                                                                                                     // Wayuu
+	"guf":        {MakeTag('G', 'U', 'F', ' ')},                                                                                                                     // Gupapuyngu
+	"guk":        {MakeTag('G', 'M', 'Z', ' ')},                                                                                                                     // Gumuz
+	"gul":        {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Sea Island Creole English
+	"guz":        {MakeTag('G', 'U', 'Z', ' ')},                                                                                                                     // Gusii
+	"gv":         {MakeTag('M', 'N', 'X', ' ')},                                                                                                                     // Manx
+	"gwi":        {MakeTag('A', 'T', 'H', ' ')},                                                                                                                     // Gwichʼin
+	"gyn":        {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Guyanese Creole English
+	"ha":         {MakeTag('H', 'A', 'U', ' ')},                                                                                                                     // Hausa
+	"haa":        {MakeTag('A', 'T', 'H', ' ')},                                                                                                                     // Hän
+	"hai":        {MakeTag('H', 'A', 'I', '0')},                                                                                                                     // Haida
+	"har":        {MakeTag('H', 'R', 'I', ' ')},                                                                                                                     // Harari
+	"haw":        {MakeTag('H', 'A', 'W', ' ')},                                                                                                                     // Hawaiian
+	"hax":        {MakeTag('H', 'A', 'I', '0')},                                                                                                                     // Southern Haida
+	"hay":        {MakeTag('H', 'A', 'Y', ' ')},                                                                                                                     // Haya
+	"haz":        {MakeTag('H', 'A', 'Z', ' ')},                                                                                                                     // Hazaragi
+	"hca":        {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Andaman Creole Hindi
+	"hdn":        {MakeTag('H', 'A', 'I', '0')},                                                                                                                     // Northern Haida
+	"he":         {MakeTag('I', 'W', 'R', ' ')},                                                                                                                     // Hebrew
+	"hei":        {MakeTag('H', 'E', 'I', ' ')},                                                                                                                     // Heiltsuk
+	"hi":         {MakeTag('H', 'I', 'N', ' ')},                                                                                                                     // Hindi
+	"hil":        {MakeTag('H', 'I', 'L', ' ')},                                                                                                                     // Hiligaynon
+	"hlt":        {MakeTag('Q', 'I', 'N', ' ')},                                                                                                                     // Matu Chin
+	"hmd":        {MakeTag('H', 'M', 'D', ' ')},                                                                                                                     // Large Flowery Miao
+	"hmn":        {MakeTag('H', 'M', 'N', ' ')},                                                                                                                     // Hmong
+	"hmr":        {MakeTag('Q', 'I', 'N', ' ')},                                                                                                                     // Hmar
+	"hmz":        {MakeTag('H', 'M', 'Z', ' ')},                                                                                                                     // Hmong Shua
+	"hnd":        {MakeTag('H', 'N', 'D', ' ')},                                                                                                                     // Southern Hindko
+	"hne":        {MakeTag('C', 'H', 'H', ' ')},                                                                                                                     // Chhattisgarhi
+	"hno":        {MakeTag('H', 'N', 'D', ' ')},                                                                                                                     // Northern Hindko
+	"ho":         {MakeTag('C', 'P', 'P', ' '), MakeTag('H', 'M', 'O', ' ')},                                                                                        // Hiri Motu
+	"hoi":        {MakeTag('A', 'T', 'H', ' ')},                                                                                                                     // Holikachuk
+	"hoj":        {MakeTag('H', 'A', 'R', ' ')},                                                                                                                     // Hadothi
+	"hr":         {MakeTag('H', 'R', 'V', ' ')},                                                                                                                     // Croatian
+	"hra":        {MakeTag('Q', 'I', 'N', ' ')},                                                                                                                     // Hrangkhol
+	"hsb":        {MakeTag('U', 'S', 'B', ' ')},                                                                                                                     // Upper Sorbian
+	"ht":         {MakeTag('C', 'P', 'P', ' '), MakeTag('H', 'A', 'I', ' ')},                                                                                        // Haitian
+	"hu":         {MakeTag('H', 'U', 'N', ' ')},                                                                                                                     // Hungarian
+	"hup":        {MakeTag('A', 'T', 'H', ' ')},                                                                                                                     // Hupa
+	"hur":        {MakeTag('H', 'U', 'R', ' ')},                                                                                                                     // Halkomelem
+	"hus":        {MakeTag('M', 'Y', 'N', ' ')},                                                                                                                     // Huastec
+	"hwc":        {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Hawai'i Creole English
+	"hy":         {MakeTag('H', 'Y', 'E', ' '), MakeTag('H', 'Y', 'E', '0')},                                                                                        // Armenian
+	"hyw":        {MakeTag('H', 'Y', 'E', ' ')},                                                                                                                     // Western Armenian
+	"hz":         {MakeTag('H', 'E', 'R', ' ')},                                                                                                                     // Herero
+	"ia":         {MakeTag('I', 'N', 'A', ' ')},                                                                                                                     // Interlingua (International Auxiliary Language
+	"iba":        {MakeTag('I', 'B', 'A', ' ')},                                                                                                                     // Iban
+	"ibb":        {MakeTag('I', 'B', 'B', ' ')},                                                                                                                     // Ibibio
+	"iby":        {MakeTag('I', 'J', 'O', ' ')},                                                                                                                     // Ibani
+	"icr":        {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Islander Creole English
+	"id":         {MakeTag('I', 'N', 'D', ' ')},                                                                                                                     // Indonesian
+	"idb":        {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Indo-Portuguese
+	"ie":         {MakeTag('I', 'L', 'E', ' ')},                                                                                                                     // Interlingue
+	"ig":         {MakeTag('I', 'B', 'O', ' ')},                                                                                                                     // Igbo
+	"igb":        {MakeTag('E', 'B', 'I', ' ')},                                                                                                                     // Ebira
+	"ihb":        {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Iha Based Pidgin
+	"ii":         {MakeTag('Y', 'I', 'M', ' ')},                                                                                                                     // Sichuan Yi
+	"ijc":        {MakeTag('I', 'J', 'O', ' ')},                                                                                                                     // Izon
+	"ije":        {MakeTag('I', 'J', 'O', ' ')},                                                                                                                     // Biseni
+	"ijn":        {MakeTag('I', 'J', 'O', ' ')},                                                                                                                     // Kalabari
+	"ijo":        {MakeTag('I', 'J', 'O', ' ')},                                                                                                                     // Ijo languages
+	"ijs":        {MakeTag('I', 'J', 'O', ' ')},                                                                                                                     // Southeast Ijo
+	"ik":         {MakeTag('I', 'P', 'K', ' ')},                                                                                                                     // Inupiaq
+	"ike":        {MakeTag('I', 'N', 'U', 'K')},                                                                                                                     // Eastern Canadian Inuktitut
+	"ilo":        {MakeTag('I', 'L', 'O', ' ')},                                                                                                                     // Iloko
+	"ing":        {MakeTag('A', 'T', 'H', ' ')},                                                                                                                     // Degexit'an
+	"inh":        {MakeTag('I', 'N', 'G', ' ')},                                                                                                                     // Ingush
+	"io":         {MakeTag('I', 'D', 'O', ' ')},                                                                                                                     // Ido
+	"iru":        {MakeTag('I', 'R', 'U', ' ')},                                                                                                                     // Irula
+	"is":         {MakeTag('I', 'S', 'L', ' ')},                                                                                                                     // Icelandic
+	"it":         {MakeTag('I', 'T', 'A', ' ')},                                                                                                                     // Italian
+	"itz":        {MakeTag('M', 'Y', 'N', ' ')},                                                                                                                     // Itzá
+	"iu":         {MakeTag('I', 'N', 'U', ' '), MakeTag('I', 'N', 'U', 'K')},                                                                                        // Inuktitut
+	"ixl":        {MakeTag('M', 'Y', 'N', ' ')},                                                                                                                     // Ixil
+	"ja":         {MakeTag('J', 'A', 'N', ' ')},                                                                                                                     // Japanese
+	"jac":        {MakeTag('M', 'Y', 'N', ' ')},                                                                                                                     // Popti'
+	"jam":        {MakeTag('C', 'P', 'P', ' '), MakeTag('J', 'A', 'M', ' ')},                                                                                        // Jamaican Creole English
+	"jbe":        {MakeTag('B', 'B', 'R', ' ')},                                                                                                                     // Judeo-Berber
+	"jbn":        {MakeTag('B', 'B', 'R', ' ')},                                                                                                                     // Nafusi
+	"jbo":        {MakeTag('J', 'B', 'O', ' ')},                                                                                                                     // Lojban
+	"jct":        {MakeTag('J', 'C', 'T', ' ')},                                                                                                                     // Krymchak
+	"jdt":        {MakeTag('J', 'D', 'T', ' ')},                                                                                                                     // Judeo-Tat
+	"jgo":        {MakeTag('B', 'M', 'L', ' ')},                                                                                                                     // Ngomba
+	"jkm":        {MakeTag('K', 'R', 'N', ' ')},                                                                                                                     // Mobwa Karen
+	"jkp":        {MakeTag('K', 'R', 'N', ' ')},                                                                                                                     // Paku Karen
+	"jv":         {MakeTag('J', 'A', 'V', ' ')},                                                                                                                     // Javanese
+	"jvd":        {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Javindo
+	"ka":         {MakeTag('K', 'A', 'T', ' '), MakeTag('K', 'G', 'E', ' ')},                                                                                        // Georgian
+	"kaa":        {MakeTag('K', 'R', 'K', ' ')},                                                                                                                     // Kara-Kalpak
+	"kab":        {MakeTag('B', 'B', 'R', ' '), MakeTag('K', 'A', 'B', '0')},                                                                                        // Kabyle
+	"kam":        {MakeTag('K', 'M', 'B', ' ')},                                                                                                                     // Kamba (Kenya)
+	"kar":        {MakeTag('K', 'R', 'N', ' ')},                                                                                                                     // Karen languages
+	"kaw":        {MakeTag('K', 'A', 'W', ' ')},                                                                                                                     // Kawi
+	"kbc":        {MakeTag('K', 'B', 'C', ' ')},                                                                                                                     // Kadiwéu
+	"kbd":        {MakeTag('K', 'A', 'B', ' ')},                                                                                                                     // Kabardian
+	"kca":        {MakeTag('K', 'H', 'K', ' '), MakeTag('K', 'H', 'S', ' '), MakeTag('K', 'H', 'V', ' ')},                                                           // Khanty
+	"kcn":        {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Nubi
+	"kde":        {MakeTag('K', 'D', 'E', ' ')},                                                                                                                     // Makonde
+	"kdr":        {MakeTag('K', 'R', 'M', ' ')},                                                                                                                     // Karaim
+	"kdt":        {MakeTag('K', 'U', 'Y', ' ')},                                                                                                                     // Kuy
+	"kea":        {MakeTag('C', 'P', 'P', ' '), MakeTag('K', 'E', 'A', ' ')},                                                                                        // Kabuverdianu
+	"kek":        {MakeTag('K', 'E', 'K', ' '), MakeTag('M', 'Y', 'N', ' ')},                                                                                        // Kekchí
+	"kex":        {MakeTag('K', 'K', 'N', ' ')},                                                                                                                     // Kukna
+	"kfa":        {MakeTag('K', 'O', 'D', ' ')},                                                                                                                     // Kodava
+	"kfr":        {MakeTag('K', 'A', 'C', ' ')},                                                                                                                     // Kachhi
+	"kfx":        {MakeTag('K', 'U', 'L', ' ')},                                                                                                                     // Kullu Pahari
+	"kfy":        {MakeTag('K', 'M', 'N', ' ')},                                                                                                                     // Kumaoni
+	"kg":         {MakeTag('K', 'O', 'N', '0')},                                                                                                                     // Kongo
+	"kgf":        {MakeTag('K', 'G', 'F', ' ')},                                                                                                                     // Kube
+	"kha":        {MakeTag('K', 'S', 'I', ' ')},                                                                                                                     // Khasi
+	"khb":        {MakeTag('X', 'B', 'D', ' ')},                                                                                                                     // Lü
+	"kht":        {MakeTag('K', 'H', 'T', ' ')},                                                                                                                     // Khamti
+	"khw":        {MakeTag('K', 'H', 'W', ' ')},                                                                                                                     // Khowar
+	"ki":         {MakeTag('K', 'I', 'K', ' ')},                                                                                                                     // Kikuyu
+	"kiu":        {MakeTag('K', 'I', 'U', ' ')},                                                                                                                     // Kirmanjki (individual language)
+	"kj":         {MakeTag('K', 'U', 'A', ' ')},                                                                                                                     // Kuanyama
+	"kjb":        {MakeTag('M', 'Y', 'N', ' ')},                                                                                                                     // Q'anjob'al
+	"kjd":        {MakeTag('K', 'J', 'D', ' ')},                                                                                                                     // Southern Kiwai
+	"kjh":        {MakeTag('K', 'H', 'A', ' ')},                                                                                                                     // Khakas
+	"kjj":        {MakeTag('K', 'J', 'J', ' ')},                                                                                                                     // Khinalugh
+	"kjp":        {MakeTag('K', 'J', 'P', ' '), MakeTag('K', 'R', 'N', ' ')},                                                                                        // Pwo Eastern Karen
+	"kjt":        {MakeTag('K', 'R', 'N', ' ')},                                                                                                                     // Phrae Pwo Karen
+	"kjz":        {MakeTag('K', 'J', 'Z', ' ')},                                                                                                                     // Bumthangkha
+	"kk":         {MakeTag('K', 'A', 'Z', ' ')},                                                                                                                     // Kazakh
+	"kkz":        {MakeTag('A', 'T', 'H', ' ')},                                                                                                                     // Kaska
+	"kl":         {MakeTag('G', 'R', 'N', ' ')},                                                                                                                     // Kalaallisut
+	"kln":        {MakeTag('K', 'A', 'L', ' ')},                                                                                                                     // Kalenjin
+	"km":         {MakeTag('K', 'H', 'M', ' ')},                                                                                                                     // Khmer
+	"kmb":        {MakeTag('M', 'B', 'N', ' ')},                                                                                                                     // Kimbundu
+	"kmg":        {MakeTag('K', 'M', 'G', ' ')},                                                                                                                     // Kâte
+	"kmv":        {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Karipúna Creole French
+	"kmw":        {MakeTag('K', 'M', 'O', ' ')},                                                                                                                     // Komo (Democratic Republic of Congo)
+	"kmz":        {MakeTag('K', 'M', 'Z', ' ')},                                                                                                                     // Khorasani Turkish
+	"kn":         {MakeTag('K', 'A', 'N', ' ')},                                                                                                                     // Kannada
+	"knj":        {MakeTag('M', 'Y', 'N', ' ')},                                                                                                                     // Western Kanjobal
+	"ko":         {MakeTag('K', 'O', 'H', ' '), MakeTag('K', 'O', 'R', ' ')},                                                                                        // Korean
+	"koi":        {MakeTag('K', 'O', 'P', ' ')},                                                                                                                     // Komi-Permyak
+	"kok":        {MakeTag('K', 'O', 'K', ' ')},                                                                                                                     // Konkani (macrolanguage)
+	"kos":        {MakeTag('K', 'O', 'S', ' ')},                                                                                                                     // Kosraean
+	"koy":        {MakeTag('A', 'T', 'H', ' ')},                                                                                                                     // Koyukon
+	"kpe":        {MakeTag('K', 'P', 'L', ' ')},                                                                                                                     // Kpelle
+	"kpv":        {MakeTag('K', 'O', 'Z', ' ')},                                                                                                                     // Komi-Zyrian
+	"kpy":        {MakeTag('K', 'Y', 'K', ' ')},                                                                                                                     // Koryak
+	"kqs":        {MakeTag('K', 'I', 'S', ' ')},                                                                                                                     // Northern Kissi
+	"kqy":        {MakeTag('K', 'R', 'T', ' ')},                                                                                                                     // Koorete
+	"kr":         {MakeTag('K', 'N', 'R', ' ')},                                                                                                                     // Kanuri
+	"krc":        {MakeTag('B', 'A', 'L', ' '), MakeTag('K', 'A', 'R', ' ')},                                                                                        // Karachay-Balkar
+	"kri":        {MakeTag('C', 'P', 'P', ' '), MakeTag('K', 'R', 'I', ' ')},                                                                                        // Krio
+	"krl":        {MakeTag('K', 'R', 'L', ' ')},                                                                                                                     // Karelian
+	"kru":        {MakeTag('K', 'U', 'U', ' ')},                                                                                                                     // Kurukh
+	"ks":         {MakeTag('K', 'S', 'H', ' ')},                                                                                                                     // Kashmiri
+	"ksh":        {MakeTag('K', 'S', 'H', '0')},                                                                                                                     // Kölsch
+	"kss":        {MakeTag('K', 'I', 'S', ' ')},                                                                                                                     // Southern Kisi
+	"ksu":        {MakeTag('K', 'S', 'U', ' ')},                                                                                                                     // Khamyang
+	"ksw":        {MakeTag('K', 'R', 'N', ' '), MakeTag('K', 'S', 'W', ' ')},                                                                                        // S'gaw Karen
+	"ktb":        {MakeTag('K', 'E', 'B', ' ')},                                                                                                                     // Kambaata
+	"ktu":        {MakeTag('K', 'O', 'N', ' ')},                                                                                                                     // Kituba (Democratic Republic of Congo)
+	"ktw":        {MakeTag('A', 'T', 'H', ' ')},                                                                                                                     // Kato
+	"ku":         {MakeTag('K', 'U', 'R', ' ')},                                                                                                                     // Kurdish
+	"kum":        {MakeTag('K', 'U', 'M', ' ')},                                                                                                                     // Kumyk
+	"kuu":        {MakeTag('A', 'T', 'H', ' ')},                                                                                                                     // Upper Kuskokwim
+	"kuw":        {MakeTag('B', 'A', 'D', '0')},                                                                                                                     // Kpagua
+	"kv":         {MakeTag('K', 'O', 'M', ' ')},                                                                                                                     // Komi
+	"kvl":        {MakeTag('K', 'R', 'N', ' ')},                                                                                                                     // Kayaw
+	"kvq":        {MakeTag('K', 'R', 'N', ' '), MakeTag('K', 'V', 'Q', ' ')},                                                                                        // Geba Karen
+	"kvt":        {MakeTag('K', 'R', 'N', ' ')},                                                                                                                     // Lahta Karen
+	"kvu":        {MakeTag('K', 'R', 'N', ' ')},                                                                                                                     // Yinbaw Karen
+	"kvy":        {MakeTag('K', 'R', 'N', ' ')},                                                                                                                     // Yintale Karen
+	"kw":         {MakeTag('C', 'O', 'R', ' ')},                                                                                                                     // Cornish
+	"kwk":        {MakeTag('K', 'W', 'K', ' ')},                                                                                                                     // Kwak'wala
+	"kww":        {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Kwinti
+	"kxc":        {MakeTag('K', 'M', 'S', ' ')},                                                                                                                     // Konso
+	"kxf":        {MakeTag('K', 'R', 'N', ' ')},                                                                                                                     // Manumanaw Karen
+	"kxk":        {MakeTag('K', 'R', 'N', ' ')},                                                                                                                     // Zayein Karen
+	"kxu":        {MakeTag('K', 'U', 'I', ' ')},                                                                                                                     // Kui (India)
+	"ky":         {MakeTag('K', 'I', 'R', ' ')},                                                                                                                     // Kirghiz
+	"kyu":        {MakeTag('K', 'R', 'N', ' '), MakeTag('K', 'Y', 'U', ' ')},                                                                                        // Western Kayah
+	"la":         {MakeTag('L', 'A', 'T', ' ')},                                                                                                                     // Latin
+	"lac":        {MakeTag('M', 'Y', 'N', ' ')},                                                                                                                     // Lacandon
+	"lad":        {MakeTag('J', 'U', 'D', ' ')},                                                                                                                     // Ladino
+	"lb":         {MakeTag('L', 'T', 'Z', ' ')},                                                                                                                     // Luxembourgish
+	"lbe":        {MakeTag('L', 'A', 'K', ' ')},                                                                                                                     // Lak
+	"lbj":        {MakeTag('L', 'D', 'K', ' ')},                                                                                                                     // Ladakhi
+	"lbl":        {MakeTag('B', 'I', 'K', ' ')},                                                                                                                     // Libon Bikol
+	"lef":        {MakeTag('L', 'E', 'F', ' ')},                                                                                                                     // Lelemi
+	"lez":        {MakeTag('L', 'E', 'Z', ' ')},                                                                                                                     // Lezghian
+	"lg":         {MakeTag('L', 'U', 'G', ' ')},                                                                                                                     // Ganda
+	"li":         {MakeTag('L', 'I', 'M', ' ')},                                                                                                                     // Limburgan
+	"lif":        {MakeTag('L', 'M', 'B', ' ')},                                                                                                                     // Limbu
+	"lij":        {MakeTag('L', 'I', 'J', ' ')},                                                                                                                     // Ligurian
+	"lir":        {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Liberian English
+	"lis":        {MakeTag('L', 'I', 'S', ' ')},                                                                                                                     // Lisu
+	"liv":        {MakeTag('L', 'I', 'V', ' ')},                                                                                                                     // Liv
+	"liy":        {MakeTag('B', 'A', 'D', '0')},                                                                                                                     // Banda-Bambari
+	"ljp":        {MakeTag('L', 'J', 'P', ' ')},                                                                                                                     // Lampung Api
+	"lki":        {MakeTag('L', 'K', 'I', ' ')},                                                                                                                     // Laki
+	"lld":        {MakeTag('L', 'A', 'D', ' ')},                                                                                                                     // Ladin
+	"lmn":        {MakeTag('L', 'A', 'M', ' ')},                                                                                                                     // Lambadi
+	"lmo":        {MakeTag('L', 'M', 'O', ' ')},                                                                                                                     // Lombard
+	"ln":         {MakeTag('L', 'I', 'N', ' ')},                                                                                                                     // Lingala
+	"lna":        {MakeTag('B', 'A', 'D', '0')},                                                                                                                     // Langbashe
+	"lnl":        {MakeTag('B', 'A', 'D', '0')},                                                                                                                     // South Central Banda
+	"lo":         {MakeTag('L', 'A', 'O', ' ')},                                                                                                                     // Lao
+	"lom":        {MakeTag('L', 'O', 'M', ' ')},                                                                                                                     // Loma (Liberia)
+	"lou":        {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Louisiana Creole
+	"lpo":        {MakeTag('L', 'P', 'O', ' ')},                                                                                                                     // Lipo
+	"lrc":        {MakeTag('L', 'R', 'C', ' ')},                                                                                                                     // Northern Luri
+	"lrt":        {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Larantuka Malay
+	"lt":         {MakeTag('L', 'T', 'H', ' ')},                                                                                                                     // Lithuanian
+	"lu":         {MakeTag('L', 'U', 'B', ' ')},                                                                                                                     // Luba-Katanga
+	"lua":        {MakeTag('L', 'U', 'A', ' ')},                                                                                                                     // Luba-Lulua
+	"luo":        {MakeTag('L', 'U', 'O', ' ')},                                                                                                                     // Luo (Kenya and Tanzania)
+	"lus":        {MakeTag('M', 'I', 'Z', ' '), MakeTag('Q', 'I', 'N', ' ')},                                                                                        // Lushai
+	"lut":        {MakeTag('L', 'U', 'T', ' ')},                                                                                                                     // Lushootseed
+	"luy":        {MakeTag('L', 'U', 'H', ' ')},                                                                                                                     // Luyia
+	"luz":        {MakeTag('L', 'R', 'C', ' ')},                                                                                                                     // Southern Luri
+	"lv":         {MakeTag('L', 'V', 'I', ' ')},                                                                                                                     // Latvian
+	"lzz":        {MakeTag('L', 'A', 'Z', ' ')},                                                                                                                     // Laz
+	"mad":        {MakeTag('M', 'A', 'D', ' ')},                                                                                                                     // Madurese
+	"mag":        {MakeTag('M', 'A', 'G', ' ')},                                                                                                                     // Magahi
+	"mai":        {MakeTag('M', 'T', 'H', ' ')},                                                                                                                     // Maithili
+	"mak":        {MakeTag('M', 'K', 'R', ' ')},                                                                                                                     // Makasar
+	"mam":        {MakeTag('M', 'A', 'M', ' '), MakeTag('M', 'Y', 'N', ' ')},                                                                                        // Mam
+	"man":        {MakeTag('M', 'N', 'K', ' ')},                                                                                                                     // Mandingo
+	"max":        {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // North Moluccan Malay
+	"mbf":        {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Baba Malay
+	"mbo":        {MakeTag('M', 'B', 'O', ' ')},                                                                                                                     // Mbo (Cameroon)
+	"mcm":        {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Malaccan Creole Portuguese
+	"mct":        {MakeTag('B', 'T', 'I', ' ')},                                                                                                                     // Mengisa
+	"mdf":        {MakeTag('M', 'O', 'K', ' ')},                                                                                                                     // Moksha
+	"mdr":        {MakeTag('M', 'D', 'R', ' ')},                                                                                                                     // Mandar
+	"mdy":        {MakeTag('M', 'L', 'E', ' ')},                                                                                                                     // Male (Ethiopia)
+	"men":        {MakeTag('M', 'D', 'E', ' ')},                                                                                                                     // Mende (Sierra Leone)
+	"mer":        {MakeTag('M', 'E', 'R', ' ')},                                                                                                                     // Meru
+	"mev":        {MakeTag('M', 'E', 'V', ' ')},                                                                                                                     // Mano
+	"mfa":        {MakeTag('M', 'F', 'A', ' ')},                                                                                                                     // Pattani Malay
+	"mfe":        {MakeTag('C', 'P', 'P', ' '), MakeTag('M', 'F', 'E', ' ')},                                                                                        // Morisyen
+	"mfp":        {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Makassar Malay
+	"mg":         {MakeTag('M', 'L', 'G', ' ')},                                                                                                                     // Malagasy
+	"mga":        {MakeTag('S', 'G', 'A', ' ')},                                                                                                                     // Middle Irish (900-1200)
+	"mh":         {MakeTag('M', 'A', 'H', ' ')},                                                                                                                     // Marshallese
+	"mhc":        {MakeTag('M', 'Y', 'N', ' ')},                                                                                                                     // Mocho
+	"mhr":        {MakeTag('L', 'M', 'A', ' ')},                                                                                                                     // Eastern Mari
+	"mhv":        {MakeTag('A', 'R', 'K', ' ')},                                                                                                                     // mhv
+	"mi":         {MakeTag('M', 'R', 'I', ' ')},                                                                                                                     // Maori
+	"min":        {MakeTag('M', 'I', 'N', ' ')},                                                                                                                     // Minangkabau
+	"mk":         {MakeTag('M', 'K', 'D', ' ')},                                                                                                                     // Macedonian
+	"mkn":        {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Kupang Malay
+	"mku":        {MakeTag('M', 'N', 'K', ' ')},                                                                                                                     // Konyanka Maninka
+	"mkw":        {MakeTag('M', 'K', 'W', ' ')},                                                                                                                     // Kituba (Congo)
+	"ml":         {MakeTag('M', 'A', 'L', ' '), MakeTag('M', 'L', 'R', ' ')},                                                                                        // Malayalam
+	"mlq":        {MakeTag('M', 'L', 'N', ' '), MakeTag('M', 'N', 'K', ' ')},                                                                                        // Western Maninkakan
+	"mn":         {MakeTag('M', 'N', 'G', ' ')},                                                                                                                     // Mongolian
+	"mnc":        {MakeTag('M', 'C', 'H', ' ')},                                                                                                                     // Manchu
+	"mnh":        {MakeTag('B', 'A', 'D', '0')},                                                                                                                     // Mono (Democratic Republic of Congo)
+	"mni":        {MakeTag('M', 'N', 'I', ' ')},                                                                                                                     // Manipuri
+	"mnk":        {MakeTag('M', 'N', 'D', ' '), MakeTag('M', 'N', 'K', ' ')},                                                                                        // Mandinka
+	"mns":        {MakeTag('M', 'A', 'N', ' ')},                                                                                                                     // Mansi
+	"mnw":        {MakeTag('M', 'O', 'N', ' ')},                                                                                                                     // Mon
+	"mo":         {MakeTag('M', 'O', 'L', ' ')},                                                                                                                     // Moldavian
+	"mod":        {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Mobilian
+	"moh":        {MakeTag('M', 'O', 'H', ' ')},                                                                                                                     // Mohawk
+	"mop":        {MakeTag('M', 'Y', 'N', ' ')},                                                                                                                     // Mopán Maya
+	"mos":        {MakeTag('M', 'O', 'S', ' ')},                                                                                                                     // Mossi
+	"mpe":        {MakeTag('M', 'A', 'J', ' ')},                                                                                                                     // Majang
+	"mr":         {MakeTag('M', 'A', 'R', ' ')},                                                                                                                     // Marathi
+	"mrh":        {MakeTag('Q', 'I', 'N', ' ')},                                                                                                                     // Mara Chin
+	"mrj":        {MakeTag('H', 'M', 'A', ' ')},                                                                                                                     // Western Mari
+	"ms":         {MakeTag('M', 'L', 'Y', ' ')},                                                                                                                     // Malay (macrolanguage)
+	"msc":        {MakeTag('M', 'N', 'K', ' ')},                                                                                                                     // Sankaran Maninka
+	"msi":        {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Sabah Malay
+	"mt":         {MakeTag('M', 'T', 'S', ' ')},                                                                                                                     // Maltese
+	"mtr":        {MakeTag('M', 'A', 'W', ' ')},                                                                                                                     // Mewari
+	"mud":        {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Mednyj Aleut
+	"mus":        {MakeTag('M', 'U', 'S', ' ')},                                                                                                                     // Creek
+	"mvb":        {MakeTag('A', 'T', 'H', ' ')},                                                                                                                     // Mattole
+	"mve":        {MakeTag('M', 'A', 'W', ' ')},                                                                                                                     // Marwari (Pakistan)
+	"mwk":        {MakeTag('M', 'N', 'K', ' ')},                                                                                                                     // Kita Maninkakan
+	"mwl":        {MakeTag('M', 'W', 'L', ' ')},                                                                                                                     // Mirandese
+	"mwq":        {MakeTag('Q', 'I', 'N', ' ')},                                                                                                                     // Mün Chin
+	"mwr":        {MakeTag('M', 'A', 'W', ' ')},                                                                                                                     // Marwari
+	"mww":        {MakeTag('M', 'W', 'W', ' ')},                                                                                                                     // Hmong Daw
+	"my":         {MakeTag('B', 'R', 'M', ' ')},                                                                                                                     // Burmese
+	"mym":        {MakeTag('M', 'E', 'N', ' ')},                                                                                                                     // Me'en
+	"myn":        {MakeTag('M', 'Y', 'N', ' ')},                                                                                                                     // Mayan languages
+	"myq":        {MakeTag('M', 'N', 'K', ' ')},                                                                                                                     // Forest Maninka
+	"myv":        {MakeTag('E', 'R', 'Z', ' ')},                                                                                                                     // Erzya
+	"mzb":        {MakeTag('B', 'B', 'R', ' ')},                                                                                                                     // Tumzabt
+	"mzn":        {MakeTag('M', 'Z', 'N', ' ')},                                                                                                                     // Mazanderani
+	"mzs":        {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Macanese
+	"na":         {MakeTag('N', 'A', 'U', ' ')},                                                                                                                     // Nauru
+	"nag":        {MakeTag('C', 'P', 'P', ' '), MakeTag('N', 'A', 'G', ' ')},                                                                                        // Naga Pidgin
+	"nah":        {MakeTag('N', 'A', 'H', ' ')},                                                                                                                     // Nahuatl languages
+	"nap":        {MakeTag('N', 'A', 'P', ' ')},                                                                                                                     // Neapolitan
+	"naz":        {MakeTag('N', 'A', 'H', ' ')},                                                                                                                     // Coatepec Nahuatl
+	"nb":         {MakeTag('N', 'O', 'R', ' ')},                                                                                                                     // Norwegian Bokmål
+	"nch":        {MakeTag('N', 'A', 'H', ' ')},                                                                                                                     // Central Huasteca Nahuatl
+	"nci":        {MakeTag('N', 'A', 'H', ' ')},                                                                                                                     // Classical Nahuatl
+	"ncj":        {MakeTag('N', 'A', 'H', ' ')},                                                                                                                     // Northern Puebla Nahuatl
+	"ncl":        {MakeTag('N', 'A', 'H', ' ')},                                                                                                                     // Michoacán Nahuatl
+	"ncx":        {MakeTag('N', 'A', 'H', ' ')},                                                                                                                     // Central Puebla Nahuatl
+	"nd":         {MakeTag('N', 'D', 'B', ' ')},                                                                                                                     // North Ndebele
+	"ndc":        {MakeTag('N', 'D', 'C', ' ')},                                                                                                                     // Ndau
+	"nds":        {MakeTag('N', 'D', 'S', ' ')},                                                                                                                     // Low German
+	"ne":         {MakeTag('N', 'E', 'P', ' ')},                                                                                                                     // Nepali (macrolanguage)
+	"nef":        {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Nefamese
+	"new":        {MakeTag('N', 'E', 'W', ' ')},                                                                                                                     // Nepal Bhasa
+	"ng":         {MakeTag('N', 'D', 'G', ' ')},                                                                                                                     // Ndonga
+	"nga":        {MakeTag('N', 'G', 'A', ' ')},                                                                                                                     // Ngbaka
+	"ngl":        {MakeTag('L', 'M', 'W', ' ')},                                                                                                                     // Lomwe
+	"ngm":        {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Ngatik Men's Creole
+	"ngo":        {MakeTag('S', 'X', 'T', ' ')},                                                                                                                     // Ngoni
+	"ngu":        {MakeTag('N', 'A', 'H', ' ')},                                                                                                                     // Guerrero Nahuatl
+	"nhc":        {MakeTag('N', 'A', 'H', ' ')},                                                                                                                     // Tabasco Nahuatl
+	"nhe":        {MakeTag('N', 'A', 'H', ' ')},                                                                                                                     // Eastern Huasteca Nahuatl
+	"nhg":        {MakeTag('N', 'A', 'H', ' ')},                                                                                                                     // Tetelcingo Nahuatl
+	"nhi":        {MakeTag('N', 'A', 'H', ' ')},                                                                                                                     // Zacatlán-Ahuacatlán-Tepetzintla Nahuatl
+	"nhk":        {MakeTag('N', 'A', 'H', ' ')},                                                                                                                     // Isthmus-Cosoleacaque Nahuatl
+	"nhm":        {MakeTag('N', 'A', 'H', ' ')},                                                                                                                     // Morelos Nahuatl
+	"nhn":        {MakeTag('N', 'A', 'H', ' ')},                                                                                                                     // Central Nahuatl
+	"nhp":        {MakeTag('N', 'A', 'H', ' ')},                                                                                                                     // Isthmus-Pajapan Nahuatl
+	"nhq":        {MakeTag('N', 'A', 'H', ' ')},                                                                                                                     // Huaxcaleca Nahuatl
+	"nht":        {MakeTag('N', 'A', 'H', ' ')},                                                                                                                     // Ometepec Nahuatl
+	"nhv":        {MakeTag('N', 'A', 'H', ' ')},                                                                                                                     // Temascaltepec Nahuatl
+	"nhw":        {MakeTag('N', 'A', 'H', ' ')},                                                                                                                     // Western Huasteca Nahuatl
+	"nhx":        {MakeTag('N', 'A', 'H', ' ')},                                                                                                                     // Isthmus-Mecayapan Nahuatl
+	"nhy":        {MakeTag('N', 'A', 'H', ' ')},                                                                                                                     // Northern Oaxaca Nahuatl
+	"nhz":        {MakeTag('N', 'A', 'H', ' ')},                                                                                                                     // Santa María La Alta Nahuatl
+	"niu":        {MakeTag('N', 'I', 'U', ' ')},                                                                                                                     // Niuean
+	"niv":        {MakeTag('G', 'I', 'L', ' ')},                                                                                                                     // Gilyak
+	"njt":        {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Ndyuka-Trio Pidgin
+	"njz":        {MakeTag('N', 'I', 'S', ' ')},                                                                                                                     // Nyishi
+	"nkx":        {MakeTag('I', 'J', 'O', ' ')},                                                                                                                     // Nkoroo
+	"nl":         {MakeTag('N', 'L', 'D', ' ')},                                                                                                                     // Dutch
+	"nla":        {MakeTag('B', 'M', 'L', ' ')},                                                                                                                     // Ngombale
+	"nlv":        {MakeTag('N', 'A', 'H', ' ')},                                                                                                                     // Orizaba Nahuatl
+	"nn":         {MakeTag('N', 'Y', 'N', ' ')},                                                                                                                     // Norwegian Nynorsk
+	"nnh":        {MakeTag('B', 'M', 'L', ' ')},                                                                                                                     // Ngiemboon
+	"nnz":        {MakeTag('B', 'M', 'L', ' ')},                                                                                                                     // Nda'nda'
+	"nod":        {MakeTag('N', 'T', 'A', ' ')},                                                                                                                     // Northern Thai
+	"noe":        {MakeTag('N', 'O', 'E', ' ')},                                                                                                                     // Nimadi
+	"nog":        {MakeTag('N', 'O', 'G', ' ')},                                                                                                                     // Nogai
+	"nop":        {MakeTag('N', 'O', 'P', ' ')},                                                                                                                     // Numanggang
+	"nov":        {MakeTag('N', 'O', 'V', ' ')},                                                                                                                     // Novial
+	"npl":        {MakeTag('N', 'A', 'H', ' ')},                                                                                                                     // Southeastern Puebla Nahuatl
+	"nqo":        {MakeTag('N', 'K', 'O', ' ')},                                                                                                                     // N'Ko
+	"nr":         {MakeTag('N', 'D', 'B', ' ')},                                                                                                                     // South Ndebele
+	"nsk":        {MakeTag('N', 'A', 'S', ' ')},                                                                                                                     // Naskapi
+	"nso":        {MakeTag('N', 'S', 'O', ' ')},                                                                                                                     // Pedi
+	"nsu":        {MakeTag('N', 'A', 'H', ' ')},                                                                                                                     // Sierra Negra Nahuatl
+	"nue":        {MakeTag('B', 'A', 'D', '0')},                                                                                                                     // Ngundu
+	"nuk":        {MakeTag('N', 'U', 'K', ' ')},                                                                                                                     // Nuu-chah-nulth
+	"nuu":        {MakeTag('B', 'A', 'D', '0')},                                                                                                                     // Ngbundu
+	"nuz":        {MakeTag('N', 'A', 'H', ' ')},                                                                                                                     // Tlamacazapa Nahuatl
+	"nv":         {MakeTag('A', 'T', 'H', ' '), MakeTag('N', 'A', 'V', ' ')},                                                                                        // Navajo
+	"nwe":        {MakeTag('B', 'M', 'L', ' ')},                                                                                                                     // Ngwe
+	"ny":         {MakeTag('C', 'H', 'I', ' ')},                                                                                                                     // Nyanja
+	"nym":        {MakeTag('N', 'Y', 'M', ' ')},                                                                                                                     // Nyamwezi
+	"nyn":        {MakeTag('N', 'K', 'L', ' ')},                                                                                                                     // Nyankole
+	"nza":        {MakeTag('N', 'Z', 'A', ' ')},                                                                                                                     // Tigon Mbembe
+	"oc":         {MakeTag('O', 'C', 'I', ' ')},                                                                                                                     // Occitan (post 1500)
+	"oj":         {MakeTag('O', 'J', 'B', ' ')},                                                                                                                     // Ojibwa
+	"ojs":        {MakeTag('O', 'C', 'R', ' ')},                                                                                                                     // Severn Ojibwa
+	"okd":        {MakeTag('I', 'J', 'O', ' ')},                                                                                                                     // Okodia
+	"okm":        {MakeTag('K', 'O', 'H', ' ')},                                                                                                                     // Middle Korean (10th-16th cent.)
+	"okr":        {MakeTag('I', 'J', 'O', ' ')},                                                                                                                     // Kirike
+	"om":         {MakeTag('O', 'R', 'O', ' ')},                                                                                                                     // Oromo
+	"one":        {MakeTag('O', 'N', 'E', ' ')},                                                                                                                     // Oneida
+	"ono":        {MakeTag('O', 'N', 'O', ' ')},                                                                                                                     // Onondaga
+	"onx":        {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Onin Based Pidgin
+	"oor":        {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Oorlams
+	"or":         {MakeTag('O', 'R', 'I', ' ')},                                                                                                                     // Oriya (macrolanguage)
+	"orr":        {MakeTag('I', 'J', 'O', ' ')},                                                                                                                     // Oruma
+	"os":         {MakeTag('O', 'S', 'S', ' ')},                                                                                                                     // Ossetian
+	"oua":        {MakeTag('B', 'B', 'R', ' ')},                                                                                                                     // Tagargrent
+	"pa":         {MakeTag('P', 'A', 'N', ' ')},                                                                                                                     // Panjabi
+	"pag":        {MakeTag('P', 'A', 'G', ' ')},                                                                                                                     // Pangasinan
+	"pam":        {MakeTag('P', 'A', 'M', ' ')},                                                                                                                     // Pampanga
+	"pap":        {MakeTag('C', 'P', 'P', ' '), MakeTag('P', 'A', 'P', '0')},                                                                                        // Papiamento
+	"pau":        {MakeTag('P', 'A', 'U', ' ')},                                                                                                                     // Palauan
+	"pcc":        {MakeTag('P', 'C', 'C', ' ')},                                                                                                                     // Bouyei
+	"pcd":        {MakeTag('P', 'C', 'D', ' ')},                                                                                                                     // Picard
+	"pce":        {MakeTag('P', 'L', 'G', ' ')},                                                                                                                     // Ruching Palaung
+	"pck":        {MakeTag('Q', 'I', 'N', ' ')},                                                                                                                     // Paite Chin
+	"pcm":        {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Nigerian Pidgin
+	"pdc":        {MakeTag('P', 'D', 'C', ' ')},                                                                                                                     // Pennsylvania German
+	"pdu":        {MakeTag('K', 'R', 'N', ' ')},                                                                                                                     // Kayan
+	"pea":        {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Peranakan Indonesian
+	"pey":        {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Petjo
+	"pga":        {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Sudanese Creole Arabic
+	"phk":        {MakeTag('P', 'H', 'K', ' ')},                                                                                                                     // Phake
+	"pi":         {MakeTag('P', 'A', 'L', ' ')},                                                                                                                     // Pali
+	"pih":        {MakeTag('C', 'P', 'P', ' '), MakeTag('P', 'I', 'H', ' ')},                                                                                        // Pitcairn-Norfolk
+	"pis":        {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Pijin
+	"pkh":        {MakeTag('Q', 'I', 'N', ' ')},                                                                                                                     // Pankhu
+	"pl":         {MakeTag('P', 'L', 'K', ' ')},                                                                                                                     // Polish
+	"plg":        {MakeTag('P', 'L', 'G', '0')},                                                                                                                     // Pilagá
+	"pll":        {MakeTag('P', 'L', 'G', ' ')},                                                                                                                     // Shwe Palaung
+	"pln":        {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Palenquero
+	"plp":        {MakeTag('P', 'A', 'P', ' ')},                                                                                                                     // Palpa
+	"pml":        {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Lingua Franca
+	"pms":        {MakeTag('P', 'M', 'S', ' ')},                                                                                                                     // Piemontese
+	"pmy":        {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Papuan Malay
+	"pnb":        {MakeTag('P', 'N', 'B', ' ')},                                                                                                                     // Western Panjabi
+	"poc":        {MakeTag('M', 'Y', 'N', ' ')},                                                                                                                     // Poqomam
+	"poh":        {MakeTag('M', 'Y', 'N', ' '), MakeTag('P', 'O', 'H', ' ')},                                                                                        // Poqomchi'
+	"pon":        {MakeTag('P', 'O', 'N', ' ')},                                                                                                                     // Pohnpeian
+	"pov":        {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Upper Guinea Crioulo
+	"pre":        {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Principense
+	"pro":        {MakeTag('P', 'R', 'O', ' ')},                                                                                                                     // Old Provençal (to 1500)
+	"prs":        {MakeTag('D', 'R', 'I', ' ')},                                                                                                                     // Dari
+	"ps":         {MakeTag('P', 'A', 'S', ' ')},                                                                                                                     // Pushto
+	"pt":         {MakeTag('P', 'T', 'G', ' ')},                                                                                                                     // Portuguese
+	"pub":        {MakeTag('Q', 'I', 'N', ' ')},                                                                                                                     // Purum
+	"pwo":        {MakeTag('K', 'R', 'N', ' '), MakeTag('P', 'W', 'O', ' ')},                                                                                        // Pwo Western Karen
+	"pww":        {MakeTag('K', 'R', 'N', ' ')},                                                                                                                     // Pwo Northern Karen
+	"quc":        {MakeTag('M', 'Y', 'N', ' '), MakeTag('Q', 'U', 'C', ' ')},                                                                                        // K'iche'
+	"quh":        {MakeTag('Q', 'U', 'H', ' ')},                                                                                                                     // South Bolivian Quechua
+	"qum":        {MakeTag('M', 'Y', 'N', ' ')},                                                                                                                     // Sipacapense
+	"quv":        {MakeTag('M', 'Y', 'N', ' ')},                                                                                                                     // Sacapulteco
+	"quz":        {MakeTag('Q', 'U', 'Z', ' ')},                                                                                                                     // Cusco Quechua
+	"qvi":        {MakeTag('Q', 'V', 'I', ' ')},                                                                                                                     // Imbabura Highland Quichua
+	"qwh":        {MakeTag('Q', 'W', 'H', ' ')},                                                                                                                     // Huaylas Ancash Quechua
+	"qwt":        {MakeTag('A', 'T', 'H', ' ')},                                                                                                                     // Kwalhioqua-Tlatskanai
+	"raj":        {MakeTag('R', 'A', 'J', ' ')},                                                                                                                     // Rajasthani
+	"ral":        {MakeTag('Q', 'I', 'N', ' ')},                                                                                                                     // Ralte
+	"rar":        {MakeTag('R', 'A', 'R', ' ')},                                                                                                                     // Rarotongan
+	"rbb":        {MakeTag('P', 'L', 'G', ' ')},                                                                                                                     // Rumai Palaung
+	"rbl":        {MakeTag('B', 'I', 'K', ' ')},                                                                                                                     // Miraya Bikol
+	"rcf":        {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Réunion Creole French
+	"rej":        {MakeTag('R', 'E', 'J', ' ')},                                                                                                                     // Rejang
+	"rhg":        {MakeTag('R', 'H', 'G', ' ')},                                                                                                                     // Rohingya
+	"ria":        {MakeTag('R', 'I', 'A', ' ')},                                                                                                                     // Riang (India)
+	"rif":        {MakeTag('B', 'B', 'R', ' '), MakeTag('R', 'I', 'F', ' ')},                                                                                        // Tarifit
+	"rit":        {MakeTag('R', 'I', 'T', ' ')},                                                                                                                     // Ritharrngu
+	"rki":        {MakeTag('A', 'R', 'K', ' ')},                                                                                                                     // Rakhine
+	"rkw":        {MakeTag('R', 'K', 'W', ' ')},                                                                                                                     // Arakwal
+	"rm":         {MakeTag('R', 'M', 'S', ' ')},                                                                                                                     // Romansh
+	"rmy":        {MakeTag('R', 'M', 'Y', ' ')},                                                                                                                     // Vlax Romani
+	"rmz":        {MakeTag('A', 'R', 'K', ' ')},                                                                                                                     // Marma
+	"rn":         {MakeTag('R', 'U', 'N', ' ')},                                                                                                                     // Rundi
+	"ro":         {MakeTag('R', 'O', 'M', ' ')},                                                                                                                     // Romanian
+	"rom":        {MakeTag('R', 'O', 'Y', ' ')},                                                                                                                     // Romany
+	"rop":        {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Kriol
+	"rtc":        {MakeTag('Q', 'I', 'N', ' ')},                                                                                                                     // Rungtu Chin
+	"rtm":        {MakeTag('R', 'T', 'M', ' ')},                                                                                                                     // Rotuman
+	"ru":         {MakeTag('R', 'U', 'S', ' ')},                                                                                                                     // Russian
+	"rue":        {MakeTag('R', 'S', 'Y', ' ')},                                                                                                                     // Rusyn
+	"rup":        {MakeTag('R', 'U', 'P', ' ')},                                                                                                                     // Macedo-Romanian
+	"rw":         {MakeTag('R', 'U', 'A', ' ')},                                                                                                                     // Kinyarwanda
+	"rwr":        {MakeTag('M', 'A', 'W', ' ')},                                                                                                                     // Marwari (India)
+	"sa":         {MakeTag('S', 'A', 'N', ' ')},                                                                                                                     // Sanskrit
+	"sah":        {MakeTag('Y', 'A', 'K', ' ')},                                                                                                                     // Yakut
+	"sam":        {MakeTag('P', 'A', 'A', ' ')},                                                                                                                     // Samaritan Aramaic
+	"sas":        {MakeTag('S', 'A', 'S', ' ')},                                                                                                                     // Sasak
+	"sat":        {MakeTag('S', 'A', 'T', ' ')},                                                                                                                     // Santali
+	"sc":         {MakeTag('S', 'R', 'D', ' ')},                                                                                                                     // Sardinian
+	"scf":        {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // San Miguel Creole French
+	"sch":        {MakeTag('Q', 'I', 'N', ' ')},                                                                                                                     // Sakachep
+	"sci":        {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Sri Lankan Creole Malay
+	"sck":        {MakeTag('S', 'A', 'D', ' ')},                                                                                                                     // Sadri
+	"scn":        {MakeTag('S', 'C', 'N', ' ')},                                                                                                                     // Sicilian
+	"sco":        {MakeTag('S', 'C', 'O', ' ')},                                                                                                                     // Scots
+	"scs":        {MakeTag('A', 'T', 'H', ' '), MakeTag('S', 'C', 'S', ' '), MakeTag('S', 'L', 'A', ' ')},                                                           // North Slavey
+	"sd":         {MakeTag('S', 'N', 'D', ' ')},                                                                                                                     // Sindhi
+	"sds":        {MakeTag('B', 'B', 'R', ' ')},                                                                                                                     // Sened
+	"se":         {MakeTag('N', 'S', 'M', ' ')},                                                                                                                     // Northern Sami
+	"see":        {MakeTag('S', 'E', 'E', ' ')},                                                                                                                     // Seneca
+	"seh":        {MakeTag('S', 'N', 'A', ' ')},                                                                                                                     // Sena
+	"sek":        {MakeTag('A', 'T', 'H', ' ')},                                                                                                                     // Sekani
+	"sel":        {MakeTag('S', 'E', 'L', ' ')},                                                                                                                     // Selkup
+	"sez":        {MakeTag('Q', 'I', 'N', ' ')},                                                                                                                     // Senthang Chin
+	"sfm":        {MakeTag('S', 'F', 'M', ' ')},                                                                                                                     // Small Flowery Miao
+	"sg":         {MakeTag('S', 'G', 'O', ' ')},                                                                                                                     // Sango
+	"sga":        {MakeTag('S', 'G', 'A', ' ')},                                                                                                                     // Old Irish (to 900)
+	"sgs":        {MakeTag('S', 'G', 'S', ' ')},                                                                                                                     // Samogitian
+	"sgw":        {MakeTag('C', 'H', 'G', ' ')},                                                                                                                     // Sebat Bet Gurage
+	"shi":        {MakeTag('B', 'B', 'R', ' '), MakeTag('S', 'H', 'I', ' ')},                                                                                        // Tachelhit
+	"shl":        {MakeTag('Q', 'I', 'N', ' ')},                                                                                                                     // Shendu
+	"shn":        {MakeTag('S', 'H', 'N', ' ')},                                                                                                                     // Shan
+	"shy":        {MakeTag('B', 'B', 'R', ' ')},                                                                                                                     // Tachawit
+	"si":         {MakeTag('S', 'N', 'H', ' ')},                                                                                                                     // Sinhala
+	"sid":        {MakeTag('S', 'I', 'D', ' ')},                                                                                                                     // Sidamo
+	"siz":        {MakeTag('B', 'B', 'R', ' ')},                                                                                                                     // Siwi
+	"sja":        {MakeTag('S', 'J', 'A', ' ')},                                                                                                                     // Epena
+	"sjd":        {MakeTag('K', 'S', 'M', ' ')},                                                                                                                     // Kildin Sami
+	"sje":        {MakeTag('S', 'J', 'E', ' ')},                                                                                                                     // Pite Sami
+	"sjo":        {MakeTag('S', 'I', 'B', ' ')},                                                                                                                     // Xibe
+	"sjs":        {MakeTag('B', 'B', 'R', ' ')},                                                                                                                     // Senhaja De Srair
+	"sju":        {MakeTag('S', 'J', 'U', ' ')},                                                                                                                     // Ume Sami
+	"sk":         {MakeTag('S', 'K', 'Y', ' ')},                                                                                                                     // Slovak
+	"skr":        {MakeTag('S', 'R', 'K', ' ')},                                                                                                                     // Saraiki
+	"skw":        {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Skepi Creole Dutch
+	"sl":         {MakeTag('S', 'L', 'V', ' ')},                                                                                                                     // Slovenian
+	"sm":         {MakeTag('S', 'M', 'O', ' ')},                                                                                                                     // Samoan
+	"sma":        {MakeTag('S', 'S', 'M', ' ')},                                                                                                                     // Southern Sami
+	"smj":        {MakeTag('L', 'S', 'M', ' ')},                                                                                                                     // Lule Sami
+	"smn":        {MakeTag('I', 'S', 'M', ' ')},                                                                                                                     // Inari Sami
+	"sms":        {MakeTag('S', 'K', 'S', ' ')},                                                                                                                     // Skolt Sami
+	"smt":        {MakeTag('Q', 'I', 'N', ' ')},                                                                                                                     // Simte
+	"sn":         {MakeTag('S', 'N', 'A', '0')},                                                                                                                     // Shona
+	"snk":        {MakeTag('S', 'N', 'K', ' ')},                                                                                                                     // Soninke
+	"so":         {MakeTag('S', 'M', 'L', ' ')},                                                                                                                     // Somali
+	"sop":        {MakeTag('S', 'O', 'P', ' ')},                                                                                                                     // Songe
+	"sq":         {MakeTag('S', 'Q', 'I', ' ')},                                                                                                                     // Albanian
+	"sr":         {MakeTag('S', 'R', 'B', ' ')},                                                                                                                     // Serbian
+	"srm":        {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Saramaccan
+	"srn":        {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Sranan Tongo
+	"srr":        {MakeTag('S', 'R', 'R', ' ')},                                                                                                                     // Serer
+	"srs":        {MakeTag('A', 'T', 'H', ' ')},                                                                                                                     // Sarsi
+	"ss":         {MakeTag('S', 'W', 'Z', ' ')},                                                                                                                     // Swati
+	"st":         {MakeTag('S', 'O', 'T', ' ')},                                                                                                                     // Southern Sotho
+	"sta":        {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Settla
+	"stq":        {MakeTag('S', 'T', 'Q', ' ')},                                                                                                                     // Saterfriesisch
+	"str":        {MakeTag('S', 'T', 'R', ' ')},                                                                                                                     // Straits Salish
+	"stv":        {MakeTag('S', 'I', 'G', ' ')},                                                                                                                     // Silt'e
+	"su":         {MakeTag('S', 'U', 'N', ' ')},                                                                                                                     // Sundanese
+	"suk":        {MakeTag('S', 'U', 'K', ' ')},                                                                                                                     // Sukuma
+	"suq":        {MakeTag('S', 'U', 'R', ' ')},                                                                                                                     // Tirmaga-Chai Suri
+	"sv":         {MakeTag('S', 'V', 'E', ' ')},                                                                                                                     // Swedish
+	"sva":        {MakeTag('S', 'V', 'A', ' ')},                                                                                                                     // Svan
+	"svc":        {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Vincentian Creole English
+	"sw":         {MakeTag('S', 'W', 'K', ' ')},                                                                                                                     // Swahili (macrolanguage)
+	"swb":        {MakeTag('C', 'M', 'R', ' ')},                                                                                                                     // Maore Comorian
+	"swn":        {MakeTag('B', 'B', 'R', ' ')},                                                                                                                     // Sawknah
+	"swv":        {MakeTag('M', 'A', 'W', ' ')},                                                                                                                     // Shekhawati
+	"sxu":        {MakeTag('S', 'X', 'U', ' ')},                                                                                                                     // Upper Saxon
+	"syc":        {MakeTag('S', 'Y', 'R', ' '), MakeTag('S', 'Y', 'R', 'E'), MakeTag('S', 'Y', 'R', 'J'), MakeTag('S', 'Y', 'R', 'N')},                              // Classical Syriac
+	"syl":        {MakeTag('S', 'Y', 'L', ' ')},                                                                                                                     // Sylheti
+	"syr":        {MakeTag('S', 'Y', 'R', ' '), MakeTag('S', 'Y', 'R', 'E'), MakeTag('S', 'Y', 'R', 'J'), MakeTag('S', 'Y', 'R', 'N')},                              // Syriac
+	"szl":        {MakeTag('S', 'Z', 'L', ' ')},                                                                                                                     // Silesian
+	"ta":         {MakeTag('T', 'A', 'M', ' ')},                                                                                                                     // Tamil
+	"taa":        {MakeTag('A', 'T', 'H', ' ')},                                                                                                                     // Lower Tanana
+	"tab":        {MakeTag('T', 'A', 'B', ' ')},                                                                                                                     // Tabassaran
+	"taq":        {MakeTag('B', 'B', 'R', ' '), MakeTag('T', 'A', 'Q', ' '), MakeTag('T', 'M', 'H', ' ')},                                                           // Tamasheq
+	"tas":        {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Tay Boi
+	"tau":        {MakeTag('A', 'T', 'H', ' ')},                                                                                                                     // Upper Tanana
+	"tbv":        {MakeTag('T', 'B', 'V', ' ')},                                                                                                                     // Tobo
+	"tcb":        {MakeTag('A', 'T', 'H', ' ')},                                                                                                                     // Tanacross
+	"tce":        {MakeTag('A', 'T', 'H', ' ')},                                                                                                                     // Southern Tutchone
+	"tch":        {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Turks And Caicos Creole English
+	"tcp":        {MakeTag('Q', 'I', 'N', ' ')},                                                                                                                     // Tawr Chin
+	"tcs":        {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Torres Strait Creole
+	"tcy":        {MakeTag('T', 'U', 'L', ' ')},                                                                                                                     // Tulu
+	"tcz":        {MakeTag('Q', 'I', 'N', ' ')},                                                                                                                     // Thado Chin
+	"tdc":        {MakeTag('T', 'D', 'C', ' ')},                                                                                                                     // Emberá-Tadó
+	"tdd":        {MakeTag('T', 'D', 'D', ' ')},                                                                                                                     // Tai Nüa
+	"te":         {MakeTag('T', 'E', 'L', ' ')},                                                                                                                     // Telugu
+	"tem":        {MakeTag('T', 'M', 'N', ' ')},                                                                                                                     // Timne
+	"tet":        {MakeTag('T', 'E', 'T', ' ')},                                                                                                                     // Tetum
+	"tez":        {MakeTag('B', 'B', 'R', ' ')},                                                                                                                     // Tetserret
+	"tfn":        {MakeTag('A', 'T', 'H', ' ')},                                                                                                                     // Tanaina
+	"tg":         {MakeTag('T', 'A', 'J', ' ')},                                                                                                                     // Tajik
+	"tgh":        {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Tobagonian Creole English
+	"tgj":        {MakeTag('N', 'I', 'S', ' ')},                                                                                                                     // Tagin
+	"tgx":        {MakeTag('A', 'T', 'H', ' ')},                                                                                                                     // Tagish
+	"th":         {MakeTag('T', 'H', 'A', ' ')},                                                                                                                     // Thai
+	"thp":        {MakeTag('T', 'H', 'P', ' ')},                                                                                                                     // Thompson
+	"tht":        {MakeTag('A', 'T', 'H', ' ')},                                                                                                                     // Tahltan
+	"thv":        {MakeTag('B', 'B', 'R', ' '), MakeTag('T', 'H', 'V', ' '), MakeTag('T', 'M', 'H', ' ')},                                                           // Tahaggart Tamahaq
+	"thz":        {MakeTag('B', 'B', 'R', ' '), MakeTag('T', 'H', 'Z', ' '), MakeTag('T', 'M', 'H', ' ')},                                                           // Tayart Tamajeq
+	"ti":         {MakeTag('T', 'G', 'Y', ' ')},                                                                                                                     // Tigrinya
+	"tia":        {MakeTag('B', 'B', 'R', ' ')},                                                                                                                     // Tidikelt Tamazight
+	"tig":        {MakeTag('T', 'G', 'R', ' ')},                                                                                                                     // Tigre
+	"tiv":        {MakeTag('T', 'I', 'V', ' ')},                                                                                                                     // Tiv
+	"tjl":        {MakeTag('T', 'J', 'L', ' ')},                                                                                                                     // Tai Laing
+	"tjo":        {MakeTag('B', 'B', 'R', ' ')},                                                                                                                     // Temacine Tamazight
+	"tk":         {MakeTag('T', 'K', 'M', ' ')},                                                                                                                     // Turkmen
+	"tl":         {MakeTag('T', 'G', 'L', ' ')},                                                                                                                     // Tagalog
+	"tli":        {MakeTag('T', 'L', 'I', ' ')},                                                                                                                     // Tlingit
+	"tly":        {MakeTag('T', 'L', 'Y', ' ')},                                                                                                                     // Talysh
+	"tmg":        {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Ternateño
+	"tmh":        {MakeTag('B', 'B', 'R', ' '), MakeTag('T', 'M', 'H', ' ')},                                                                                        // Tamashek
+	"tn":         {MakeTag('T', 'N', 'A', ' ')},                                                                                                                     // Tswana
+	"to":         {MakeTag('T', 'G', 'N', ' ')},                                                                                                                     // Tonga (Tonga Islands)
+	"tod":        {MakeTag('T', 'O', 'D', '0')},                                                                                                                     // Toma
+	"toi":        {MakeTag('T', 'N', 'G', ' ')},                                                                                                                     // Tonga (Zambia)
+	"toj":        {MakeTag('M', 'Y', 'N', ' ')},                                                                                                                     // Tojolabal
+	"tol":        {MakeTag('A', 'T', 'H', ' ')},                                                                                                                     // Tolowa
+	"tor":        {MakeTag('B', 'A', 'D', '0')},                                                                                                                     // Togbo-Vara Banda
+	"tpi":        {MakeTag('C', 'P', 'P', ' '), MakeTag('T', 'P', 'I', ' ')},                                                                                        // Tok Pisin
+	"tr":         {MakeTag('T', 'R', 'K', ' ')},                                                                                                                     // Turkish
+	"trf":        {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Trinidadian Creole English
+	"tru":        {MakeTag('S', 'Y', 'R', ' '), MakeTag('T', 'U', 'A', ' ')},                                                                                        // Turoyo
+	"ts":         {MakeTag('T', 'S', 'G', ' ')},                                                                                                                     // Tsonga
+	"tsj":        {MakeTag('T', 'S', 'J', ' ')},                                                                                                                     // Tshangla
+	"tt":         {MakeTag('T', 'A', 'T', ' ')},                                                                                                                     // Tatar
+	"ttc":        {MakeTag('M', 'Y', 'N', ' ')},                                                                                                                     // Tektiteko
+	"ttm":        {MakeTag('A', 'T', 'H', ' ')},                                                                                                                     // Northern Tutchone
+	"ttq":        {MakeTag('B', 'B', 'R', ' '), MakeTag('T', 'M', 'H', ' '), MakeTag('T', 'T', 'Q', ' ')},                                                           // Tawallammat Tamajaq
+	"tum":        {MakeTag('T', 'U', 'M', ' ')},                                                                                                                     // Tumbuka
+	"tus":        {MakeTag('T', 'U', 'S', ' ')},                                                                                                                     // Tuscarora
+	"tuu":        {MakeTag('A', 'T', 'H', ' ')},                                                                                                                     // Tututni
+	"tvl":        {MakeTag('T', 'V', 'L', ' ')},                                                                                                                     // Tuvalu
+	"tvy":        {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Timor Pidgin
+	"tw":         {MakeTag('A', 'K', 'A', ' '), MakeTag('T', 'W', 'I', ' ')},                                                                                        // Twi
+	"txc":        {MakeTag('A', 'T', 'H', ' ')},                                                                                                                     // Tsetsaut
+	"ty":         {MakeTag('T', 'H', 'T', ' ')},                                                                                                                     // Tahitian
+	"tyv":        {MakeTag('T', 'U', 'V', ' ')},                                                                                                                     // Tuvinian
+	"tyz":        {MakeTag('T', 'Y', 'Z', ' ')},                                                                                                                     // Tày
+	"tzh":        {MakeTag('M', 'Y', 'N', ' ')},                                                                                                                     // Tzeltal
+	"tzj":        {MakeTag('M', 'Y', 'N', ' ')},                                                                                                                     // Tz'utujil
+	"tzm":        {MakeTag('B', 'B', 'R', ' '), MakeTag('T', 'Z', 'M', ' ')},                                                                                        // Central Atlas Tamazight
+	"tzo":        {MakeTag('M', 'Y', 'N', ' '), MakeTag('T', 'Z', 'O', ' ')},                                                                                        // Tzotzil
+	"ubl":        {MakeTag('B', 'I', 'K', ' ')},                                                                                                                     // Buhi'non Bikol
+	"udi":        {MakeTag('U', 'D', 'I', ' ')},                                                                                                                     // Udi
+	"udm":        {MakeTag('U', 'D', 'M', ' ')},                                                                                                                     // Udmurt
+	"ug":         {MakeTag('U', 'Y', 'G', ' ')},                                                                                                                     // Uighur
+	"uk":         {MakeTag('U', 'K', 'R', ' ')},                                                                                                                     // Ukrainian
+	"uln":        {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Unserdeutsch
+	"umb":        {MakeTag('U', 'M', 'B', ' ')},                                                                                                                     // Umbundu
+	"unr":        {MakeTag('M', 'U', 'N', ' ')},                                                                                                                     // Mundari
+	"ur":         {MakeTag('U', 'R', 'D', ' ')},                                                                                                                     // Urdu
+	"usp":        {MakeTag('M', 'Y', 'N', ' ')},                                                                                                                     // Uspanteco
+	"uz":         {MakeTag('U', 'Z', 'B', ' ')},                                                                                                                     // Uzbek
+	"vap":        {MakeTag('Q', 'I', 'N', ' ')},                                                                                                                     // Vaiphei
+	"ve":         {MakeTag('V', 'E', 'N', ' ')},                                                                                                                     // Venda
+	"vec":        {MakeTag('V', 'E', 'C', ' ')},                                                                                                                     // Venetian
+	"vi":         {MakeTag('V', 'I', 'T', ' ')},                                                                                                                     // Vietnamese
+	"vic":        {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Virgin Islands Creole English
+	"vkp":        {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Korlai Creole Portuguese
+	"vls":        {MakeTag('F', 'L', 'E', ' ')},                                                                                                                     // Vlaams
+	"vmw":        {MakeTag('M', 'A', 'K', ' ')},                                                                                                                     // Makhuwa
+	"vo":         {MakeTag('V', 'O', 'L', ' ')},                                                                                                                     // Volapük
+	"vro":        {MakeTag('V', 'R', 'O', ' ')},                                                                                                                     // Võro
+	"wa":         {MakeTag('W', 'L', 'N', ' ')},                                                                                                                     // Walloon
+	"war":        {MakeTag('W', 'A', 'R', ' ')},                                                                                                                     // Waray (Philippines)
+	"wbl":        {MakeTag('W', 'B', 'L', ' ')},                                                                                                                     // Wakhi
+	"wbr":        {MakeTag('W', 'A', 'G', ' ')},                                                                                                                     // Wagdi
+	"wci":        {MakeTag('W', 'C', 'I', ' ')},                                                                                                                     // Waci Gbe
+	"wdt":        {MakeTag('W', 'D', 'T', ' ')},                                                                                                                     // Wendat
+	"wea":        {MakeTag('K', 'R', 'N', ' ')},                                                                                                                     // Wewaw
+	"wes":        {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Cameroon Pidgin
+	"weu":        {MakeTag('Q', 'I', 'N', ' ')},                                                                                                                     // Rawngtu Chin
+	"wlc":        {MakeTag('C', 'M', 'R', ' ')},                                                                                                                     // Mwali Comorian
+	"wle":        {MakeTag('S', 'I', 'G', ' ')},                                                                                                                     // Wolane
+	"wlk":        {MakeTag('A', 'T', 'H', ' ')},                                                                                                                     // Wailaki
+	"wni":        {MakeTag('C', 'M', 'R', ' ')},                                                                                                                     // Ndzwani Comorian
+	"wo":         {MakeTag('W', 'L', 'F', ' ')},                                                                                                                     // Wolof
+	"wry":        {MakeTag('M', 'A', 'W', ' ')},                                                                                                                     // Merwari
+	"wtm":        {MakeTag('W', 'T', 'M', ' ')},                                                                                                                     // Mewati
+	"wyn":        {MakeTag('W', 'Y', 'N', ' ')},                                                                                                                     // Wyandot
+	"xal":        {MakeTag('K', 'L', 'M', ' '), MakeTag('T', 'O', 'D', ' ')},                                                                                        // Kalmyk
+	"xan":        {MakeTag('S', 'E', 'K', ' ')},                                                                                                                     // Xamtanga
+	"xh":         {MakeTag('X', 'H', 'S', ' ')},                                                                                                                     // Xhosa
+	"xjb":        {MakeTag('X', 'J', 'B', ' ')},                                                                                                                     // Minjungbal
+	"xkf":        {MakeTag('X', 'K', 'F', ' ')},                                                                                                                     // Khengkha
+	"xmg":        {MakeTag('B', 'M', 'L', ' ')},                                                                                                                     // Mengaka
+	"xmm":        {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Manado Malay
+	"xnj":        {MakeTag('S', 'X', 'T', ' ')},                                                                                                                     // Ngoni (Tanzania)
+	"xnq":        {MakeTag('S', 'X', 'T', ' ')},                                                                                                                     // Ngoni (Mozambique)
+	"xog":        {MakeTag('X', 'O', 'G', ' ')},                                                                                                                     // Soga
+	"xpe":        {MakeTag('X', 'P', 'E', ' ')},                                                                                                                     // Liberia Kpelle
+	"xsl":        {MakeTag('A', 'T', 'H', ' '), MakeTag('S', 'L', 'A', ' '), MakeTag('S', 'S', 'L', ' ')},                                                           // South Slavey
+	"xst":        {MakeTag('S', 'I', 'G', ' ')},                                                                                                                     // xst
+	"xub":        {MakeTag('X', 'U', 'B', ' ')},                                                                                                                     // Betta Kurumba
+	"xuj":        {MakeTag('X', 'U', 'J', ' ')},                                                                                                                     // Jennu Kurumba
+	"xup":        {MakeTag('A', 'T', 'H', ' ')},                                                                                                                     // Upper Umpqua
+	"yaj":        {MakeTag('B', 'A', 'D', '0')},                                                                                                                     // Banda-Yangere
+	"yao":        {MakeTag('Y', 'A', 'O', ' ')},                                                                                                                     // Yao
+	"yap":        {MakeTag('Y', 'A', 'P', ' ')},                                                                                                                     // Yapese
+	"ybb":        {MakeTag('B', 'M', 'L', ' ')},                                                                                                                     // Yemba
+	"ycr":        {MakeTag('C', 'P', 'P', ' ')},                                                                                                                     // Yilan Creole
+	"ygp":        {MakeTag('Y', 'G', 'P', ' ')},                                                                                                                     // Gepo
+	"yi":         {MakeTag('J', 'I', 'I', ' ')},                                                                                                                     // Yiddish
+	"yna":        {MakeTag('Y', 'N', 'A', ' ')},                                                                                                                     // Aluo
+	"yo":         {MakeTag('Y', 'B', 'A', ' ')},                                                                                                                     // Yoruba
+	"yua":        {MakeTag('M', 'Y', 'N', ' ')},                                                                                                                     // Yucateco
+	"yuf":        {MakeTag('Y', 'U', 'F', ' ')},                                                                                                                     // Havasupai-Walapai-Yavapai
+	"ywq":        {MakeTag('Y', 'W', 'Q', ' ')},                                                                                                                     // Wuding-Luquan Yi
+	"za":         {MakeTag('Z', 'H', 'A', ' ')},                                                                                                                     // Zhuang
+	"zdj":        {MakeTag('C', 'M', 'R', ' ')},                                                                                                                     // Ngazidja Comorian
+	"zea":        {MakeTag('Z', 'E', 'A', ' ')},                                                                                                                     // Zeeuws
+	"zen":        {MakeTag('B', 'B', 'R', ' ')},                                                                                                                     // Zenaga
+	"zgh":        {MakeTag('B', 'B', 'R', ' '), MakeTag('Z', 'G', 'H', ' ')},                                                                                        // Standard Moroccan Tamazight
 	"zh":         {MakeTag('Z', 'H', 'S', ' '), MakeTag('Z', 'H', 'T', ' '), MakeTag('Z', 'H', 'H', ' '), MakeTag('Z', 'H', 'P', ' '), MakeTag('Z', 'H', 'T', 'M')}, // Chinese (prefer Simplified)
 	"zh-cn":      {MakeTag('Z', 'H', 'S', ' ')},                                                                                                                     // Chinese, Simplified (China)
 	"zh-sg":      {MakeTag('Z', 'H', 'S', ' ')},                                                                                                                     // Chinese, Simplified (Singapore)
 	"zh-hans":    {MakeTag('Z', 'H', 'S', ' ')},                                                                                                                     // Chinese, Simplified (by script)
 	"zh-tw":      {MakeTag('Z', 'H', 'T', ' ')},                                                                                                                     // Chinese, Traditional (Taiwan)
-	"zh-hant":    {MakeTag('Z', 'H', 'T', ' '), MakeTag('Z', 'H', 'H', ' '), MakeTag('Z', 'H', 'T', 'M')},                                                         // Chinese, Traditional (by script)
+	"zh-hant":    {MakeTag('Z', 'H', 'T', ' '), MakeTag('Z', 'H', 'H', ' '), MakeTag('Z', 'H', 'T', 'M')},                                                           // Chinese, Traditional (by script)
 	"zh-hk":      {MakeTag('Z', 'H', 'H', ' ')},                                                                                                                     // Chinese, Traditional (Hong Kong)
 	"zh-hant-hk": {MakeTag('Z', 'H', 'H', ' ')},                                                                                                                     // Chinese, Traditional (Hong Kong, by script)
-	"zh-mo":      {MakeTag('Z', 'H', 'T', 'M'), MakeTag('Z', 'H', 'H', ' ')},                                                                                       // Chinese, Traditional (Macao)
-	"zh-hant-mo": {MakeTag('Z', 'H', 'T', 'M'), MakeTag('Z', 'H', 'H', ' ')},                                                                                       // Chinese, Traditional (Macao, by script)
-	"zmz": {MakeTag('B', 'A', 'D', '0')},                                                                                                                     // Mbandja
-	"zne": {MakeTag('Z', 'N', 'D', ' ')},                                                                                                                     // Zande (individual language)
-	"zom": {MakeTag('Q', 'I', 'N', ' ')},                                                                                                                     // Zou
-	"zu":  {MakeTag('Z', 'U', 'L', ' ')},                                                                                                                     // Zulu
-	"zum": {MakeTag('L', 'R', 'C', ' ')},                                                                                                                     // Kumzari
-	"zyp": {MakeTag('Q', 'I', 'N', ' ')},                                                                                                                     // Zyphe Chin
-	"zza": {MakeTag('Z', 'Z', 'A', ' ')},                                                                                                                     // Zaza
+	"zh-mo":      {MakeTag('Z', 'H', 'T', 'M'), MakeTag('Z', 'H', 'H', ' ')},                                                                                        // Chinese, Traditional (Macao)
+	"zh-hant-mo": {MakeTag('Z', 'H', 'T', 'M'), MakeTag('Z', 'H', 'H', ' ')},                                                                                        // Chinese, Traditional (Macao, by script)
+	"zmz":        {MakeTag('B', 'A', 'D', '0')},                                                                                                                     // Mbandja
+	"zne":        {MakeTag('Z', 'N', 'D', ' ')},                                                                                                                     // Zande (individual language)
+	"zom":        {MakeTag('Q', 'I', 'N', ' ')},                                                                                                                     // Zou
+	"zu":         {MakeTag('Z', 'U', 'L', ' ')},                                                                                                                     // Zulu
+	"zum":        {MakeTag('L', 'R', 'C', ' ')},                                                                                                                     // Kumzari
+	"zyp":        {MakeTag('Q', 'I', 'N', ' ')},                                                                                                                     // Zyphe Chin
+	"zza":        {MakeTag('Z', 'Z', 'A', ' ')},                                                                                                                     // Zaza
 }
 
 // OpenTypeToBCP47 maps OpenType language system tags to BCP 47 language tags.

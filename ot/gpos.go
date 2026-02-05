@@ -611,6 +611,10 @@ func parsePairPosFormat2(data []byte, offset int, pp *PairPos) (*PairPos, error)
 }
 
 // Apply applies pair positioning (kerning).
+// HarfBuzz: PairPosFormat1/PairPosFormat2::apply in GPOS/PairPos*.hh
+// Uses skippy_iter (iter_input) to find the second glyph, skipping marks/bases/ligatures
+// per the lookup flag. This is critical for correct kerning in fonts where marks
+// (or even space with mark class) appear between kerning pairs.
 func (pp *PairPos) Apply(ctx *OTApplyContext) bool {
 	if ctx.Buffer.Idx+1 >= len(ctx.Buffer.Info) {
 		return false
@@ -622,19 +626,38 @@ func (pp *PairPos) Apply(ctx *OTApplyContext) bool {
 		return false
 	}
 
-	nextGlyph := ctx.Buffer.Info[ctx.Buffer.Idx+1].GlyphID
+	// Find the next non-skippable glyph (HarfBuzz: skippy_iter.next())
+	// This skips glyphs based on the lookup flag (IgnoreMarks, IgnoreBaseGlyphs, etc.)
+	nextIdx := -1
+	for j := ctx.Buffer.Idx + 1; j < len(ctx.Buffer.Info); j++ {
+		if shouldSkipGlyph(ctx.Buffer.Info[j].GlyphID, ctx.LookupFlag, ctx.GDEF, ctx.MarkFilteringSet) {
+			continue
+		}
+		// Also skip default ignorables (HarfBuzz: may_skip checks is_default_ignorable)
+		if ctx.Buffer.Info[j].GlyphProps&GlyphPropsDefaultIgnorable != 0 &&
+			ctx.Buffer.Info[j].GlyphProps&GlyphPropsSubstituted == 0 {
+			continue
+		}
+		nextIdx = j
+		break
+	}
+	if nextIdx < 0 {
+		return false
+	}
+
+	nextGlyph := ctx.Buffer.Info[nextIdx].GlyphID
 
 	switch pp.format {
 	case 1:
-		return pp.applyFormat1(ctx, coverageIndex, nextGlyph)
+		return pp.applyFormat1(ctx, coverageIndex, nextGlyph, nextIdx)
 	case 2:
-		return pp.applyFormat2(ctx, glyph, nextGlyph)
+		return pp.applyFormat2(ctx, glyph, nextGlyph, nextIdx)
 	default:
 		return false
 	}
 }
 
-func (pp *PairPos) applyFormat1(ctx *OTApplyContext, coverageIndex uint32, nextGlyph GlyphID) bool {
+func (pp *PairPos) applyFormat1(ctx *OTApplyContext, coverageIndex uint32, nextGlyph GlyphID, nextIdx int) bool {
 	if int(coverageIndex) >= len(pp.pairSets) {
 		return false
 	}
@@ -652,18 +675,18 @@ func (pp *PairPos) applyFormat1(ctx *OTApplyContext, coverageIndex uint32, nextG
 
 	record := &pairSet[idx]
 	ctx.AdjustPosition(ctx.Buffer.Idx, &record.Value1)
-	ctx.AdjustPosition(ctx.Buffer.Idx+1, &record.Value2)
+	ctx.AdjustPosition(nextIdx, &record.Value2)
 
-	// Advance based on valueFormat2
+	// Advance past the second glyph (HarfBuzz: buffer->idx = skippy_iter.idx)
 	if pp.valueFormat2 != 0 {
-		ctx.Buffer.Idx += 2
+		ctx.Buffer.Idx = nextIdx + 1
 	} else {
-		ctx.Buffer.Idx++
+		ctx.Buffer.Idx = nextIdx
 	}
 	return true
 }
 
-func (pp *PairPos) applyFormat2(ctx *OTApplyContext, glyph, nextGlyph GlyphID) bool {
+func (pp *PairPos) applyFormat2(ctx *OTApplyContext, glyph, nextGlyph GlyphID, nextIdx int) bool {
 	class1 := pp.classDef1.GetClass(glyph)
 	class2 := pp.classDef2.GetClass(nextGlyph)
 
@@ -673,13 +696,15 @@ func (pp *PairPos) applyFormat2(ctx *OTApplyContext, glyph, nextGlyph GlyphID) b
 
 	record := &pp.classMatrix[class1][class2]
 	ctx.AdjustPosition(ctx.Buffer.Idx, &record.Value1)
-	ctx.AdjustPosition(ctx.Buffer.Idx+1, &record.Value2)
+	ctx.AdjustPosition(nextIdx, &record.Value2)
 
-	// Advance based on valueFormat2
+	// HarfBuzz: PairPosFormat2 ALWAYS returns true and advances buffer.idx
+	// to skippy_iter.idx (the second glyph's position).
+	// Even when values are all zero, the pair is "consumed" and buffer advances.
 	if pp.valueFormat2 != 0 {
-		ctx.Buffer.Idx += 2
+		ctx.Buffer.Idx = nextIdx + 1
 	} else {
-		ctx.Buffer.Idx++
+		ctx.Buffer.Idx = nextIdx
 	}
 	return true
 }
@@ -1890,9 +1915,9 @@ func propagateAttachmentOffsetsRecursive(positions []GlyphPos, i int, direction 
 			}
 		} else if j > i {
 			// Mark precedes base (rare, can happen with kerx)
-			// Note: k starts at i+1 to skip including glyph i itself
+			// HarfBuzz: for (unsigned int k = i; k < j; k++)
 			if direction.IsForward() {
-				for k := i + 1; k < j; k++ {
+				for k := i; k < j; k++ {
 					positions[i].XOffset += positions[k].XAdvance
 					positions[i].YOffset += positions[k].YAdvance
 				}
@@ -2077,7 +2102,6 @@ func (m *MarkLigPos) Apply(ctx *OTApplyContext) bool {
 	if markIndex == NotCovered {
 		return false
 	}
-
 	if int(markIndex) >= len(m.markArray.Records) {
 		return false
 	}
@@ -2188,7 +2212,6 @@ func (m *MarkLigPos) Apply(ctx *OTApplyContext) bool {
 	// HarfBuzz: markArray.apply() computes baseAnchor - markAnchor
 	xOffset := int16(roundAnchor(float64(ligAnchor.X) - float64(markAnchor.X)))
 	yOffset := int16(roundAnchor(float64(ligAnchor.Y) - float64(markAnchor.Y)))
-
 	// Apply the positioning - use = not += to match HarfBuzz behavior
 	ctx.Buffer.Pos[ctx.Buffer.Idx].XOffset = xOffset
 	ctx.Buffer.Pos[ctx.Buffer.Idx].YOffset = yOffset
@@ -2336,6 +2359,34 @@ func (m *MarkMarkPos) Apply(ctx *OTApplyContext) bool {
 	}
 
 	if mark2Idx < 0 {
+		return false
+	}
+
+	// Ligature ID/component check: ensure mark1 and mark2 belong together.
+	// HarfBuzz: MarkMarkPosFormat1.hh lines 121-143
+	// Two marks can attach only if:
+	//   - Both have ligID==0 (marks on same non-ligature base), OR
+	//   - Both have same ligID and same ligComp (same ligature component), OR
+	//   - One of them is itself a ligature (ligID>0 && ligComp==0)
+	id1 := ctx.Buffer.Info[ctx.Buffer.Idx].GetLigID()
+	id2 := ctx.Buffer.Info[mark2Idx].GetLigID()
+	comp1 := ctx.Buffer.Info[ctx.Buffer.Idx].GetLigComp()
+	comp2 := ctx.Buffer.Info[mark2Idx].GetLigComp()
+
+	good := false
+	if id1 == id2 {
+		if id1 == 0 {
+			good = true // Marks belonging to the same base
+		} else if comp1 == comp2 {
+			good = true // Same ligature component
+		}
+	} else {
+		// If ligature IDs don't match, one may be a ligature itself
+		if (id1 > 0 && comp1 == 0) || (id2 > 0 && comp2 == 0) {
+			good = true
+		}
+	}
+	if !good {
 		return false
 	}
 
@@ -3073,19 +3124,35 @@ func parseChainContextPosFormat2(data []byte, offset int) (*ChainContextPos, err
 		return nil, err
 	}
 
-	backtrackClassDef, err := ParseClassDef(data, offset+backtrackClassDefOff)
-	if err != nil {
-		return nil, err
+	// HarfBuzz: NULL offset (0) for ClassDef means all glyphs are class 0.
+	var backtrackClassDef *ClassDef
+	if backtrackClassDefOff != 0 {
+		backtrackClassDef, err = ParseClassDef(data, offset+backtrackClassDefOff)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		backtrackClassDef = &ClassDef{}
 	}
 
-	inputClassDef, err := ParseClassDef(data, offset+inputClassDefOff)
-	if err != nil {
-		return nil, err
+	var inputClassDef *ClassDef
+	if inputClassDefOff != 0 {
+		inputClassDef, err = ParseClassDef(data, offset+inputClassDefOff)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		inputClassDef = &ClassDef{}
 	}
 
-	lookaheadClassDef, err := ParseClassDef(data, offset+lookaheadClassDefOff)
-	if err != nil {
-		return nil, err
+	var lookaheadClassDef *ClassDef
+	if lookaheadClassDefOff != 0 {
+		lookaheadClassDef, err = ParseClassDef(data, offset+lookaheadClassDefOff)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		lookaheadClassDef = &ClassDef{}
 	}
 
 	ccp := &ChainContextPos{

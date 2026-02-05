@@ -1,6 +1,7 @@
 package subset
 
 import (
+	"math"
 	"sort"
 
 	"github.com/boxesandglue/textshape/ot"
@@ -492,11 +493,18 @@ func (p *Plan) GetGlyphDeltasWithCoords(gid ot.GlyphID, numPoints int, origPoint
 		return nil, nil
 	}
 
-	// Return only the outline point deltas (not phantom points)
-	if len(deltas.XDeltas) >= numPoints {
-		return deltas.XDeltas[:numPoints], deltas.YDeltas[:numPoints]
+	// Convert float64 deltas to int16 (rounding)
+	n := len(deltas.XDeltas)
+	if n > numPoints {
+		n = numPoints
 	}
-	return deltas.XDeltas, deltas.YDeltas
+	xd := make([]int16, n)
+	yd := make([]int16, n)
+	for i := 0; i < n; i++ {
+		xd[i] = int16(math.Round(deltas.XDeltas[i]))
+		yd[i] = int16(math.Round(deltas.YDeltas[i]))
+	}
+	return xd, yd
 }
 
 // GetInstancedAdvance returns the instanced advance width for a glyph.
@@ -522,7 +530,7 @@ func floatToF2DOT14(v float32) int {
 }
 
 // roundToInt rounds a float32 to the nearest int32.
-func roundToInt(v float32) int32 {
+func roundToInt(v float64) int32 {
 	if v >= 0 {
 		return int32(v + 0.5)
 	}

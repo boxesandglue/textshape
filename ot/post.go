@@ -15,10 +15,10 @@ type PostTable struct {
 	IsFixedPitch       uint32
 
 	// Format 2.0 specific fields
-	numGlyphs       uint16
-	glyphNameIndex  []uint16 // Maps glyph ID to name index
-	stringPool      []byte   // Pascal strings (length byte + string bytes)
-	indexToOffset   []int    // Maps custom name index to offset in stringPool
+	numGlyphs      uint16
+	glyphNameIndex []uint16 // Maps glyph ID to name index
+	stringPool     []byte   // Pascal strings (length byte + string bytes)
+	indexToOffset  []int    // Maps custom name index to offset in stringPool
 }
 
 // macRomanNames contains the 258 standard glyph names used in post format 1.0 and 2.0.

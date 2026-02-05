@@ -26,10 +26,10 @@ type FeatureVariations struct {
 
 // featureVariationRecord pairs a ConditionSet with a FeatureTableSubstitution.
 type featureVariationRecord struct {
-	conditionSetOffset     uint32
-	featureSubstOffset     uint32
-	conditionSet           *ConditionSet
-	featureTableSubst      *FeatureTableSubstitution
+	conditionSetOffset uint32
+	featureSubstOffset uint32
+	conditionSet       *ConditionSet
+	featureTableSubst  *FeatureTableSubstitution
 }
 
 // ConditionSet represents a set of conditions that must ALL be true (AND logic).

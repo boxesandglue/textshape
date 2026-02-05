@@ -46,9 +46,9 @@ const (
 type MyanmarSyllableType uint8
 
 const (
-	MyanmarConsonantSyllable  MyanmarSyllableType = 0
-	MyanmarBrokenCluster      MyanmarSyllableType = 1
-	MyanmarNonMyanmarCluster  MyanmarSyllableType = 2
+	MyanmarConsonantSyllable MyanmarSyllableType = 0
+	MyanmarBrokenCluster     MyanmarSyllableType = 1
+	MyanmarNonMyanmarCluster MyanmarSyllableType = 2
 )
 
 // MyanmarPosition represents visual positions in a syllable.
@@ -56,27 +56,74 @@ const (
 type MyanmarPosition uint8
 
 const (
-	M_POS_START          MyanmarPosition = 0
+	M_POS_START             MyanmarPosition = 0
 	M_POS_RA_TO_BECOME_REPH MyanmarPosition = 1
-	M_POS_PRE_M          MyanmarPosition = 2
-	M_POS_PRE_C          MyanmarPosition = 3
-	M_POS_BASE_C         MyanmarPosition = 4
-	M_POS_AFTER_MAIN     MyanmarPosition = 5
-	M_POS_ABOVE_C        MyanmarPosition = 6
-	M_POS_BEFORE_SUB     MyanmarPosition = 7
-	M_POS_BELOW_C        MyanmarPosition = 8
-	M_POS_AFTER_SUB      MyanmarPosition = 9
-	M_POS_BEFORE_POST    MyanmarPosition = 10
-	M_POS_POST_C         MyanmarPosition = 11
-	M_POS_AFTER_POST     MyanmarPosition = 12
-	M_POS_SMVD           MyanmarPosition = 13
-	M_POS_END            MyanmarPosition = 14
+	M_POS_PRE_M             MyanmarPosition = 2
+	M_POS_PRE_C             MyanmarPosition = 3
+	M_POS_BASE_C            MyanmarPosition = 4
+	M_POS_AFTER_MAIN        MyanmarPosition = 5
+	M_POS_ABOVE_C           MyanmarPosition = 6
+	M_POS_BEFORE_SUB        MyanmarPosition = 7
+	M_POS_BELOW_C           MyanmarPosition = 8
+	M_POS_AFTER_SUB         MyanmarPosition = 9
+	M_POS_BEFORE_POST       MyanmarPosition = 10
+	M_POS_POST_C            MyanmarPosition = 11
+	M_POS_AFTER_POST        MyanmarPosition = 12
+	M_POS_SMVD              MyanmarPosition = 13
+	M_POS_END               MyanmarPosition = 14
 )
+
+// myanmarCategoryTable maps Myanmar codepoints (U+1000-U+109F) to their Myanmar categories.
+// This is a direct 1:1 translation of HarfBuzz's indic table for Myanmar (hb-ot-shaper-indic-table.cc).
+// HarfBuzz stores Myanmar-specific category values directly in the indic table lower byte.
+// HarfBuzz equivalent: hb_indic_get_categories(u) & 0xFF for Myanmar range
+var myanmarCategoryTable = [160]MyanmarCategory{
+	// 0x1000-0x1007
+	M_C, M_C, M_C, M_C, M_Ra, M_C, M_C, M_C,
+	// 0x1008-0x100F
+	M_C, M_C, M_C, M_C, M_C, M_C, M_C, M_C,
+	// 0x1010-0x1017
+	M_C, M_C, M_C, M_C, M_C, M_C, M_C, M_C,
+	// 0x1018-0x101F
+	M_C, M_C, M_C, M_Ra, M_C, M_C, M_C, M_C,
+	// 0x1020-0x1027
+	M_C, M_IV, M_IV, M_IV, M_IV, M_IV, M_IV, M_IV,
+	// 0x1028-0x102F
+	M_IV, M_IV, M_IV, M_VPst, M_VPst, M_VAbv, M_VAbv, M_VBlw,
+	// 0x1030-0x1037
+	M_VBlw, M_VPre, M_A, M_VAbv, M_VAbv, M_VAbv, M_A, M_DB,
+	// 0x1038-0x103F
+	M_SM, M_H, M_As, M_MY, M_MR, M_MW, M_MH, M_C,
+	// 0x1040-0x1047
+	M_GB, M_GB, M_GB, M_GB, M_GB, M_GB, M_GB, M_GB,
+	// 0x1048-0x104F
+	M_GB, M_GB, M_GB, M_GB, M_Other, M_Other, M_C, M_Other,
+	// 0x1050-0x1057
+	M_C, M_C, M_IV, M_IV, M_IV, M_IV, M_VPst, M_VPst,
+	// 0x1058-0x105F
+	M_VBlw, M_VBlw, M_Ra, M_C, M_C, M_C, M_MY, M_MY,
+	// 0x1060-0x1067
+	M_ML, M_C, M_VPst, M_PT, M_PT, M_C, M_C, M_VPst,
+	// 0x1068-0x106F
+	M_VPst, M_PT, M_PT, M_PT, M_PT, M_PT, M_C, M_C,
+	// 0x1070-0x1077
+	M_C, M_VAbv, M_VAbv, M_VAbv, M_VAbv, M_C, M_C, M_C,
+	// 0x1078-0x107F
+	M_C, M_C, M_C, M_C, M_C, M_C, M_C, M_C,
+	// 0x1080-0x1087
+	M_C, M_C, M_MW, M_VPst, M_VPre, M_VAbv, M_VAbv, M_SM,
+	// 0x1088-0x108F
+	M_SM, M_SM, M_SM, M_SM, M_SM, M_SM, M_C, M_SM,
+	// 0x1090-0x1097
+	M_GB, M_GB, M_GB, M_GB, M_GB, M_GB, M_GB, M_GB,
+	// 0x1098-0x109F
+	M_GB, M_GB, M_SM, M_SM, M_SM, M_VAbv, M_Other, M_Other,
+}
 
 // getMyanmarCategory returns the Myanmar category for a codepoint.
 // HarfBuzz equivalent: set_myanmar_properties() which uses hb_indic_get_categories()
-//
-// This function maps IndicCategory values to MyanmarCategory values as HarfBuzz does.
+// In HarfBuzz, the indic table stores Myanmar-specific category values directly.
+// We use a direct lookup table for the Myanmar range (U+1000-U+109F).
 func getMyanmarCategory(cp Codepoint) MyanmarCategory {
 	// Check for Variation Selectors first
 	// HarfBuzz: myanmar_machine.rl uses VS category
@@ -84,31 +131,27 @@ func getMyanmarCategory(cp Codepoint) MyanmarCategory {
 		return M_VS
 	}
 
-	// Use the indic table like HarfBuzz does
-	cat, _ := GetIndicCategories(cp)
+	// Direct lookup for Myanmar range (U+1000-U+109F)
+	// HarfBuzz: info.myanmar_category() = (myanmar_category_t)(type & 0xFFu)
+	if cp >= 0x1000 && cp <= 0x109F {
+		return myanmarCategoryTable[cp-0x1000]
+	}
 
-	// Map Indic categories to Myanmar categories
-	// HarfBuzz: info.myanmar_category() = (myanmar_category_t) (type & 0xFFu)
+	// For non-Myanmar characters, use the indic table
+	cat, _ := GetIndicCategories(cp)
 	switch cat {
 	case ICatC:
-		// Check for Ra (U+101B) - special handling
-		if cp == 0x101B {
-			return M_Ra
-		}
 		return M_C
 	case ICatV:
 		return M_IV
 	case ICatN:
-		return M_DB // Nukta/Dot below
+		return M_DB
 	case ICatH:
 		return M_H
 	case ICatZWNJ:
 		return M_ZWNJ
 	case ICatZWJ:
 		return M_ZWJ
-	case ICatM:
-		// Matras - need to determine VAbv, VBlw, VPre, VPst from position
-		return getMyanmarMatraCategory(cp)
 	case ICatSM:
 		return M_SM
 	case ICatSMPst:
@@ -125,61 +168,8 @@ func getMyanmarCategory(cp Codepoint) MyanmarCategory {
 		return M_CS
 	case ICatSymbol:
 		return M_GB
-	case ICatCM:
-		// Consonant modifiers - check Myanmar-specific ones
-		return getMyanmarModifierCategory(cp)
 	default:
 		return M_Other
-	}
-}
-
-// getMyanmarMatraCategory determines the specific vowel category for Myanmar matras.
-// HarfBuzz uses position from indic table to determine this.
-func getMyanmarMatraCategory(cp Codepoint) MyanmarCategory {
-	_, pos := GetIndicCategories(cp)
-	switch pos {
-	case IPosPreM:
-		return M_VPre
-	case IPosAboveC:
-		return M_VAbv
-	case IPosBelowC:
-		return M_VBlw
-	case IPosAfterPost, IPosAfterMain, IPosAfterSub:
-		return M_VPst
-	default:
-		return M_VPst
-	}
-}
-
-// getMyanmarModifierCategory determines the category for Myanmar consonant modifiers.
-// HarfBuzz: These are Myanmar-specific categories (MY, MR, MW, MH, ML, As, PT, VS)
-func getMyanmarModifierCategory(cp Codepoint) MyanmarCategory {
-	switch cp {
-	// Medial Ya (U+103B), Mon Na (U+105E), Mon Ma (U+105F)
-	case 0x103B, 0x105E, 0x105F:
-		return M_MY
-	// Medial Ra (U+103C)
-	case 0x103C:
-		return M_MR
-	// Medial Wa (U+103D), Shan Wa (U+1082)
-	case 0x103D, 0x1082:
-		return M_MW
-	// Medial Ha (U+103E)
-	case 0x103E:
-		return M_MH
-	// Medial Mon La (U+1060)
-	case 0x1060:
-		return M_ML
-	// Asat (U+103A)
-	case 0x103A:
-		return M_As
-	// Pwo and other tones
-	case 0x1063, 0x1064, 0x1069, 0x106A, 0x106B, 0x106C, 0x106D,
-		0x1087, 0x1088, 0x1089, 0x108A, 0x108B, 0x108C, 0x108D, 0x108F,
-		0x109A, 0x109B, 0x109C:
-		return M_PT
-	default:
-		return M_C // Default to consonant
 	}
 }
 
@@ -432,13 +422,13 @@ func (s *Shaper) insertMyanmarDottedCircles(buf *Buffer, categories *[]MyanmarCa
 		if lastSyllable != syllable && syllableType == MyanmarBrokenCluster {
 			// Insert dotted circle before this glyph
 			dottedCircleInfo := GlyphInfo{
-				GlyphID:          dottedCircleGlyph,
-				Codepoint:        0x25CC,
-				Cluster:          buf.Info[i].Cluster,
-				Syllable:         syllable,
-				MyanmarCategory:  uint8(M_DottedCircle),
-				MyanmarPosition:  uint8(M_POS_BASE_C),
-				GlyphClass:       1,
+				GlyphID:         dottedCircleGlyph,
+				Codepoint:       0x25CC,
+				Cluster:         buf.Info[i].Cluster,
+				Syllable:        syllable,
+				MyanmarCategory: uint8(M_DottedCircle),
+				MyanmarPosition: uint8(M_POS_BASE_C),
+				GlyphClass:      1,
 			}
 			newInfo = append(newInfo, dottedCircleInfo)
 			newPos = append(newPos, GlyphPos{})

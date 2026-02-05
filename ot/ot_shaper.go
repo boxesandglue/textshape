@@ -436,7 +436,7 @@ var HebrewShaper = &OTShaper{
 // HarfBuzz equivalent: _hb_ot_shaper_hangul
 var HangulShaper = &OTShaper{
 	Name:                    "hangul",
-	NormalizationPreference: NormalizationModeAuto,
+	NormalizationPreference: NormalizationModeNone,
 	ZeroWidthMarks:          ZeroWidthMarksNone,
 	FallbackPosition:        true,
 }

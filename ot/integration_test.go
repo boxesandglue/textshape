@@ -445,10 +445,6 @@ func TestHebrewDiacriticsDebug(t *testing.T) {
 	buf.Direction = DirectionRTL
 	buf.Script = MakeTag('H', 'e', 'b', 'r')
 
-	// Enable debug output
-	debugGPOS = true
-	defer func() { debugGPOS = false }()
-
 	// Print GPOS lookup info
 	if shaper.gpos != nil {
 		t.Logf("GPOS has %d lookups", shaper.gpos.NumLookups())

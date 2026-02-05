@@ -103,10 +103,11 @@ func (g *Gvar) getSharedTuple(index int) []int16 {
 
 // GlyphDeltas represents the variation deltas for a single glyph.
 type GlyphDeltas struct {
-	// XDeltas and YDeltas contain the delta values for each point.
+	// XDeltas and YDeltas contain the accumulated delta values for each point.
 	// The length matches the number of points in the glyph (including phantom points).
-	XDeltas []int16
-	YDeltas []int16
+	// float64 is used for precision during accumulation across multiple tuple variations.
+	XDeltas []float64
+	YDeltas []float64
 }
 
 // GlyphPoint represents a point for IUP interpolation.
@@ -162,8 +163,8 @@ func (g *Gvar) GetGlyphDeltasWithCoords(glyphID GlyphID, normalizedCoords []int,
 
 	// Initialize result
 	deltas := &GlyphDeltas{
-		XDeltas: make([]int16, numPoints),
-		YDeltas: make([]int16, numPoints),
+		XDeltas: make([]float64, numPoints),
+		YDeltas: make([]float64, numPoints),
 	}
 
 	// Parse shared point numbers if present
@@ -255,8 +256,8 @@ func (g *Gvar) GetGlyphDeltasWithCoords(glyphID GlyphID, normalizedCoords []int,
 		if len(pointIndices) == 0 {
 			// All points
 			for i := 0; i < numPoints && i < len(xDeltas); i++ {
-				deltas.XDeltas[i] += int16(float32(xDeltas[i]) * scalar)
-				deltas.YDeltas[i] += int16(float32(yDeltas[i]) * scalar)
+				deltas.XDeltas[i] += float64(xDeltas[i]) * scalar
+				deltas.YDeltas[i] += float64(yDeltas[i]) * scalar
 			}
 		} else {
 			// Specific points - need interpolation for missing points
@@ -270,12 +271,12 @@ func (g *Gvar) GetGlyphDeltasWithCoords(glyphID GlyphID, normalizedCoords []int,
 }
 
 // calculateScalar computes the scalar value for a tuple variation.
-func (g *Gvar) calculateScalar(peak, start, end []int16, coords []int) float32 {
+func (g *Gvar) calculateScalar(peak, start, end []int16, coords []int) float64 {
 	if len(peak) == 0 {
 		return 0
 	}
 
-	var scalar float32 = 1.0
+	var scalar float64 = 1.0
 
 	for i := 0; i < len(peak) && i < len(coords); i++ {
 		peakVal := int(peak[i])
@@ -321,11 +322,11 @@ func (g *Gvar) calculateScalar(peak, start, end []int16, coords []int) float32 {
 		// Interpolate
 		if coordVal < peakVal {
 			if peakVal != startVal {
-				scalar *= float32(coordVal-startVal) / float32(peakVal-startVal)
+				scalar *= float64(coordVal-startVal) / float64(peakVal-startVal)
 			}
 		} else {
 			if peakVal != endVal {
-				scalar *= float32(endVal-coordVal) / float32(endVal-peakVal)
+				scalar *= float64(endVal-coordVal) / float64(endVal-peakVal)
 			}
 		}
 	}
@@ -471,7 +472,7 @@ func (g *Gvar) parseDeltas(data []byte, numDeltas, numPoints int) (xDeltas, yDel
 
 // applyDeltasWithInterpolation applies deltas to specific points and interpolates others.
 // This implements the IUP (Interpolate Untouched Points) algorithm.
-func (g *Gvar) applyDeltasWithInterpolation(deltas *GlyphDeltas, pointIndices []int, xDelta, yDelta []int16, scalar float32, numPoints int, origCoords []GlyphPoint) {
+func (g *Gvar) applyDeltasWithInterpolation(deltas *GlyphDeltas, pointIndices []int, xDelta, yDelta []int16, scalar float64, numPoints int, origCoords []GlyphPoint) {
 	// Create a set of touched points
 	touched := make(map[int]bool)
 	for _, idx := range pointIndices {
@@ -483,8 +484,8 @@ func (g *Gvar) applyDeltasWithInterpolation(deltas *GlyphDeltas, pointIndices []
 		if ptIdx >= numPoints || i >= len(xDelta) {
 			continue
 		}
-		deltas.XDeltas[ptIdx] += int16(float32(xDelta[i]) * scalar)
-		deltas.YDeltas[ptIdx] += int16(float32(yDelta[i]) * scalar)
+		deltas.XDeltas[ptIdx] += float64(xDelta[i]) * scalar
+		deltas.YDeltas[ptIdx] += float64(yDelta[i]) * scalar
 	}
 
 	// IUP: For untouched points, interpolate from neighboring touched points
@@ -553,7 +554,7 @@ func (g *Gvar) applyDeltasWithInterpolation(deltas *GlyphDeltas, pointIndices []
 // coord is the coordinate of the untouched point.
 // coord1, coord2 are the coordinates of the two surrounding touched points.
 // delta1, delta2 are the deltas of the two surrounding touched points.
-func iupInterpolate(coord, coord1, coord2 int16, delta1, delta2 int16) int16 {
+func iupInterpolate(coord, coord1, coord2 int16, delta1, delta2 float64) float64 {
 	// Ensure coord1 <= coord2 for the algorithm
 	if coord1 > coord2 {
 		coord1, coord2 = coord2, coord1
@@ -576,6 +577,6 @@ func iupInterpolate(coord, coord1, coord2 int16, delta1, delta2 int16) int16 {
 	}
 
 	// Linear interpolation: delta = delta1 + (delta2 - delta1) * (coord - coord1) / (coord2 - coord1)
-	t := float32(coord-coord1) / float32(coord2-coord1)
-	return int16(float32(delta1) + t*float32(delta2-delta1))
+	t := float64(coord-coord1) / float64(coord2-coord1)
+	return delta1 + t*(delta2-delta1)
 }

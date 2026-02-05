@@ -10,10 +10,6 @@ package ot
 // 2. Reorder: Sort marks by canonical combining class
 // 3. Recompose: Combine base + mark sequences if font has precomposed glyph
 
-import (
-	"sort"
-)
-
 // NormalizationMode controls how normalization is performed.
 // HarfBuzz equivalent: hb_ot_shape_normalization_mode_t
 type NormalizationMode int
@@ -317,13 +313,27 @@ func (s *Shaper) reorderMarks(info []GlyphInfo) {
 	}
 }
 
-// sortMarksByCombiningClass performs a stable sort on marks by combining class.
+// sortMarksByCombiningClass performs a stable insertion sort on marks by combining class.
+// HarfBuzz equivalent: buffer->sort() in hb-buffer.cc:2173-2191
+// When elements are moved during sorting, clusters in the affected range are merged.
+// This is critical for correct cluster assignment after mark reordering.
 func sortMarksByCombiningClass(marks []GlyphInfo) {
-	sort.SliceStable(marks, func(i, j int) bool {
+	for i := 1; i < len(marks); i++ {
 		ccI := getModifiedCombiningClass(marks[i].Codepoint)
-		ccJ := getModifiedCombiningClass(marks[j].Codepoint)
-		return ccI < ccJ
-	})
+		j := i
+		for j > 0 && getModifiedCombiningClass(marks[j-1].Codepoint) > ccI {
+			j--
+		}
+		if i == j {
+			continue
+		}
+		// Merge clusters in [j, i+1) before moving — matches HarfBuzz line 2184
+		mergeClustersSlice(marks, j, i+1)
+		// Move item i to position j, shift everything in between
+		t := marks[i]
+		copy(marks[j+1:i+1], marks[j:i])
+		marks[j] = t
+	}
 }
 
 // recomposeBuffer performs the recomposition phase.

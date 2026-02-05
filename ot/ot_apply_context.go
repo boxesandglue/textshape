@@ -62,8 +62,8 @@ type OTApplyContext struct {
 
 	// Syllable tracking
 	// HarfBuzz: bool per_syllable, unsigned new_syllables in hb_ot_apply_context_t:737-739
-	PerSyllable  bool  // Apply lookup per-syllable (GSUB only)
-	NewSyllables int   // New syllable value for substituted glyphs (-1 = don't change)
+	PerSyllable   bool  // Apply lookup per-syllable (GSUB only)
+	NewSyllables  int   // New syllable value for substituted glyphs (-1 = don't change)
 	MatchSyllable uint8 // Reference syllable for per-syllable matching (0 = no constraint)
 	// HarfBuzz equivalent: matcher_t::syllable set via reset(start_index_)
 
@@ -191,6 +191,17 @@ func (ctx *OTApplyContext) SetPerSyllable(perSyllable bool) {
 // HarfBuzz equivalent: set_random() in hb-ot-layout-gsubgpos.hh:788
 func (ctx *OTApplyContext) SetRandom(random bool) {
 	ctx.Random = random
+}
+
+// RandomNumber generates a pseudo-random number using the buffer's random state.
+// HarfBuzz equivalent: random_number() in hb-ot-layout-gsubgpos.hh:797-801
+// Uses minstd_rand: state = state * 48271 % 2147483647
+func (ctx *OTApplyContext) RandomNumber() uint32 {
+	if ctx.Buffer.RandomState == 0 {
+		ctx.Buffer.RandomState = 1
+	}
+	ctx.Buffer.RandomState = ctx.Buffer.RandomState * 48271 % 2147483647
+	return ctx.Buffer.RandomState
 }
 
 // SetLookupProps sets the lookup properties (flags).
@@ -811,14 +822,84 @@ func (ctx *OTApplyContext) NextGlyph(startIndex int) int {
 	return -1
 }
 
-// PrevGlyph finds the previous glyph that should not be skipped.
+// NextInputMatch finds the next input glyph that matches, implementing HarfBuzz's
+// 3-way match logic for input (non-context) matching.
+// HarfBuzz equivalent: match_input() using iter_input with context_match=false.
+//
+// This is like NextContextMatch but with contextMatch=false, which means:
+//   - ZWNJ is NOT automatically skipped (respects auto_zwnj)
+//   - Mask IS checked (lookup_mask, not -1)
+//   - Hidden default ignorables (CGJ) that have been unhidden ARE skipped via SkipMaybe
+//
+// The 3-way logic:
+//
+//	SKIP_YES                        → skip (continue to next)
+//	SKIP_NO  + match                → MATCH (return position)
+//	SKIP_NO  + no match             → NOT_MATCH (return -1, rule fails)
+//	SKIP_MAYBE + match              → MATCH (return position)
+//	SKIP_MAYBE + no match           → SKIP (continue to next)
+func (ctx *OTApplyContext) NextInputMatch(startIndex int, matchFn ContextMatchFunc) int {
+	for i := startIndex + 1; i < len(ctx.Buffer.Info); i++ {
+		skip := ctx.MaySkip(i, false) // contextMatch=false for input
+		if skip == SkipYes {
+			continue
+		}
+
+		// Check may_match: mask and per_syllable
+		info := &ctx.Buffer.Info[i]
+		match := ctx.MayMatch(i, false) // contextMatch=false, checks mask
+		if match == MatchNo {
+			if skip == SkipNo {
+				return -1 // NOT_MATCH
+			}
+			// SkipMaybe → SKIP
+			continue
+		}
+
+		matched := matchFn(info)
+		if matched {
+			return i // MATCH
+		}
+
+		if skip == SkipNo {
+			return -1 // NOT_MATCH: non-skippable glyph doesn't match → rule fails
+		}
+
+		// skip == SkipMaybe && !matched → SKIP: continue searching
+	}
+	return -1
+}
+
+// PrevGlyph finds the previous glyph that should not be skipped,
+// implementing HarfBuzz's 3-way match logic from skipping_iterator_t::prev().
 // HarfBuzz equivalent: skipping_iterator_t::prev() with iter_input (context_match=false)
-// The mask IS checked here.
+//
+// Unlike the simplified ShouldSkipGlyph, this properly handles the case where
+// a default ignorable (SkipMaybe) has no explicit match (MatchMaybe) → SKIP.
+// This is critical for GPOS lookups like CursivePos that need to skip over
+// default ignorable glyphs (.notdef from ZWNJ/CGJ) between real glyphs.
 func (ctx *OTApplyContext) PrevGlyph(startIndex int) int {
 	for i := startIndex - 1; i >= 0; i-- {
-		if !ctx.ShouldSkipGlyph(i) {
-			return i
+		skip := ctx.MaySkip(i, false)
+		if skip == SkipYes {
+			continue
 		}
+
+		match := ctx.MayMatch(i, false)
+
+		// HarfBuzz match() logic:
+		//   MATCH_YES → MATCH
+		//   MATCH_MAYBE + SKIP_NO → MATCH
+		//   MATCH_MAYBE + SKIP_MAYBE → SKIP (default ignorable, skip over)
+		//   MATCH_NO + SKIP_NO → NOT_MATCH (fail)
+		//   MATCH_NO → skip
+		if match == MatchYes || (match == MatchMaybe && skip == SkipNo) {
+			return i // MATCH
+		}
+		if match == MatchNo && skip == SkipNo {
+			return -1 // NOT_MATCH
+		}
+		// Otherwise (SkipMaybe + MatchMaybe, or SkipMaybe + MatchNo): SKIP
 	}
 	return -1
 }

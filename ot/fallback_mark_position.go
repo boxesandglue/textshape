@@ -10,26 +10,26 @@ package ot
 // Unicode Combining Class values used for positioning
 // Source: Unicode Standard, Chapter 4.3
 const (
-	cccNotReordered         uint8 = 0
-	cccOverlay              uint8 = 1
-	cccNukta                uint8 = 7
-	cccKanaVoicing          uint8 = 8
-	cccVirama               uint8 = 9
-	cccAttachedBelowLeft    uint8 = 200
-	cccAttachedBelow        uint8 = 202
-	cccAttachedAbove        uint8 = 214
-	cccAttachedAboveRight   uint8 = 216
-	cccBelowLeft            uint8 = 218
-	cccBelow                uint8 = 220
-	cccBelowRight           uint8 = 222
-	cccLeft                 uint8 = 224
-	cccRight                uint8 = 226
-	cccAboveLeft            uint8 = 228
-	cccAbove                uint8 = 230
-	cccAboveRight           uint8 = 232
-	cccDoubleBelow          uint8 = 233
-	cccDoubleAbove          uint8 = 234
-	cccIotaSubscript        uint8 = 240
+	cccNotReordered       uint8 = 0
+	cccOverlay            uint8 = 1
+	cccNukta              uint8 = 7
+	cccKanaVoicing        uint8 = 8
+	cccVirama             uint8 = 9
+	cccAttachedBelowLeft  uint8 = 200
+	cccAttachedBelow      uint8 = 202
+	cccAttachedAbove      uint8 = 214
+	cccAttachedAboveRight uint8 = 216
+	cccBelowLeft          uint8 = 218
+	cccBelow              uint8 = 220
+	cccBelowRight         uint8 = 222
+	cccLeft               uint8 = 224
+	cccRight              uint8 = 226
+	cccAboveLeft          uint8 = 228
+	cccAbove              uint8 = 230
+	cccAboveRight         uint8 = 232
+	cccDoubleBelow        uint8 = 233
+	cccDoubleAbove        uint8 = 234
+	cccIotaSubscript      uint8 = 240
 )
 
 // fallbackMarkPosition performs fallback mark positioning on a buffer.
@@ -40,7 +40,7 @@ func (s *Shaper) fallbackMarkPosition(buf *Buffer) {
 		return
 	}
 
-// Process each cluster
+	// Process each cluster
 	start := 0
 	for i := 1; i < len(buf.Info); i++ {
 		// Start new cluster at non-mark glyphs
@@ -49,7 +49,7 @@ func (s *Shaper) fallbackMarkPosition(buf *Buffer) {
 			start = i
 		}
 	}
-// Process final cluster
+	// Process final cluster
 	s.positionCluster(buf, start, len(buf.Info))
 }
 
@@ -327,7 +327,7 @@ func (s *Shaper) positionMark(buf *Buffer, baseExtents *GlyphExtents, i int, ccc
 		return
 	}
 
-// Recategorize CCC for proper Y positioning
+	// Recategorize CCC for proper Y positioning
 	// HarfBuzz: _hb_ot_shape_fallback_mark_position_recategorize_marks()
 	posCCC := recategorizeCCC(ccc)
 
@@ -364,7 +364,7 @@ func (s *Shaper) positionMark(buf *Buffer, baseExtents *GlyphExtents, i int, ccc
 		pos.XOffset = baseExtents.XBearing + (baseExtents.Width-markExtents.Width)/2 - markExtents.XBearing
 	}
 
-// Y positioning based on recategorized combining class
+	// Y positioning based on recategorized combining class
 	switch posCCC {
 	case cccDoubleBelow, cccBelowLeft, cccBelow, cccBelowRight:
 		// Add gap

@@ -4,6 +4,11 @@ import (
 	"sort"
 )
 
+// otMapMaxValue is the maximum feature value for multi-valued features.
+// HarfBuzz equivalent: HB_OT_MAP_MAX_VALUE = (1u << HB_OT_MAP_MAX_BITS) - 1u in hb-ot-map.hh
+// HB_OT_MAP_MAX_BITS = 8, so MAX_VALUE = 255.
+const otMapMaxValue uint32 = (1 << 8) - 1
+
 // OT Map - HarfBuzz-style lookup organization
 //
 // HarfBuzz equivalent: hb_ot_map_t in hb-ot-map.hh
@@ -14,13 +19,13 @@ import (
 // LookupMap represents a single lookup with its associated properties.
 // HarfBuzz equivalent: hb_ot_map_t::lookup_map_t in hb-ot-map.hh:72-87
 type LookupMap struct {
-	Index        uint16 // Lookup index in GSUB/GPOS table
-	Mask         uint32 // Feature mask - only apply to glyphs where (glyph.mask & mask) != 0
-	FeatureTag   Tag    // The feature tag this lookup belongs to
-	AutoZWNJ     bool   // Automatically handle ZWNJ (Zero Width Non-Joiner)
-	AutoZWJ      bool   // Automatically handle ZWJ (Zero Width Joiner)
-	Random       bool   // Random feature (for 'rand' feature)
-	PerSyllable  bool   // Apply per syllable (for Indic/USE shapers)
+	Index       uint16 // Lookup index in GSUB/GPOS table
+	Mask        uint32 // Feature mask - only apply to glyphs where (glyph.mask & mask) != 0
+	FeatureTag  Tag    // The feature tag this lookup belongs to
+	AutoZWNJ    bool   // Automatically handle ZWNJ (Zero Width Non-Joiner)
+	AutoZWJ     bool   // Automatically handle ZWJ (Zero Width Joiner)
+	Random      bool   // Random feature (for 'rand' feature)
+	PerSyllable bool   // Apply per syllable (for Indic/USE shapers)
 }
 
 // featureMaskEntry stores the allocated mask and shift for a compiled feature.
@@ -88,13 +93,13 @@ func (m *OTMap) AddGPOSLookup(index uint16, mask uint32, featureTag Tag) {
 	isRandom := featureTag == MakeTag('r', 'a', 'n', 'd')
 
 	m.GPOSLookups = append(m.GPOSLookups, LookupMap{
-		Index:        index,
-		Mask:         mask,
-		FeatureTag:   featureTag,
-		AutoZWNJ:     true,
-		AutoZWJ:      true,
-		Random:       isRandom,       // True for 'rand' feature
-		PerSyllable:  false,          // Set by shapers if needed
+		Index:       index,
+		Mask:        mask,
+		FeatureTag:  featureTag,
+		AutoZWNJ:    true,
+		AutoZWJ:     true,
+		Random:      isRandom, // True for 'rand' feature
+		PerSyllable: false,    // Set by shapers if needed
 	})
 }
 
@@ -152,10 +157,10 @@ func (g *GSUB) applyLookupWithMap(lookupIndex int, buf *Buffer, font *Font, gdef
 		MarkFilteringSet: markFilteringSet,
 		FeatureMask:      effectiveMask,
 		TableType:        TableGSUB,
-		AutoZWNJ:         lookupMap.AutoZWNJ,     // From LookupMap (HarfBuzz: lookup.auto_zwnj)
-		AutoZWJ:          lookupMap.AutoZWJ,      // From LookupMap (HarfBuzz: lookup.auto_zwj)
-		Random:           lookupMap.Random,       // From LookupMap (HarfBuzz: lookup.random)
-		PerSyllable:      lookupMap.PerSyllable,  // From LookupMap (HarfBuzz: lookup.per_syllable)
+		AutoZWNJ:         lookupMap.AutoZWNJ,    // From LookupMap (HarfBuzz: lookup.auto_zwnj)
+		AutoZWJ:          lookupMap.AutoZWJ,     // From LookupMap (HarfBuzz: lookup.auto_zwj)
+		Random:           lookupMap.Random,      // From LookupMap (HarfBuzz: lookup.random)
+		PerSyllable:      lookupMap.PerSyllable, // From LookupMap (HarfBuzz: lookup.per_syllable)
 	}
 
 	// Type 8 (Reverse Chain Single Substitution) must be applied in reverse order
@@ -329,6 +334,7 @@ type featureInfo struct {
 	isGlobal     bool   // F_GLOBAL: applies to all glyphs
 	perSyllable  bool
 	manualZWJ    bool
+	random       bool
 }
 
 // CompileMap creates an OTMap from feature list and requested features.
@@ -361,6 +367,7 @@ func CompileMap(gsub *GSUB, gpos *GPOS, features []Feature, scriptTag Tag, langu
 			isGlobal:     isGlobal,
 			perSyllable:  f.PerSyllable,
 			manualZWJ:    f.ManualZWJ,
+			random:       f.Random,
 		})
 		if isGlobal {
 			infos[len(infos)-1].defaultValue = f.Value

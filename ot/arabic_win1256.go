@@ -79,9 +79,9 @@ var win1256MedifinaLamAlefSubst = win1256SubstTable{
 
 // win1256LigatureEntry represents a ligature for Windows-1256 fonts
 type win1256LigatureEntry struct {
-	first     GlyphID
-	second    GlyphID
-	ligature  GlyphID
+	first    GlyphID
+	second   GlyphID
+	ligature GlyphID
 }
 
 // win1256LamAlefLigatures: Lam + Alef ligatures

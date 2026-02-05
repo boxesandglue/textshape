@@ -26,24 +26,12 @@ package ot
 //   - shapeIndic: Indic shaper (see indic.go)
 
 import (
+	"encoding/binary"
 	"fmt"
+	"math"
 	"sync"
 	"unicode"
 )
-
-// Debug flag for GPOS debugging - set to true to enable debug output
-var debugGPOS = false
-
-// SetDebugGPOS enables or disables debug output for GPOS/Arabic processing.
-func SetDebugGPOS(enabled bool) {
-	debugGPOS = enabled
-}
-
-func debugPrintf(format string, args ...interface{}) {
-	if debugGPOS {
-		fmt.Printf(format, args...)
-	}
-}
 
 // Note: Direction, DirectionLTR, DirectionRTL are defined in gpos.go
 
@@ -116,6 +104,11 @@ type GlyphInfo struct {
 	// HarfBuzz equivalent: use_category() stored in var2.u8[3] via HB_BUFFER_ALLOCATE_VAR
 	// Stored directly on GlyphInfo so it survives GSUB operations.
 	USECategory uint8
+
+	// HangulFeature holds the Hangul Jamo feature type for Hangul shaping.
+	// HarfBuzz equivalent: hangul_shaping_feature() stored via ot_shaper_var_u8_auxiliary()
+	// Values: 0=none, 1=LJMO, 2=VJMO, 3=TJMO
+	HangulFeature uint8
 }
 
 // Glyph property constants.
@@ -177,9 +170,10 @@ func (g *GlyphInfo) GetLigID() uint8 {
 }
 
 // LigProps bit layout (HarfBuzz equivalent in hb-ot-layout.hh:425-448):
-//   Bits 7-5: lig_id (3 bits, values 0-7)
-//   Bit 4:    IS_LIG_BASE (set for ligature glyphs, unset for marks/components)
-//   Bits 3-0: lig_comp or lig_num_comps (4 bits, values 0-15)
+//
+//	Bits 7-5: lig_id (3 bits, values 0-7)
+//	Bit 4:    IS_LIG_BASE (set for ligature glyphs, unset for marks/components)
+//	Bits 3-0: lig_comp or lig_num_comps (4 bits, values 0-15)
 const isLigBase uint8 = 0x10 // HarfBuzz: IS_LIG_BASE
 
 // GetLigComp returns the ligature component index for this glyph.
@@ -301,6 +295,25 @@ type Buffer struct {
 	// ScratchFlags holds temporary flags used during shaping.
 	// HarfBuzz equivalent: scratch_flags in hb-buffer.hh
 	ScratchFlags ScratchFlags
+
+	// RandomState for the 'rand' feature's pseudo-random number generator.
+	// HarfBuzz equivalent: random_state in hb-buffer.hh
+	// Uses minstd_rand: state = state * 48271 % 2147483647
+	// Initial value 1 (set in NewBuffer/reset).
+	RandomState uint32
+
+	// ClusterLevel controls cluster merging behavior.
+	// HarfBuzz equivalent: cluster_level in hb-buffer.hh
+	// 0 = MONOTONE_GRAPHEMES (default): merge marks into base, monotone order
+	// 1 = MONOTONE_CHARACTERS: keep marks separate, monotone order
+	// 2 = CHARACTERS: keep marks separate, no monotone enforcement
+	// 3 = GRAPHEMES: merge marks into base, no monotone enforcement
+	ClusterLevel int
+
+	// NotFoundVSGlyph is the glyph ID to use for variation selectors that are
+	// not found in the font. -1 means not set (VS will be removed from buffer).
+	// HarfBuzz equivalent: not_found_variation_selector in hb-buffer.hh
+	NotFoundVSGlyph int
 }
 
 // ScratchFlags are temporary flags used during shaping.
@@ -316,6 +329,8 @@ const (
 func NewBuffer() *Buffer {
 	return &Buffer{
 		// Direction is 0 (unset) - will be determined by GuessSegmentProperties or shaper
+		RandomState:     1,  // HarfBuzz: random_state initialized to 1
+		NotFoundVSGlyph: -1, // HarfBuzz: HB_CODEPOINT_INVALID
 	}
 }
 
@@ -459,6 +474,13 @@ func (b *Buffer) MergeClusters(start, end int) {
 		return
 	}
 
+	// HarfBuzz: merge_clusters_impl() in hb-buffer.cc:550-554
+	// If cluster level is NOT monotone (level 2 or 3), skip actual merging.
+	// HB_BUFFER_CLUSTER_LEVEL_IS_MONOTONE = level 0 or 1
+	if b.ClusterLevel != 0 && b.ClusterLevel != 1 {
+		return
+	}
+
 	// Find minimum cluster in range
 	minCluster := b.Info[start].Cluster
 	for i := start + 1; i < end; i++ {
@@ -482,9 +504,10 @@ func (b *Buffer) MergeClusters(start, end int) {
 	}
 }
 
-// mergeClustersSlice merges clusters in a GlyphInfo slice (used during normalization).
+// mergeClustersSlice merges cluster values in a range of GlyphInfo.
 // HarfBuzz equivalent: hb_buffer_t::merge_clusters_impl() in hb-buffer.cc:547-582
-// This is a standalone version for use with temporary slices during normalization.
+// Finds the minimum cluster in [start, end), extends the range to include
+// adjacent glyphs with the same cluster values, then sets all to the minimum.
 func mergeClustersSlice(info []GlyphInfo, start, end int) {
 	if end-start < 2 {
 		return
@@ -501,11 +524,19 @@ func mergeClustersSlice(info []GlyphInfo, start, end int) {
 		}
 	}
 
-	// Extend end: If the last glyph in range has a different cluster than the minimum,
-	// extend the range to include following glyphs with the same cluster.
+	// Extend end: include following glyphs with the same cluster as the last glyph
+	// HarfBuzz: hb-buffer.cc:567-568
 	if minCluster != info[end-1].Cluster {
 		for end < len(info) && info[end-1].Cluster == info[end].Cluster {
 			end++
+		}
+	}
+
+	// Extend start: include preceding glyphs with the same cluster as the first glyph
+	// HarfBuzz: hb-buffer.cc:571-573
+	if minCluster != info[start].Cluster {
+		for start > 0 && info[start-1].Cluster == info[start].Cluster {
+			start--
 		}
 	}
 
@@ -585,21 +616,29 @@ func formClusters(buf *Buffer) {
 		}
 	}
 
-	// Second pass: merge clusters for grapheme groups (base + continuations)
+	// Second pass: merge or mark clusters for grapheme groups (base + continuations)
+	// HarfBuzz: hb-ot-shape.cc:583-588
+	// IS_GRAPHEMES (level 0,3): merge marks into base cluster
+	// !IS_GRAPHEMES (level 1,2): just mark unsafe_to_break, keep marks separate
+	isGraphemes := buf.ClusterLevel == 0 || buf.ClusterLevel == 3
 	start := 0
 	for i := 1; i < n; i++ {
 		if isCont[i] {
 			continue
 		}
-		// This is a new base - merge the previous grapheme's clusters
+		// This is a new base - process the previous grapheme
 		if i > start+1 {
-			buf.MergeClusters(start, i)
+			if isGraphemes {
+				buf.MergeClusters(start, i)
+			}
 		}
 		start = i
 	}
-	// Merge the last grapheme
+	// Process the last grapheme
 	if n > start+1 {
-		buf.MergeClusters(start, n)
+		if isGraphemes {
+			buf.MergeClusters(start, n)
+		}
 	}
 }
 
@@ -726,6 +765,19 @@ func (b *Buffer) outputGlyph(glyphID GlyphID) {
 	info.GlyphID = glyphID
 	b.outInfo = append(b.outInfo, info)
 	b.outLen++
+}
+
+// replaceGlyphs replaces numIn input glyphs with numOut output glyphs.
+// HarfBuzz equivalent: hb_buffer_t::replace_glyphs() in hb-buffer.hh:319-327
+func (b *Buffer) replaceGlyphs(numIn, numOut int, codepoints []Codepoint) {
+	for i := 0; i < numOut; i++ {
+		info := b.Info[b.Idx]
+		info.Codepoint = codepoints[i]
+		info.GlyphID = 0
+		b.outInfo = append(b.outInfo, info)
+		b.outLen++
+	}
+	b.Idx += numIn
 }
 
 // outputInfo appends a GlyphInfo directly to the output buffer.
@@ -972,6 +1024,10 @@ type Shaper struct {
 	fvar *Fvar
 	avar *Avar
 	hvar *Hvar
+	gvar *Gvar // TrueType glyph variations (for advance deltas when no HVAR)
+	vmtx *Vmtx // Vertical metrics
+	vhea *Vhea // Vertical header
+	vorg *VORG // Vertical origin (CFF/CFF2 fonts)
 
 	// Default features to apply when nil is passed to Shape
 	defaultFeatures []Feature
@@ -1001,6 +1057,109 @@ type Shaper struct {
 	// HarfBuzz equivalent: indic_shape_plan_t in hb-ot-shaper-indic.cc:289-308
 	// Lazily initialized when first shaping Indic text.
 	indicPlans map[Tag]*IndicPlan
+
+	// Synthetic bold/slant (HarfBuzz: hb_font_set_synthetic_bold / hb_font_set_synthetic_slant)
+	xEmbolden       float32
+	yEmbolden       float32
+	emboldenInPlace bool
+	slant           float32
+
+	// Computed bold strengths in font units (xStrength = round(upem * xEmbolden))
+	xStrength int16
+	yStrength int16
+}
+
+// SetSyntheticBold sets synthetic bold parameters.
+// x and y are embolden strengths in em-units (e.g. 0.02).
+// If inPlace is true, advances and origins are not modified (only extents/drawing).
+// HarfBuzz equivalent: hb_font_set_synthetic_bold()
+func (s *Shaper) SetSyntheticBold(x, y float32, inPlace bool) {
+	s.xEmbolden = x
+	s.yEmbolden = y
+	s.emboldenInPlace = inPlace
+	s.xStrength = int16(math.Round(float64(s.face.Upem()) * float64(x)))
+	s.yStrength = int16(math.Round(float64(s.face.Upem()) * float64(y)))
+}
+
+// SyntheticBold returns the current synthetic bold parameters.
+func (s *Shaper) SyntheticBold() (x, y float32, inPlace bool) {
+	return s.xEmbolden, s.yEmbolden, s.emboldenInPlace
+}
+
+// SetSyntheticSlant sets the synthetic slant value.
+// HarfBuzz equivalent: hb_font_set_synthetic_slant()
+// Slant has no effect on shaping positions; it only affects extents and drawing.
+func (s *Shaper) SetSyntheticSlant(slant float32) {
+	s.slant = slant
+}
+
+// SyntheticSlant returns the current synthetic slant value.
+func (s *Shaper) SyntheticSlant() float32 {
+	return s.slant
+}
+
+// getGlyphHAdvanceWithBold returns the horizontal advance for a glyph including
+// synthetic bold. Used internally for v-origin calculations.
+func (s *Shaper) getGlyphHAdvanceWithBold(glyph GlyphID) int16 {
+	adv := int16(s.GetGlyphHAdvanceVar(glyph))
+	if s.xStrength != 0 && !s.emboldenInPlace && adv != 0 {
+		adv += s.xStrength
+	}
+	return adv
+}
+
+// isGDEFBlocklisted checks if a font's GDEF table is known to be broken.
+// HarfBuzz equivalent: hb-ot-layout.cc:152-266 (GDEF::is_blocklisted)
+// Fonts like certain versions of Times New Roman, Tahoma, Courier New, etc.
+// have GDEF tables that incorrectly classify base glyphs as marks, causing
+// their advances to be zeroed by zeroMarkWidthsByGDEF.
+func isGDEFBlocklisted(gdefLen, gsubLen, gposLen int) bool {
+	// HarfBuzz uses HB_CODEPOINT_ENCODE3(x,y,z) = (x<<42)|(y<<21)|z
+	key := (uint64(gdefLen) << 42) | (uint64(gsubLen) << 21) | uint64(gposLen)
+	switch key {
+	case (442 << 42) | (2874 << 21) | 42038, // timesi.ttf Windows 7
+		(430 << 42) | (2874 << 21) | 40662,    // timesbi.ttf Windows 7
+		(442 << 42) | (2874 << 21) | 39116,    // timesi.ttf Windows 7
+		(430 << 42) | (2874 << 21) | 39374,    // timesbi.ttf Windows 7
+		(490 << 42) | (3046 << 21) | 41638,    // Times New Roman Italic OS X 10.11.3
+		(478 << 42) | (3046 << 21) | 41902,    // Times New Roman Bold Italic OS X 10.11.3
+		(898 << 42) | (12554 << 21) | 46470,   // tahoma.ttf Windows 8
+		(910 << 42) | (12566 << 21) | 47732,   // tahomabd.ttf Windows 8
+		(928 << 42) | (23298 << 21) | 59332,   // tahoma.ttf Windows 8.1
+		(940 << 42) | (23310 << 21) | 60732,   // tahomabd.ttf Windows 8.1
+		(964 << 42) | (23836 << 21) | 60072,   // tahoma.ttf v6.04 Windows 8.1 x64
+		(976 << 42) | (23832 << 21) | 61456,   // tahomabd.ttf v6.04 Windows 8.1 x64
+		(994 << 42) | (24474 << 21) | 60336,   // tahoma.ttf Windows 10
+		(1006 << 42) | (24470 << 21) | 61740,  // tahomabd.ttf Windows 10
+		(1006 << 42) | (24576 << 21) | 61346,  // tahoma.ttf v6.91 Windows 10 x64
+		(1018 << 42) | (24572 << 21) | 62828,  // tahomabd.ttf v6.91 Windows 10 x64
+		(1006 << 42) | (24576 << 21) | 61352,  // tahoma.ttf Windows 10 AU
+		(1018 << 42) | (24572 << 21) | 62834,  // tahomabd.ttf Windows 10 AU
+		(832 << 42) | (7324 << 21) | 47162,    // Tahoma.ttf Mac OS X 10.9
+		(844 << 42) | (7302 << 21) | 45474,    // Tahoma Bold.ttf Mac OS X 10.9
+		(180 << 42) | (13054 << 21) | 7254,    // himalaya.ttf Windows 7
+		(192 << 42) | (12638 << 21) | 7254,    // himalaya.ttf Windows 8
+		(192 << 42) | (12690 << 21) | 7254,    // himalaya.ttf Windows 8.1
+		(188 << 42) | (248 << 21) | 3852,      // Cantarell-Regular/Oblique 0.0.21
+		(188 << 42) | (264 << 21) | 3426,      // Cantarell-Bold/Bold-Oblique 0.0.21
+		(1058 << 42) | (47032 << 21) | 11818,  // Padauk.ttf RHEL 7.2
+		(1046 << 42) | (47030 << 21) | 12600,  // Padauk-Bold.ttf RHEL 7.2
+		(1058 << 42) | (71796 << 21) | 16770,  // Padauk.ttf Ubuntu 16.04
+		(1046 << 42) | (71790 << 21) | 17862,  // Padauk-Bold.ttf Ubuntu 16.04
+		(1046 << 42) | (71788 << 21) | 17112,  // Padauk-book.ttf 2.80
+		(1058 << 42) | (71794 << 21) | 17514,  // Padauk-bookbold.ttf 2.80
+		(1330 << 42) | (109904 << 21) | 57938, // Padauk-book.ttf 3.0
+		(1330 << 42) | (109904 << 21) | 58972, // Padauk-bookbold.ttf 3.0
+		(1004 << 42) | (59092 << 21) | 14836,  // Padauk.ttf v2.5
+		(588 << 42) | (5078 << 21) | 14418,    // Courier New.ttf macOS 15
+		(588 << 42) | (5078 << 21) | 14238,    // Courier New Bold.ttf macOS 15
+		(894 << 42) | (17162 << 21) | 33960,   // cour.ttf Windows 10
+		(894 << 42) | (17154 << 21) | 34472,   // courbd.ttf Windows 10
+		(816 << 42) | (7868 << 21) | 17052,    // cour.ttf Windows 8.1
+		(816 << 42) | (7868 << 21) | 17138:    // courbd.ttf Windows 8.1
+		return true
+	}
+	return false
 }
 
 // NewShaper creates a shaper from a parsed font.
@@ -1060,18 +1219,34 @@ func NewShaperFromFace(face *Face) (*Shaper, error) {
 	}
 
 	// Parse GSUB (optional)
+	var gsubLen int
 	if font.HasTable(TagGSUB) {
 		data, err := font.TableData(TagGSUB)
 		if err == nil {
+			gsubLen = len(data)
 			s.gsub, _ = ParseGSUB(data)
 		}
 	}
 
 	// Parse GPOS (optional)
+	var gposLen int
 	if font.HasTable(TagGPOS) {
 		data, err := font.TableData(TagGPOS)
 		if err == nil {
+			gposLen = len(data)
 			s.gpos, _ = ParseGPOS(data)
+		}
+	}
+
+	// HarfBuzz equivalent: hb-ot-layout.cc:152-266 (GDEF::is_blocklisted)
+	// Blocklist fonts with broken GDEF tables that misclassify base glyphs as marks.
+	if s.gdef != nil {
+		var gdefLen int
+		if data, err := font.TableData(TagGDEF); err == nil {
+			gdefLen = len(data)
+		}
+		if isGDEFBlocklisted(gdefLen, gsubLen, gposLen) {
+			s.gdef = nil
 		}
 	}
 
@@ -1086,6 +1261,25 @@ func NewShaperFromFace(face *Face) (*Shaper, error) {
 	// Parse hmtx (optional but important for positioning)
 	if font.HasTable(TagHmtx) && font.HasTable(TagHhea) {
 		s.hmtx, _ = ParseHmtxFromFont(font)
+	}
+
+	// Parse vhea/vmtx (vertical metrics)
+	if font.HasTable(TagVhea) {
+		if data, err := font.TableData(TagVhea); err == nil {
+			s.vhea, _ = ParseVhea(data)
+		}
+	}
+	if s.vhea != nil && font.HasTable(TagVmtx) {
+		if data, err := font.TableData(TagVmtx); err == nil {
+			s.vmtx, _ = ParseVmtx(data, int(s.vhea.NumberOfVMetrics), font.NumGlyphs())
+		}
+	}
+
+	// Parse VORG (vertical origin, CFF/CFF2 fonts)
+	if font.HasTable(TagVORG) {
+		if data, err := font.TableData(TagVORG); err == nil {
+			s.vorg, _ = ParseVORG(data)
+		}
 	}
 
 	// Parse glyf (optional, for fallback mark positioning)
@@ -1144,6 +1338,15 @@ func NewShaperFromFace(face *Face) (*Shaper, error) {
 		}
 	}
 
+	// Parse gvar (glyph variations, for advance deltas when no HVAR)
+	// HarfBuzz: gvar used in _glyf_get_advance_with_var_unscaled() when no HVAR
+	if font.HasTable(TagGvar) {
+		data, err := font.TableData(TagGvar)
+		if err == nil {
+			s.gvar, _ = ParseGvar(data)
+		}
+	}
+
 	// Initialize Arabic fallback plan if needed
 	// HarfBuzz: arabic_fallback_plan_create() in hb-ot-shaper-arabic-fallback.hh:323-347
 	// Only creates plan for Arabic script fonts without GSUB positional features
@@ -1186,13 +1389,14 @@ func (s *Shaper) SetVariations(variations []Variation) {
 	}
 
 	// Apply specified variations
+	// HarfBuzz: hb_font_set_variations() sets ALL axes matching the tag, not just the first.
+	// This is important for fonts with multiple axes sharing the same tag.
 	for _, v := range variations {
 		for i := 0; i < axisCount; i++ {
 			if axes[i].Tag == v.Tag {
 				s.designCoords[i] = clampFloat32(v.Value, axes[i].MinValue, axes[i].MaxValue)
 				s.normalizedCoords[i] = s.fvar.NormalizeAxisValue(i, v.Value)
 				s.normalizedCoordsI[i] = floatToF2DOT14(s.normalizedCoords[i])
-				break
 			}
 		}
 	}
@@ -1348,6 +1552,19 @@ func (s *Shaper) Shape(buf *Buffer, features []Feature) {
 		shaper = SelectShaper(buf.Script, buf.Direction)
 	}
 
+	// Step 3.5: Ensure native direction
+	// HarfBuzz equivalent: hb_ensure_native_direction() in hb-ot-shape.cc:592-648
+	// If the buffer direction doesn't match the script's native direction,
+	// reverse the buffer and flip the direction. This ensures features designed
+	// for RTL scripts work correctly even when direction is overridden to LTR.
+	ensureNativeDirection(buf)
+
+	// Step 3.6: Rotate chars (mirror for RTL)
+	// HarfBuzz equivalent: hb_ot_rotate_chars() in hb-ot-shape.cc:655-684
+	// For RTL text, replace codepoints with their bidi mirrors if the font has
+	// a glyph for the mirrored codepoint. Otherwise, set the rtlm feature mask.
+	s.rotateChars(buf)
+
 	// Step 4: Dispatch to the appropriate shaping function based on shaper
 	// HarfBuzz: Uses function pointers in hb_ot_shaper_t
 	switch shaper.Name {
@@ -1374,8 +1591,8 @@ func (s *Shaper) Shape(buf *Buffer, features []Feature) {
 		// Hebrew shaper with mark reordering
 		s.shapeHebrew(buf, features)
 	case "hangul":
-		// Hangul shaper (currently falls back to default)
-		s.shapeDefault(buf, features)
+		// Hangul shaper with Jamo composition/decomposition
+		s.shapeHangul(buf, features)
 	case "qaag":
 		// Zawgyi (Myanmar visual encoding) shaper
 		// HarfBuzz equivalent: _hb_ot_shaper_myanmar_zawgyi in hb-ot-shaper-myanmar.cc
@@ -1389,9 +1606,120 @@ func (s *Shaper) Shape(buf *Buffer, features []Feature) {
 	// HarfBuzz equivalent: _hb_ot_shape_fallback_spaces() in hb-ot-shape-fallback.cc
 	s.applySpaceFallback(buf)
 
+	// Step 3c: Deal with variation selectors that have NotFoundVSGlyph
+	// HarfBuzz equivalent: hb_ot_deal_with_variation_selectors() in hb-ot-shape.cc:806-825
+	// This runs AFTER all positioning to zero the advance of VS fallback glyphs.
+	if buf.NotFoundVSGlyph >= 0 {
+		for i := range buf.Info {
+			if IsVariationSelector(buf.Info[i].Codepoint) &&
+				buf.Info[i].GlyphID == GlyphID(buf.NotFoundVSGlyph) {
+				buf.Pos[i].XAdvance = 0
+				buf.Pos[i].YAdvance = 0
+				buf.Pos[i].XOffset = 0
+				buf.Pos[i].YOffset = 0
+			}
+		}
+	}
+
 	// Step 4: Handle default ignorables (after all shaping)
 	// HarfBuzz: hb-ot-shape.cc:828-851 (hb_ot_hide_default_ignorables)
 	s.hideDefaultIgnorables(buf)
+}
+
+// ensureNativeDirection ensures the buffer direction matches the script's native
+// horizontal direction. If it doesn't (e.g., LTR for Arabic which is natively RTL),
+// the buffer is reversed and the direction is changed.
+// HarfBuzz equivalent: hb_ensure_native_direction() in hb-ot-shape.cc:592-648
+//
+// Special case: If the script is natively RTL but the direction is LTR, and the
+// buffer contains only numbers (no letters), the direction is kept as LTR.
+// This allows digit sequences in Arabic to be shaped in LTR direction.
+func ensureNativeDirection(buf *Buffer) {
+	direction := buf.Direction
+	// Vertical directions are not reordered based on script native direction.
+	// HarfBuzz: hb_ensure_native_direction() only handles horizontal directions.
+	if direction.IsVertical() {
+		return
+	}
+	// Script tag 0 means Common/Unknown — no native direction to enforce.
+	if buf.Script == 0 {
+		return
+	}
+	// Normalize script tag to ISO 15924 uppercase-first format for lookup.
+	// Test runner may pass lowercase tags (e.g., 'arab' from --script=arab).
+	horizDir := normalizeAndGetHorizontalDirection(buf.Script)
+
+	// Special case: RTL script with LTR direction
+	// Check if buffer has only numbers/RI (no letters) - keep LTR for digit sequences
+	// HarfBuzz: hb-ot-shape.cc:614-634
+	if horizDir == DirectionRTL && direction == DirectionLTR {
+		foundNumber := false
+		foundLetter := false
+		foundRI := false
+		for _, info := range buf.Info {
+			gc := getGeneralCategory(info.Codepoint)
+			if isLetterCategory(gc) {
+				foundLetter = true
+				break
+			} else if gc == GCDecimalNumber {
+				foundNumber = true
+			} else if isRegionalIndicator(info.Codepoint) {
+				foundRI = true
+			}
+		}
+		if (foundNumber || foundRI) && !foundLetter {
+			horizDir = DirectionLTR
+		}
+	}
+
+	// If direction doesn't match native, reverse buffer and flip direction
+	if direction.IsHorizontal() && direction != horizDir && horizDir.IsValid() {
+		buf.Reverse()
+		buf.Direction = directionReverse(direction)
+	}
+}
+
+// directionReverse returns the opposite direction (LTR↔RTL, TTB↔BTT).
+// HarfBuzz: HB_DIRECTION_REVERSE(dir) = (dir ^ 1)
+func directionReverse(d Direction) Direction {
+	return Direction(int(d) ^ 1)
+}
+
+// isLetterCategory returns true if the general category is a letter category.
+// HarfBuzz: HB_UNICODE_GENERAL_CATEGORY_IS_LETTER(gc)
+func isLetterCategory(gc GeneralCategory) bool {
+	switch gc {
+	case GCUppercaseLetter, GCLowercaseLetter, GCTitlecaseLetter,
+		GCModifierLetter, GCOtherLetter:
+		return true
+	}
+	return false
+}
+
+// normalizeAndGetHorizontalDirection normalizes a script tag to ISO 15924
+// uppercase-first format and returns its native horizontal direction.
+// Handles both uppercase-first ('Arab') and lowercase ('arab') script tags.
+// HarfBuzz equivalent: hb_script_get_horizontal_direction() in hb-common.cc
+func normalizeAndGetHorizontalDirection(script Tag) Direction {
+	// Normalize to ISO 15924 uppercase-first: first char uppercase, rest lowercase
+	b0 := byte((script >> 24) & 0xFF)
+	b1 := byte((script >> 16) & 0xFF)
+	b2 := byte((script >> 8) & 0xFF)
+	b3 := byte(script & 0xFF)
+	if b0 >= 'a' && b0 <= 'z' {
+		b0 -= 'a' - 'A'
+	}
+	if b1 >= 'A' && b1 <= 'Z' {
+		b1 += 'a' - 'A'
+	}
+	if b2 >= 'A' && b2 <= 'Z' {
+		b2 += 'a' - 'A'
+	}
+	if b3 >= 'A' && b3 <= 'Z' {
+		b3 += 'a' - 'A'
+	}
+	normalized := MakeTag(b0, b1, b2, b3)
+	return GetHorizontalDirection(normalized)
 }
 
 // insertDottedCircle inserts U+25CC dotted circle before orphaned marks.
@@ -1455,10 +1783,11 @@ type SyllableAccessor interface {
 //   - brokenSyllableType: The syllable type that indicates a broken cluster (lower 4 bits)
 //   - dottedCircleCategory: The category to assign to the inserted dotted circle
 //   - rephaCategory: The category of repha glyphs (-1 if not applicable)
+//   - dottedCirclePosition: The position to assign to the inserted dotted circle (-1 if not applicable)
 //
 // Returns true if any dotted circles were inserted.
 func (s *Shaper) insertSyllabicDottedCircles(buf *Buffer, accessor SyllableAccessor,
-	brokenSyllableType uint8, dottedCircleCategory uint8, rephaCategory int) bool {
+	brokenSyllableType uint8, dottedCircleCategory uint8, rephaCategory int, dottedCirclePosition int) bool {
 
 	// 1. Check if dotted circle insertion is disabled
 	if buf.Flags&BufferFlagDoNotInsertDottedCircle != 0 {
@@ -1485,9 +1814,14 @@ func (s *Shaper) insertSyllabicDottedCircles(buf *Buffer, accessor SyllableAcces
 	}
 
 	// 4. Create dotted circle template
+	// HarfBuzz: hb-ot-shaper-syllabic.cc:55-61
 	dottedCircle := GlyphInfo{
 		GlyphID:   dottedCircleGlyph,
 		Codepoint: 0x25CC,
+	}
+	dottedCircle.IndicCategory = dottedCircleCategory
+	if dottedCirclePosition != -1 {
+		dottedCircle.IndicPosition = uint8(dottedCirclePosition)
 	}
 
 	// 5. Insert dotted circles using output buffer mechanism
@@ -1561,6 +1895,10 @@ func (s *Shaper) shapeDefault(buf *Buffer, features []Feature) {
 		// LTR: apply ltra and ltrm
 		gsubFeatures = append(gsubFeatures, Feature{Tag: MakeTag('l', 't', 'r', 'a'), Value: 1})
 		gsubFeatures = append(gsubFeatures, Feature{Tag: MakeTag('l', 't', 'r', 'm'), Value: 1})
+	case DirectionTTB, DirectionBTT:
+		// Vertical: apply vert (Vertical Alternates)
+		// HarfBuzz: hb-ot-shape.cc:345-347
+		gsubFeatures = append(gsubFeatures, Feature{Tag: MakeTag('v', 'e', 'r', 't'), Value: 1})
 	}
 
 	s.applyGSUB(buf, gsubFeatures)
@@ -1573,10 +1911,18 @@ func (s *Shaper) shapeDefault(buf *Buffer, features []Feature) {
 		gposFeatures = s.getDefaultGPOSFeatures(buf.Direction)
 	}
 
+	// For vertical text, replace 'kern' with 'vkrn'
+	// HarfBuzz: hb-ot-shape.cc:127-129
+	if buf.Direction.IsVertical() {
+		gposFeatures = replaceKernForVertical(gposFeatures)
+	}
+
 	// Default shaper uses LATE mode for zero width marks
 	// HarfBuzz: HB_OT_SHAPE_ZERO_WIDTH_MARKS_BY_GDEF_LATE in _hb_ot_shaper_default
 	s.applyGPOSWithZeroWidthMarks(buf, gposFeatures, ZeroWidthMarksByGDEFLate)
-	s.applyKernTableFallback(buf, features) // Fallback if no GPOS kern
+	if !buf.Direction.IsVertical() {
+		s.applyKernTableFallback(buf, features) // Fallback if no GPOS kern (horizontal only)
+	}
 
 	// Reverse buffer for RTL display (HarfBuzz: hb-ot-shape.cc:1106-1107)
 	if buf.Direction == DirectionRTL {
@@ -1875,6 +2221,83 @@ func (s *Shaper) reverseRange(buf *Buffer, start, end int) {
 
 // reverseClusters reverses buffer clusters for RTL text.
 // First, it reverses the entire buffer, then reverses each cluster group
+// rotateChars mirrors codepoints for backward directions and substitutes vertical forms.
+// HarfBuzz equivalent: hb_ot_rotate_chars() in hb-ot-shape.cc:655-684
+//
+// HarfBuzz uses HB_DIRECTION_IS_BACKWARD which includes both RTL and BTT.
+// For backward directions: apply bidi mirroring.
+// For vertical directions: apply vertical forms substitution.
+// BTT gets both treatments.
+func (s *Shaper) rotateChars(buf *Buffer) {
+	// Apply bidi mirroring for backward directions (RTL, BTT)
+	// HarfBuzz: HB_DIRECTION_IS_BACKWARD = (dir & 1) != 0
+	isBackward := buf.Direction == DirectionRTL || buf.Direction == DirectionBTT
+	if isBackward {
+		for i := range buf.Info {
+			mirrored, ok := bidiMirrorTable[buf.Info[i].Codepoint]
+			if !ok {
+				continue
+			}
+			if s.cmap != nil {
+				if gid, found := s.cmap.Lookup(mirrored); found && gid != 0 {
+					buf.Info[i].Codepoint = mirrored
+				}
+			}
+		}
+	}
+
+	// Apply vertical forms for vertical directions (TTB, BTT)
+	// HarfBuzz: hb-ot-shape.cc:676-685
+	if buf.Direction.IsVertical() {
+		for i := range buf.Info {
+			if vf, ok := verticalFormsTable[buf.Info[i].Codepoint]; ok {
+				if s.cmap != nil {
+					if gid, found := s.cmap.Lookup(vf); found && gid != 0 {
+						buf.Info[i].Codepoint = vf
+					}
+				}
+			}
+		}
+	}
+}
+
+// verticalFormsTable maps codepoints to their vertical presentation forms.
+// CJK Compatibility Forms (FE10-FE19) and CJK Compatibility Forms (FE30-FE4F).
+// HarfBuzz: hb-ot-shape.cc:676-685 uses Unicode decomposition mapping.
+var verticalFormsTable = map[Codepoint]Codepoint{
+	0x2013: 0xFE32, // EN DASH → PRESENTATION FORM FOR VERTICAL EN DASH
+	0x2014: 0xFE31, // EM DASH → PRESENTATION FORM FOR VERTICAL EM DASH
+	0x2025: 0xFE30, // TWO DOT LEADER → PRESENTATION FORM FOR VERTICAL TWO DOT LEADER (via U+2026)
+	0x2026: 0xFE19, // HORIZONTAL ELLIPSIS → PRESENTATION FORM FOR VERTICAL HORIZONTAL ELLIPSIS
+	0x3001: 0xFE11, // IDEOGRAPHIC COMMA → PRESENTATION FORM FOR VERTICAL IDEOGRAPHIC COMMA
+	0x3002: 0xFE12, // IDEOGRAPHIC FULL STOP → PRESENTATION FORM FOR VERTICAL IDEOGRAPHIC FULL STOP
+	0x3008: 0xFE3F, // LEFT ANGLE BRACKET
+	0x3009: 0xFE40, // RIGHT ANGLE BRACKET
+	0x300A: 0xFE3D, // LEFT DOUBLE ANGLE BRACKET
+	0x300B: 0xFE3E, // RIGHT DOUBLE ANGLE BRACKET
+	0x300C: 0xFE41, // LEFT CORNER BRACKET
+	0x300D: 0xFE42, // RIGHT CORNER BRACKET
+	0x300E: 0xFE43, // LEFT WHITE CORNER BRACKET
+	0x300F: 0xFE44, // RIGHT WHITE CORNER BRACKET
+	0x3010: 0xFE3B, // LEFT BLACK LENTICULAR BRACKET
+	0x3011: 0xFE3C, // RIGHT BLACK LENTICULAR BRACKET
+	0x3014: 0xFE39, // LEFT TORTOISE SHELL BRACKET
+	0x3015: 0xFE3A, // RIGHT TORTOISE SHELL BRACKET
+	0x3016: 0xFE17, // LEFT WHITE LENTICULAR BRACKET
+	0x3017: 0xFE18, // RIGHT WHITE LENTICULAR BRACKET
+	0xFF01: 0xFE15, // FULLWIDTH EXCLAMATION MARK
+	0xFF08: 0xFE35, // FULLWIDTH LEFT PARENTHESIS
+	0xFF09: 0xFE36, // FULLWIDTH RIGHT PARENTHESIS
+	0xFF0C: 0xFE10, // FULLWIDTH COMMA
+	0xFF1A: 0xFE13, // FULLWIDTH COLON
+	0xFF1B: 0xFE14, // FULLWIDTH SEMICOLON
+	0xFF1F: 0xFE16, // FULLWIDTH QUESTION MARK
+	0xFF3B: 0xFE47, // FULLWIDTH LEFT SQUARE BRACKET
+	0xFF3D: 0xFE48, // FULLWIDTH RIGHT SQUARE BRACKET
+	0xFF5B: 0xFE37, // FULLWIDTH LEFT CURLY BRACKET
+	0xFF5D: 0xFE38, // FULLWIDTH RIGHT CURLY BRACKET
+}
+
 // to restore the original intra-cluster order. This keeps glyphs within
 // a cluster in their original order while reversing the overall buffer order.
 func (s *Shaper) reverseClusters(buf *Buffer) {
@@ -1943,6 +2366,21 @@ func (s *Shaper) getDefaultGPOSFeatures(direction Direction) []Feature {
 	return features
 }
 
+// replaceKernForVertical replaces 'kern' features with 'vkrn' for vertical text.
+// HarfBuzz: hb-ot-shape.cc:127-129 selects kern_tag based on direction.
+func replaceKernForVertical(features []Feature) []Feature {
+	tagKern := MakeTag('k', 'e', 'r', 'n')
+	tagVkrn := MakeTag('v', 'k', 'r', 'n')
+	result := make([]Feature, 0, len(features))
+	for _, f := range features {
+		if f.Tag == tagKern {
+			f.Tag = tagVkrn
+		}
+		result = append(result, f)
+	}
+	return result
+}
+
 // getDefaultGSUBFeatures returns the default GSUB features that HarfBuzz enables automatically.
 // HarfBuzz equivalent: common_features[] and horizontal_features[] in hb-ot-shape.cc:295-318
 //
@@ -1961,6 +2399,10 @@ func (s *Shaper) getDefaultGSUBFeatures(direction Direction) []Feature {
 		{Tag: MakeTag('c', 'c', 'm', 'p'), Value: 1}, // Glyph Composition/Decomposition
 		{Tag: MakeTag('l', 'o', 'c', 'l'), Value: 1}, // Localized Forms
 		{Tag: MakeTag('r', 'l', 'i', 'g'), Value: 1}, // Required Ligatures
+		// HarfBuzz: enable_feature('rand', F_RANDOM, HB_OT_MAP_MAX_VALUE)
+		// enable_feature adds F_GLOBAL, so rand is global with value=MAX_VALUE.
+		// When alt_index==MAX_VALUE and Random==true, randomize in AlternateSubst.
+		{Tag: MakeTag('r', 'a', 'n', 'd'), Value: otMapMaxValue, Random: true},
 	}
 
 	// Horizontal-specific GSUB features
@@ -1990,6 +2432,7 @@ func (s *Shaper) mapCodepointsToGlyphs(buf *Buffer) {
 	// Iterate backwards to safely remove VS entries
 	// This follows HarfBuzz's approach: if font has variant glyph, combine;
 	// otherwise leave both characters separate for GSUB to handle.
+	// HarfBuzz equivalent: handle_variation_selector_cluster() in hb-ot-shape-normalize.cc:203-252
 	for i := len(buf.Info) - 1; i > 0; i-- {
 		cp := buf.Info[i].Codepoint
 		if IsVariationSelector(cp) {
@@ -2003,8 +2446,17 @@ func (s *Shaper) mapCodepointsToGlyphs(buf *Buffer) {
 				if len(buf.Pos) > i {
 					buf.Pos = append(buf.Pos[:i], buf.Pos[i+1:]...)
 				}
+			} else if buf.NotFoundVSGlyph >= 0 {
+				// VS not found in font but NotFoundVSGlyph is set:
+				// Mark VS for later replacement with the specified glyph ID.
+				// HarfBuzz: hb-ot-shape-normalize.cc:226-227, hb-ot-shape.cc:806-825
+				buf.Info[i].GlyphID = GlyphID(buf.NotFoundVSGlyph)
+				// Clear default ignorable flag so GSUB won't skip this glyph.
+				// HarfBuzz: _hb_glyph_info_clear_default_ignorable() in normalize.cc:227
+				buf.Info[i].GlyphProps &^= GlyphPropsDefaultIgnorable
+				buf.Info[i].GlyphProps |= GlyphPropsSubstituted // prevent hiding
 			}
-			// If no variant found, VS stays as separate glyph (GSUB may handle it)
+			// If no variant found and NotFoundVSGlyph not set, VS stays as separate glyph
 		}
 	}
 
@@ -2131,12 +2583,17 @@ func (s *Shaper) synthesizeGlyphClasses(buf *Buffer) {
 	}
 }
 
-// setBaseAdvances sets the base advance widths from hmtx.
+// setBaseAdvances sets the base advance widths from hmtx (horizontal) or vmtx (vertical).
 // For variable fonts, it also applies HVAR deltas.
-// HarfBuzz equivalent: hb_ot_get_glyph_h_advances() in hb-ot-font.cc
+// HarfBuzz equivalent: hb_ot_get_glyph_h_advances() / hb_ot_get_glyph_v_advances() in hb-ot-font.cc
 //
 // If hmtx is not available, uses upem/2 as default advance (HarfBuzz behavior).
 func (s *Shaper) setBaseAdvances(buf *Buffer) {
+	if buf.Direction.IsVertical() {
+		s.setBaseAdvancesVertical(buf)
+		return
+	}
+
 	// HarfBuzz: default_advance = hb_face_get_upem (face) / 2 for horizontal
 	// See hb-ot-hmtx-table.hh:272
 	if s.hmtx == nil {
@@ -2148,28 +2605,149 @@ func (s *Shaper) setBaseAdvances(buf *Buffer) {
 		return
 	}
 
-	// Check if we need to apply HVAR deltas
+	// Check if we need to apply variation deltas
 	applyHvar := s.hvar != nil && s.hvar.HasData() && s.normalizedCoordsI != nil
+	// gvar fallback: when no HVAR, use gvar phantom points for advance deltas
+	// HarfBuzz equivalent: _glyf_get_advance_with_var_unscaled() in OT/glyf/glyf.hh:376-402
+	applyGvar := !applyHvar && s.gvar != nil && s.gvar.HasData() && s.glyf != nil && s.normalizedCoordsI != nil && s.hasNonZeroCoords()
 
 	for i := range buf.Info {
 		adv := s.hmtx.GetAdvanceWidth(buf.Info[i].GlyphID)
 
-		// Apply HVAR delta if available
 		if applyHvar {
+			// Apply HVAR delta if available
 			delta := s.hvar.GetAdvanceDelta(buf.Info[i].GlyphID, s.normalizedCoordsI)
-			adv = uint16(int32(adv) + roundToInt(delta))
+			adv = uint16(int32(adv) + int32(math.Floor(delta+0.5)))
+		} else if applyGvar {
+			// Apply gvar phantom point deltas
+			// HarfBuzz: advance = phantom_right.x - phantom_left.x
+			adv = s.getAdvanceWithGvar(buf.Info[i].GlyphID, adv)
 		}
 
 		buf.Pos[i].XAdvance = int16(adv)
+
+		// Synthetic bold: widen horizontal advance
+		if s.xStrength != 0 && !s.emboldenInPlace && buf.Pos[i].XAdvance != 0 {
+			buf.Pos[i].XAdvance += s.xStrength
+		}
 	}
 }
 
-// roundToInt rounds a float32 to the nearest int32.
-func roundToInt(v float32) int32 {
-	if v >= 0 {
-		return int32(v + 0.5)
+// setBaseAdvancesVertical sets the base advance heights for vertical text.
+// HarfBuzz equivalent: hb_ot_get_glyph_v_advances() in hb-ot-font.cc
+func (s *Shaper) setBaseAdvancesVertical(buf *Buffer) {
+	if s.vmtx != nil {
+		// Use vmtx advance heights
+		// gvar fallback for vertical: use phantom points TOP/BOTTOM
+		applyGvar := s.gvar != nil && s.gvar.HasData() && s.glyf != nil &&
+			s.normalizedCoordsI != nil && s.hasNonZeroCoords()
+
+		for i := range buf.Info {
+			adv := s.vmtx.GetAdvanceHeight(buf.Info[i].GlyphID)
+
+			if applyGvar {
+				adv = s.getVAdvanceWithGvar(buf.Info[i].GlyphID, adv)
+			}
+
+			buf.Pos[i].YAdvance = -int16(adv)
+			// Synthetic bold: make vertical advance more negative (larger)
+			if s.yStrength != 0 && !s.emboldenInPlace {
+				buf.Pos[i].YAdvance -= s.yStrength
+			}
+			buf.Pos[i].XAdvance = 0
+		}
+	} else {
+		// Fallback: use ascender - descender as advance height
+		// HarfBuzz: hb-ot-hmtx-table.hh default for vertical = ascender - descender
+		// With synthetic bold, HarfBuzz adds yStrength to ascender in font_h_extents,
+		// then the embolden wrapper adds yStrength again — the effects cancel out,
+		// so the fallback advance is unchanged.
+		defaultAdvance := int16(s.face.Ascender() - s.face.Descender())
+		for i := range buf.Info {
+			buf.Pos[i].YAdvance = -defaultAdvance
+			buf.Pos[i].XAdvance = 0
+		}
 	}
-	return int32(v - 0.5)
+}
+
+// getVAdvanceWithGvar computes the advance height using gvar phantom point deltas.
+// HarfBuzz equivalent: _glyf_get_advance_with_var_unscaled() for vertical
+// Phantom points TOP (idx+2) and BOTTOM (idx+3) give vertical advance.
+func (s *Shaper) getVAdvanceWithGvar(gid GlyphID, baseAdvance uint16) uint16 {
+	numContourPoints := s.glyf.GetContourPointCount(gid)
+	numTotalPoints := numContourPoints + 4
+
+	deltas := s.gvar.GetGlyphDeltas(gid, s.normalizedCoordsI, numTotalPoints)
+	if deltas == nil {
+		return baseAdvance
+	}
+
+	phantomTop := numContourPoints + 2
+	phantomBottom := numContourPoints + 3
+
+	if phantomBottom >= len(deltas.YDeltas) {
+		return baseAdvance
+	}
+
+	// advance_height = phantom_top.y - phantom_bottom.y
+	advanceDelta := deltas.YDeltas[phantomTop] - deltas.YDeltas[phantomBottom]
+	result := int32(baseAdvance) + int32(math.Floor(advanceDelta+0.5))
+	if result < 0 {
+		result = 0
+	}
+	return uint16(result)
+}
+
+// hasNonZeroCoords returns true if any normalized coordinate is non-zero.
+// HarfBuzz equivalent: font->has_nonzero_coords check
+func (s *Shaper) hasNonZeroCoords() bool {
+	for _, c := range s.normalizedCoordsI {
+		if c != 0 {
+			return true
+		}
+	}
+	return false
+}
+
+// getAdvanceWithGvar computes the advance width using gvar phantom point deltas.
+// HarfBuzz equivalent: _glyf_get_advance_with_var_unscaled() in OT/glyf/glyf.hh:376-402
+// The phantom points are appended after the contour points:
+//   - PHANTOM_LEFT (index numPoints+0): x = xMin - LSB
+//   - PHANTOM_RIGHT (index numPoints+1): x = advance + (xMin - LSB)
+//   - PHANTOM_TOP (index numPoints+2): y = yMax + TSB
+//   - PHANTOM_BOTTOM (index numPoints+3): y = yMax + TSB - vAdv
+//
+// Advance = PHANTOM_RIGHT.x - PHANTOM_LEFT.x after gvar deltas.
+func (s *Shaper) getAdvanceWithGvar(gid GlyphID, baseAdvance uint16) uint16 {
+	// Count contour points in the glyph
+	numContourPoints := s.glyf.GetContourPointCount(gid)
+	numTotalPoints := numContourPoints + 4 // +4 phantom points
+
+	// Get gvar deltas for all points including phantoms
+	deltas := s.gvar.GetGlyphDeltas(gid, s.normalizedCoordsI, numTotalPoints)
+	if deltas == nil {
+		return baseAdvance
+	}
+
+	// Phantom point indices
+	phantomLeft := numContourPoints
+	phantomRight := numContourPoints + 1
+
+	if phantomRight >= len(deltas.XDeltas) {
+		return baseAdvance
+	}
+
+	// HarfBuzz: advance = phantom_right.x - phantom_left.x
+	// phantom_left.x starts at h_delta = xMin - LSB
+	// phantom_right.x starts at advance + h_delta
+	// After gvar: advance = (advance + h_delta + delta_right) - (h_delta + delta_left)
+	//           = advance + delta_right - delta_left
+	advanceDelta := deltas.XDeltas[phantomRight] - deltas.XDeltas[phantomLeft]
+	result := int32(baseAdvance) + int32(math.Floor(advanceDelta+0.5))
+	if result < 0 {
+		result = 0
+	}
+	return uint16(result)
 }
 
 // applyGSUB applies GSUB features to the buffer.
@@ -2510,10 +3088,10 @@ func (s *Shaper) applyGPOS(buf *Buffer, features []Feature) {
 //
 // CRITICAL: For LATE mode, mark advances MUST be zeroed BEFORE PropagateAttachmentOffsets!
 // HarfBuzz sequence (hb-ot-shape.cc:1070-1086):
-//   1. GPOS lookups
-//   2. zero_mark_widths_by_gdef (LATE mode)
-//   3. hb_ot_zero_width_default_ignorables
-//   4. position_finish_offsets (PropagateAttachmentOffsets)
+//  1. GPOS lookups
+//  2. zero_mark_widths_by_gdef (LATE mode)
+//  3. hb_ot_zero_width_default_ignorables
+//  4. position_finish_offsets (PropagateAttachmentOffsets)
 func (s *Shaper) applyGPOSWithZeroWidthMarks(buf *Buffer, features []Feature, zeroWidthMarksMode ZeroWidthMarksType) {
 	// HarfBuzz: hb_ot_position_complex() in hb-ot-shape.cc:1032-1095
 	// IMPORTANT: zero_mark_widths_by_gdef is called REGARDLESS of whether GPOS is present!
@@ -2561,32 +3139,11 @@ func (s *Shaper) applyGPOSWithZeroWidthMarks(buf *Buffer, features []Feature, ze
 	// HarfBuzz: hb_ot_zero_width_default_ignorables() in hb-ot-shape.cc:1085
 	zeroWidthDefaultIgnorables(buf)
 
-	// DEBUG: Print state before PropagateAttachmentOffsets
-	if debugGPOS {
-		for i := range buf.Info {
-			if buf.Pos[i].AttachChain != 0 || buf.Pos[i].XOffset != 0 {
-				debugPrintf("Before PropagateAttachmentOffsets: [%d] gid=%d cluster=%d xoff=%d chain=%d type=%d xadv=%d\n",
-					i, buf.Info[i].GlyphID, buf.Info[i].Cluster, buf.Pos[i].XOffset,
-					buf.Pos[i].AttachChain, buf.Pos[i].AttachType, buf.Pos[i].XAdvance)
-			}
-		}
-	}
-
 	// Propagate attachment offsets (cursive → marks)
 	// This must be done after all GPOS lookups have set up the attachment chains
 	// AND after mark advances have been zeroed!
 	// HarfBuzz: GPOS::position_finish_offsets() in hb-ot-shape.cc:1086
 	PropagateAttachmentOffsets(buf.Pos, buf.Direction)
-
-	// DEBUG: Print state after PropagateAttachmentOffsets
-	if debugGPOS {
-		for i := range buf.Info {
-			if buf.Pos[i].XOffset != 0 {
-				debugPrintf("After PropagateAttachmentOffsets: [%d] gid=%d cluster=%d xoff=%d\n",
-					i, buf.Info[i].GlyphID, buf.Info[i].Cluster, buf.Pos[i].XOffset)
-			}
-		}
-	}
 
 	// Fallback mark positioning when GPOS is not available
 	// HarfBuzz equivalent: _hb_ot_shape_fallback_mark_position() in hb-ot-shape-fallback.cc
@@ -2603,6 +3160,12 @@ func (s *Shaper) applyGPOSWithZeroWidthMarks(buf *Buffer, features []Feature, ze
 	if addedHOrigins {
 		s.subtractGlyphHOrigins(buf)
 	}
+
+	// For vertical text: subtract vertical origins
+	// HarfBuzz: hb-ot-shape.cc:1092-1094
+	if buf.Direction.IsVertical() {
+		s.subtractGlyphVOrigins(buf)
+	}
 }
 
 // zeroWidthDefaultIgnorables zeros advance widths and offsets of default ignorables.
@@ -2610,9 +3173,9 @@ func (s *Shaper) applyGPOSWithZeroWidthMarks(buf *Buffer, features []Feature, ze
 //
 // This is called AFTER GPOS lookups, but BEFORE PropagateAttachmentOffsets.
 // The order is critical: hb-ot-shape.cc:1083-1086:
-//   1. position_finish_advances
-//   2. hb_ot_zero_width_default_ignorables  <-- HERE
-//   3. position_finish_offsets
+//  1. position_finish_advances
+//  2. hb_ot_zero_width_default_ignorables  <-- HERE
+//  3. position_finish_offsets
 //
 // Without this, default ignorables (like CGJ U+034F) would contribute their
 // XAdvance to the offset calculation in PropagateAttachmentOffsets.
@@ -2649,8 +3212,9 @@ func (s *Shaper) zeroMarkWidthsByGDEF(buf *Buffer) {
 // HarfBuzz equivalent: zero_mark_widths_by_gdef(buffer, adjust_offsets_when_zeroing)
 //
 // HarfBuzz logic (hb-ot-shape.cc:198-204, 1044-1045):
-//   adjust_mark_positioning_when_zeroing = !apply_gpos && !apply_kerx && (!apply_kern || !cross_kerning)
-//   adjust_offsets_when_zeroing = adjust_mark_positioning_when_zeroing && HB_DIRECTION_IS_FORWARD(direction)
+//
+//	adjust_mark_positioning_when_zeroing = !apply_gpos && !apply_kerx && (!apply_kern || !cross_kerning)
+//	adjust_offsets_when_zeroing = adjust_mark_positioning_when_zeroing && HB_DIRECTION_IS_FORWARD(direction)
 //
 // So adjust_offsets is only true for FALLBACK mark positioning (no GPOS).
 // When GPOS is present, we just zero the mark advance without transferring to offset.
@@ -2680,53 +3244,284 @@ func (s *Shaper) zeroMarkWidthsByGDEFAdjust(buf *Buffer, adjustOffsets bool) {
 // hasGlyphHOrigins returns true if the font has horizontal glyph origins.
 // HarfBuzz equivalent: font->has_glyph_h_origin_func() in hb-font.hh
 //
-// For most horizontal fonts, h_origins are (0, 0), so this returns false.
-// For fonts with v_origins (vertical/CJK fonts), h_origins can be derived from v_origins.
+// For horizontal text, h_origins are always (0, 0) so this returns false.
+// For vertical text, we need to transform from v_origin to h_origin space for GPOS.
 func (s *Shaper) hasGlyphHOrigins() bool {
-	// TODO: Implement proper h_origin detection.
-	// For now, return false since most fonts don't have h_origins.
-	// When we add vmtx support, check for vmtx table here.
-	//
-	// HarfBuzz checks: font->has_glyph_h_origin_func() || font->has_glyph_v_origins_func()
-	// If vmtx exists, we can derive h_origins from v_origins.
+	// HarfBuzz: h_origin is always (0,0) for horizontal fonts.
+	// The h_origin func is never overridden - HarfBuzz always returns false here.
+	// The actual vertical origin handling happens via v_origins.
 	return false
 }
 
-// addGlyphHOrigins adds horizontal glyph origins to buffer positions.
-// HarfBuzz equivalent: font->add_glyph_h_origins() in hb-font.hh:866-932
+// hasGlyphVOrigins returns true if the font has vertical glyph origins.
+// HarfBuzz equivalent: font->has_glyph_v_origin_func()
+func (s *Shaper) hasGlyphVOrigins() bool {
+	return true // HarfBuzz always returns true (has fallback)
+}
+
+// getGlyphExtentsWithVar returns glyph extents with gvar variations applied.
+// For variable TrueType fonts with gvar, this recomputes the bounding box from
+// varied contour points. For non-variable fonts or CFF fonts, falls back to
+// the static extents from the glyf table header.
+// HarfBuzz equivalent: glyf_impl.get_extents_with_var_unscaled()
+func (s *Shaper) getGlyphExtentsWithVar(glyph GlyphID) (GlyphExtents, bool) {
+	if s.glyf == nil {
+		return GlyphExtents{}, false
+	}
+
+	// If no gvar variations active, use static extents
+	if s.gvar == nil || !s.gvar.HasData() || s.normalizedCoordsI == nil || !s.hasNonZeroCoords() {
+		return s.glyf.GetGlyphExtents(glyph)
+	}
+
+	// Get static extents first (as fallback)
+	staticExt, ok := s.glyf.GetGlyphExtents(glyph)
+	if !ok {
+		return GlyphExtents{}, false
+	}
+
+	// Parse the glyph's contour points
+	glyphBytes := s.glyf.GetGlyphBytes(glyph)
+	if glyphBytes == nil || len(glyphBytes) < 10 {
+		return staticExt, true
+	}
+
+	numberOfContours := int16(binary.BigEndian.Uint16(glyphBytes[0:]))
+	if numberOfContours <= 0 {
+		// Composite or empty - use static extents for now
+		return staticExt, true
+	}
+
+	points, _, err := ParseSimpleGlyph(glyphBytes)
+	if err != nil || len(points) == 0 {
+		return staticExt, true
+	}
+
+	// Build GlyphPoint array for IUP interpolation
+	origCoords := make([]GlyphPoint, len(points))
+	for i, p := range points {
+		origCoords[i] = GlyphPoint{X: p.X, Y: p.Y}
+	}
+
+	// Get gvar deltas (numPoints = contour points + 4 phantom points)
+	numTotalPoints := len(points) + 4
+	deltas := s.gvar.GetGlyphDeltasWithCoords(glyph, s.normalizedCoordsI, numTotalPoints, origCoords)
+	if deltas == nil {
+		return staticExt, true
+	}
+
+	// Apply deltas to contour points and recompute bounding box.
+	// HarfBuzz accumulates bounds in float, then applies roundf() at the end.
+	// See points_aggregator_t::contour_bounds_t in OT/glyf/glyf.hh
+	var fMinX, fMinY, fMaxX, fMaxY float64
+	first := true
+	for i, p := range points {
+		fx := float64(p.X) + deltas.XDeltas[i]
+		fy := float64(p.Y) + deltas.YDeltas[i]
+		if first {
+			fMinX, fMaxX = fx, fx
+			fMinY, fMaxY = fy, fy
+			first = false
+		} else {
+			if fx < fMinX {
+				fMinX = fx
+			}
+			if fx > fMaxX {
+				fMaxX = fx
+			}
+			if fy < fMinY {
+				fMinY = fy
+			}
+			if fy > fMaxY {
+				fMaxY = fy
+			}
+		}
+	}
+
+	// HarfBuzz: extents->x_bearing = roundf(min_x); width = roundf(max_x - x_bearing);
+	//           extents->y_bearing = roundf(max_y); height = roundf(min_y - y_bearing);
+	xBearing := int16(math.Round(fMinX))
+	yBearing := int16(math.Round(fMaxY))
+	width := int16(math.Round(fMaxX - float64(xBearing)))
+	height := int16(math.Round(fMinY - float64(yBearing)))
+
+	return GlyphExtents{
+		XBearing: xBearing,
+		YBearing: yBearing,
+		Width:    width,
+		Height:   height,
+	}, true
+}
+
+// GetGlyphVOrigin returns the vertical origin (x, y) for a glyph in font units.
+// Exported for use by test runners that need to replicate HarfBuzz's scaling order.
+func (s *Shaper) GetGlyphVOrigin(glyph GlyphID) (x, y int16) {
+	return s.getGlyphVOrigin(glyph)
+}
+
+// GetGlyphHAdvanceVar returns the horizontal advance for a glyph,
+// including HVAR/gvar variation deltas if active. Exported for font-size
+// scaling in test runners that need to match HarfBuzz's scaling order.
+func (s *Shaper) GetGlyphHAdvanceVar(glyph GlyphID) uint16 {
+	if s.hmtx == nil {
+		return 0
+	}
+	adv := s.hmtx.GetAdvanceWidth(glyph)
+	applyHvar := s.hvar != nil && s.hvar.HasData() && s.normalizedCoordsI != nil
+	applyGvar := !applyHvar && s.gvar != nil && s.gvar.HasData() && s.glyf != nil &&
+		s.normalizedCoordsI != nil && s.hasNonZeroCoords()
+	if applyHvar {
+		delta := s.hvar.GetAdvanceDelta(glyph, s.normalizedCoordsI)
+		adv = uint16(int32(adv) + int32(math.Floor(delta+0.5)))
+	} else if applyGvar {
+		adv = s.getAdvanceWithGvar(glyph, adv)
+	}
+	return adv
+}
+
+// getGlyphVOrigin returns the vertical origin (x, y) for a glyph.
+// HarfBuzz equivalent: hb_ot_get_glyph_v_origins() in hb-ot-font.cc
 //
-// This transforms positions from font coordinate space to GPOS coordinate space.
-// GPOS expects positions in horizontal origin space.
+// The vertical origin is the point from which a glyph is positioned in vertical text.
+// X origin = half the horizontal advance (centers the glyph)
+// Y origin priority:
+//  1. VORG table (CFF/CFF2 fonts)
+//  2. vmtx + glyf: top phantom point from vmtx,glyf[,gvar]
+//  3. glyf extents: y_bearing + (font_advance + height) / 2
+//  4. Fallback: face.Ascender()
+func (s *Shaper) getGlyphVOrigin(glyph GlyphID) (x, y int16) {
+	// X origin: horizontal advance / 2 (center the glyph horizontally)
+	// For variable fonts, use the varied advance width.
+	// With synthetic bold (!inPlace): use bold-adjusted advance → (adv+xStrength)/2
+	var xOrigin int16
+	if s.hmtx != nil {
+		hAdv := s.getGlyphHAdvanceWithBold(glyph)
+		xOrigin = hAdv / 2
+	}
+
+	// 1. VORG table (CFF/CFF2 fonts)
+	if s.vorg != nil {
+		yOrigin := s.vorg.GetVertOriginY(glyph)
+		if !s.emboldenInPlace {
+			xOrigin += s.xStrength
+			yOrigin += s.yStrength
+		}
+		return xOrigin, yOrigin
+	}
+
+	// 2. vmtx + glyf: use top phantom point
+	// HarfBuzz: glyf.get_v_origin_with_var_unscaled() uses phantom_top.y
+	// phantom_top.y = yMax + TSB (base), then gvar delta is applied to both together
+	if s.vmtx != nil && s.glyf != nil {
+		if ext, ok := s.glyf.GetGlyphExtents(glyph); ok {
+			tsb := s.vmtx.GetTsb(glyph)
+			yOrigin := int(ext.YBearing) + int(tsb)
+
+			// Apply gvar delta to phantom_top.y for variable fonts
+			if s.gvar != nil && s.gvar.HasData() && s.normalizedCoordsI != nil && s.hasNonZeroCoords() {
+				numContourPoints := s.glyf.GetContourPointCount(glyph)
+				numTotalPoints := numContourPoints + 4
+				deltas := s.gvar.GetGlyphDeltas(glyph, s.normalizedCoordsI, numTotalPoints)
+				if deltas != nil {
+					phantomTop := numContourPoints + 2
+					if phantomTop < len(deltas.YDeltas) {
+						yOrigin += int(math.Round(deltas.YDeltas[phantomTop]))
+					}
+				}
+			}
+
+			yResult := int16(yOrigin)
+			if !s.emboldenInPlace {
+				xOrigin += s.xStrength
+				yResult += s.yStrength
+			}
+			return xOrigin, yResult
+		}
+		// Empty glyph with vmtx: fallback to ascender
+		yResult := s.face.Ascender()
+		if !s.emboldenInPlace {
+			xOrigin += s.xStrength
+			yResult += s.yStrength
+		}
+		return xOrigin, yResult
+	}
+
+	// 3. Glyph extents fallback (no vmtx)
+	// HarfBuzz: origin = extents.y_bearing + ((font_advance - (-extents.height)) >> 1)
+	// where font_advance = ascender - descender
+	// With bold: HarfBuzz adds yStrength to ascender via font_h_extents
+	fontAdvance := int(s.face.Ascender()) + int(s.yStrength) - int(s.face.Descender())
+	if s.glyf != nil {
+		ext, ok := s.getGlyphExtentsWithVar(glyph)
+		if ok && (ext.YBearing != 0 || ext.Height != 0) {
+			// Non-empty glyph: center vertically
+			// With bold: extents get yStrength added to YBearing, plus direct yStrength → 2*yStrength
+			yBearing := int(ext.YBearing)
+			height := int(-ext.Height)
+			if s.yStrength != 0 {
+				yBearing += int(s.yStrength)
+				height += int(s.yStrength)
+			}
+			yOrigin := yBearing + ((fontAdvance - height) >> 1)
+			if !s.emboldenInPlace {
+				xOrigin += s.xStrength
+				yOrigin += int(s.yStrength)
+			}
+			return xOrigin, int16(yOrigin)
+		}
+		// Empty glyph (e.g., space): HarfBuzz returns {0,0,0,0} and true
+		// origin = 0 + ((font_advance - 0) >> 1) = font_advance / 2
+		yResult := int16(fontAdvance >> 1)
+		if !s.emboldenInPlace {
+			xOrigin += s.xStrength
+			yResult += s.yStrength
+		}
+		return xOrigin, yResult
+	}
+
+	// 4. Fallback: ascender
+	yResult := s.face.Ascender()
+	if !s.emboldenInPlace {
+		xOrigin += s.xStrength
+		yResult += s.yStrength
+	}
+	return xOrigin, yResult
+}
+
+// addGlyphHOrigins adds horizontal glyph origins to buffer positions.
+// HarfBuzz equivalent: font->add_glyph_h_origin_with_fallback() in hb-font.hh
+// For horizontal text this is a no-op (h_origin is always 0,0).
 func (s *Shaper) addGlyphHOrigins(buf *Buffer) {
-	// For most fonts, h_origins are (0, 0), so this is a no-op.
-	// This is called when hasGlyphHOrigins() returns true.
-	//
-	// HarfBuzz implementation (apply_glyph_h_origins_with_fallback):
-	// 1. Try to get h_origins for each glyph
-	// 2. If no h_origins, try v_origins and convert:
-	//    origin.x -= advance / 2
-	//    origin.y -= ascender
-	// 3. If neither, use (0, 0)
-	// 4. Add origins to x_offset and y_offset
-	//
-	// Since hasGlyphHOrigins() returns false, this function is never called.
-	// When we implement vmtx support, we'll implement this properly.
+	// h_origins are always (0, 0) for horizontal fonts. No-op.
 }
 
 // subtractGlyphHOrigins subtracts horizontal glyph origins from buffer positions.
-// HarfBuzz equivalent: font->subtract_glyph_h_origins() in hb-font.hh:866-932
-//
-// This transforms positions from GPOS coordinate space back to font coordinate space.
+// HarfBuzz equivalent: font->subtract_glyph_h_origin_with_fallback()
+// For horizontal text this is a no-op.
 func (s *Shaper) subtractGlyphHOrigins(buf *Buffer) {
-	// For most fonts, h_origins are (0, 0), so this is a no-op.
-	// This is called when hasGlyphHOrigins() returns true.
-	//
-	// HarfBuzz implementation:
-	// 1. Get the same h_origins as addGlyphHOrigins()
-	// 2. Subtract origins from x_offset and y_offset
-	//
-	// Since hasGlyphHOrigins() returns false, this function is never called.
-	// When we implement vmtx support, we'll implement this properly.
+	// h_origins are always (0, 0) for horizontal fonts. No-op.
+}
+
+// addGlyphVOrigins adds vertical glyph origins to buffer positions.
+// HarfBuzz equivalent: font->add_glyph_v_origin() in hb-font.hh
+// Transforms from horizontal origin space to vertical origin space.
+func (s *Shaper) addGlyphVOrigins(buf *Buffer) {
+	for i := range buf.Info {
+		x, y := s.getGlyphVOrigin(buf.Info[i].GlyphID)
+		buf.Pos[i].XOffset += x
+		buf.Pos[i].YOffset += y
+	}
+}
+
+// subtractGlyphVOrigins subtracts vertical glyph origins from buffer positions.
+// HarfBuzz equivalent: font->subtract_glyph_v_origin() in hb-font.hh
+// Called after GPOS to transform back from vertical origin space.
+func (s *Shaper) subtractGlyphVOrigins(buf *Buffer) {
+	for i := range buf.Info {
+		x, y := s.getGlyphVOrigin(buf.Info[i].GlyphID)
+		buf.Pos[i].XOffset -= x
+		buf.Pos[i].YOffset -= y
+	}
 }
 
 // scriptAllowsKernFallback returns true if the script allows legacy kern table fallback.
@@ -2964,19 +3759,19 @@ func ClearShaperCache() {
 type spaceType int
 
 const (
-	spaceNotSpace     spaceType = 0
-	spaceEM           spaceType = 1  // full em
-	spaceEM2          spaceType = 2  // 1/2 em
-	spaceEM3          spaceType = 3  // 1/3 em
-	spaceEM4          spaceType = 4  // 1/4 em
-	spaceEM5          spaceType = 5  // 1/5 em
-	spaceEM6          spaceType = 6  // 1/6 em
-	spaceEM16         spaceType = 16 // 1/16 em
-	space4EM18        spaceType = 17 // 4/18 em
-	spaceRegular      spaceType = 18
-	spaceFigure       spaceType = 19
-	spacePunctuation  spaceType = 20
-	spaceNarrow       spaceType = 21
+	spaceNotSpace    spaceType = 0
+	spaceEM          spaceType = 1  // full em
+	spaceEM2         spaceType = 2  // 1/2 em
+	spaceEM3         spaceType = 3  // 1/3 em
+	spaceEM4         spaceType = 4  // 1/4 em
+	spaceEM5         spaceType = 5  // 1/5 em
+	spaceEM6         spaceType = 6  // 1/6 em
+	spaceEM16        spaceType = 16 // 1/16 em
+	space4EM18       spaceType = 17 // 4/18 em
+	spaceRegular     spaceType = 18
+	spaceFigure      spaceType = 19
+	spacePunctuation spaceType = 20
+	spaceNarrow      spaceType = 21
 )
 
 // getSpaceType returns the space fallback type for a Unicode codepoint.
@@ -3027,6 +3822,14 @@ func (s *Shaper) applySpaceFallback(buf *Buffer) {
 	for i := range buf.Info {
 		st := getSpaceType(buf.Info[i].Codepoint)
 		if st == spaceNotSpace || st == spaceRegular {
+			continue
+		}
+
+		// HarfBuzz only applies space fallback when the font does NOT have a
+		// dedicated glyph for the space character (the fallback type is set during
+		// normalization only when the glyph is replaced by U+0020 SPACE).
+		// Skip fallback if the font provides a glyph for this codepoint.
+		if glyph, ok := s.cmap.Lookup(buf.Info[i].Codepoint); ok && glyph != 0 {
 			continue
 		}
 

@@ -308,6 +308,7 @@ func (f *Font) GetGlyphName(glyph GlyphID) string {
 //   - Numeric glyph index ("123")
 //   - gidDDD syntax ("gid123")
 //   - uniUUUU syntax with cmap lookup ("uni0622")
+//
 // Returns false if the name cannot be resolved.
 // HarfBuzz equivalent: hb_ot_get_glyph_from_name() in hb-ot-font.cc:849-872
 func (f *Font) GetGlyphFromName(name string) (GlyphID, bool) {

@@ -66,7 +66,7 @@ const (
 type USESyllableInfo struct {
 	Category     USECategory
 	SyllableType USESyllableType
-	Syllable     uint8 // Syllable index (upper 4 bits = serial, lower 4 bits = type)
+	Syllable     uint8     // Syllable index (upper 4 bits = serial, lower 4 bits = type)
 	Codepoint    Codepoint // Original codepoint, needed for ZWNJ filtering
 }
 

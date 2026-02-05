@@ -152,7 +152,6 @@ func getKhmerCategory(cp Codepoint) KhmerCategory {
 
 // shapeKhmer applies Khmer-specific shaping to the buffer.
 // HarfBuzz equivalent: _hb_ot_shaper_khmer
-//
 func (s *Shaper) shapeKhmer(buf *Buffer, features []Feature) {
 	// Set direction to LTR for Khmer
 	if buf.Direction == 0 {
@@ -347,23 +346,25 @@ func (s *Shaper) reorderKhmerSyllable(buf *Buffer, categories []KhmerCategory, s
 // hb_ot_map_t::apply() applies them via hb-ot-layout.cc
 //
 // Features applied (in order):
-//   - locl, ccmp: Pre-processing features
-//   - pref, blwf, abvf, pstf, cfar: Basic shaping features
-//   - pres, abvs, blws, psts, clig: Presentation features
+//   - locl, ccmp: Pre-processing features (no special flags)
+//   - pref, blwf, abvf, pstf, cfar: Basic shaping features (F_MANUAL_JOINERS | F_PER_SYLLABLE)
+//   - pres, abvs, blws, psts, clig: Presentation features (F_GLOBAL_MANUAL_JOINERS)
 //
-// This Buffer-based version preserves cluster information during substitution.
+// HarfBuzz: F_MANUAL_JOINERS = F_MANUAL_ZWNJ | F_MANUAL_ZWJ → autoZWNJ=false, autoZWJ=false
+// This prevents ZWNJ from being skipped during GSUB context matching, so ZWNJ acts as
+// a boundary that blocks feature application across it.
 func (s *Shaper) applyKhmerGSUBFeatures(buf *Buffer) {
 	if s.gsub == nil {
 		return
 	}
 
-	// Pre-processing features
-	preFeatures := []Tag{
-		MakeTag('l', 'o', 'c', 'l'),
-		MakeTag('c', 'c', 'm', 'p'),
-	}
+	// Pre-processing features: no special flags (autoZWNJ=true, autoZWJ=true)
+	// HarfBuzz: locl and ccmp have no F_MANUAL_JOINERS
+	s.gsub.ApplyFeatureToBuffer(MakeTag('l', 'o', 'c', 'l'), buf, s.gdef, s.font)
+	s.gsub.ApplyFeatureToBuffer(MakeTag('c', 'c', 'm', 'p'), buf, s.gdef, s.font)
 
-	// Basic features (applied per-syllable in HarfBuzz, but we apply globally for simplicity)
+	// Basic features: F_MANUAL_JOINERS | F_PER_SYLLABLE
+	// HarfBuzz: hb-ot-shaper-khmer.cc:41-50 — autoZWNJ=false, autoZWJ=false
 	basicFeatures := []Tag{
 		MakeTag('p', 'r', 'e', 'f'), // Pre-base forms (Coeng+Ra)
 		MakeTag('b', 'l', 'w', 'f'), // Below-base forms
@@ -372,7 +373,12 @@ func (s *Shaper) applyKhmerGSUBFeatures(buf *Buffer) {
 		MakeTag('c', 'f', 'a', 'r'), // Conjunct form after Robatic
 	}
 
-	// Other features
+	for _, feature := range basicFeatures {
+		s.gsub.ApplyFeatureToBufferWithOpts(feature, buf, s.gdef, s.font, false, false)
+	}
+
+	// Other features: F_GLOBAL_MANUAL_JOINERS (global + autoZWNJ=false, autoZWJ=false)
+	// HarfBuzz: hb-ot-shaper-khmer.cc:53-57
 	otherFeatures := []Tag{
 		MakeTag('p', 'r', 'e', 's'), // Pre-base substitutions
 		MakeTag('a', 'b', 'v', 's'), // Above-base substitutions
@@ -381,12 +387,8 @@ func (s *Shaper) applyKhmerGSUBFeatures(buf *Buffer) {
 		MakeTag('c', 'l', 'i', 'g'), // Contextual ligatures
 	}
 
-	// Apply all features using Buffer-based method (preserves clusters)
-	allFeatures := append(preFeatures, basicFeatures...)
-	allFeatures = append(allFeatures, otherFeatures...)
-
-	for _, feature := range allFeatures {
-		s.gsub.ApplyFeatureToBuffer(feature, buf, s.gdef, s.font)
+	for _, feature := range otherFeatures {
+		s.gsub.ApplyFeatureToBufferWithOpts(feature, buf, s.gdef, s.font, false, false)
 	}
 }
 

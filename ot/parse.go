@@ -53,6 +53,9 @@ var (
 	TagFpgm = MakeTag('f', 'p', 'g', 'm')
 	TagPrep = MakeTag('p', 'r', 'e', 'p')
 	TagGasp = MakeTag('g', 'a', 's', 'p')
+	TagVhea = MakeTag('v', 'h', 'e', 'a')
+	TagVmtx = MakeTag('v', 'm', 't', 'x')
+	TagVORG = MakeTag('V', 'O', 'R', 'G')
 )
 
 // Parser provides methods for reading binary OpenType data.
