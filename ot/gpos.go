@@ -140,6 +140,10 @@ type GPOS struct {
 	// FeatureVariations (GPOS version 1.1+ only)
 	// HarfBuzz: hb-ot-layout-common.hh - struct GSUBGPOS
 	featureVariations *FeatureVariations
+
+	// Cached parsed tables
+	cachedFeatureList *FeatureList
+	cachedScriptList  *ScriptList
 }
 
 // ParseGPOS parses a GPOS table from data.
@@ -1367,7 +1371,12 @@ func (g *GPOS) ApplyKerningWithGDEF(glyphs []GlyphID, gdef *GDEF) []GlyphPos {
 }
 
 // ParseFeatureList parses a FeatureList from a GPOS table.
+// The result is cached since font data is immutable.
 func (g *GPOS) ParseFeatureList() (*FeatureList, error) {
+	if g.cachedFeatureList != nil {
+		return g.cachedFeatureList, nil
+	}
+
 	off := int(g.featureList)
 	if off+2 > len(g.data) {
 		return nil, ErrInvalidOffset
@@ -1378,15 +1387,21 @@ func (g *GPOS) ParseFeatureList() (*FeatureList, error) {
 		return nil, ErrInvalidOffset
 	}
 
-	return &FeatureList{
+	g.cachedFeatureList = &FeatureList{
 		data:   g.data,
 		offset: off,
 		count:  count,
-	}, nil
+	}
+	return g.cachedFeatureList, nil
 }
 
 // ParseScriptList parses the ScriptList from a GPOS table.
+// The result is cached since font data is immutable.
 func (g *GPOS) ParseScriptList() (*ScriptList, error) {
+	if g.cachedScriptList != nil {
+		return g.cachedScriptList, nil
+	}
+
 	off := int(g.scriptList)
 	if off+2 > len(g.data) {
 		return nil, ErrInvalidOffset
@@ -1397,11 +1412,12 @@ func (g *GPOS) ParseScriptList() (*ScriptList, error) {
 		return nil, ErrInvalidOffset
 	}
 
-	return &ScriptList{
+	g.cachedScriptList = &ScriptList{
 		data:   g.data,
 		offset: off,
 		count:  count,
-	}, nil
+	}
+	return g.cachedScriptList, nil
 }
 
 // Common GPOS feature tags

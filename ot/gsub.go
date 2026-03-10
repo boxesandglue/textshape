@@ -191,6 +191,10 @@ type GSUB struct {
 	// FeatureVariations (GSUB version 1.1+ only)
 	// HarfBuzz: hb-ot-layout-common.hh - struct GSUBGPOS
 	featureVariations *FeatureVariations
+
+	// Cached parsed tables
+	cachedFeatureList *FeatureList
+	cachedScriptList  *ScriptList
 }
 
 // ParseGSUB parses a GSUB table from data.
@@ -1610,10 +1614,16 @@ type FeatureList struct {
 	data   []byte
 	offset int
 	count  int
+	cache  []*FeatureRecord
 }
 
 // ParseFeatureList parses a FeatureList from a GSUB/GPOS table.
+// The result is cached since font data is immutable.
 func (g *GSUB) ParseFeatureList() (*FeatureList, error) {
+	if g.cachedFeatureList != nil {
+		return g.cachedFeatureList, nil
+	}
+
 	off := int(g.featureList)
 	if off+2 > len(g.data) {
 		return nil, ErrInvalidOffset
@@ -1624,11 +1634,12 @@ func (g *GSUB) ParseFeatureList() (*FeatureList, error) {
 		return nil, ErrInvalidOffset
 	}
 
-	return &FeatureList{
+	g.cachedFeatureList = &FeatureList{
 		data:   g.data,
 		offset: off,
 		count:  count,
-	}, nil
+	}
+	return g.cachedFeatureList, nil
 }
 
 // FeatureRecord represents a parsed feature record with its lookup indices.
@@ -1639,9 +1650,17 @@ type FeatureRecord struct {
 }
 
 // GetFeature returns the feature record at the given index.
+// Results are cached since font feature data is immutable.
 func (f *FeatureList) GetFeature(index int) (*FeatureRecord, error) {
 	if index < 0 || index >= f.count {
 		return nil, ErrInvalidOffset
+	}
+
+	if f.cache == nil {
+		f.cache = make([]*FeatureRecord, f.count)
+	}
+	if f.cache[index] != nil {
+		return f.cache[index], nil
 	}
 
 	recordOff := f.offset + 2 + index*6
@@ -1668,6 +1687,7 @@ func (f *FeatureList) GetFeature(index int) (*FeatureRecord, error) {
 		feat.Lookups[i] = binary.BigEndian.Uint16(f.data[absOff+4+i*2:])
 	}
 
+	f.cache[index] = feat
 	return feat, nil
 }
 
@@ -1858,7 +1878,12 @@ type ScriptList struct {
 }
 
 // ParseScriptList parses the ScriptList from a GSUB table.
+// The result is cached since font data is immutable.
 func (g *GSUB) ParseScriptList() (*ScriptList, error) {
+	if g.cachedScriptList != nil {
+		return g.cachedScriptList, nil
+	}
+
 	off := int(g.scriptList)
 	if off+2 > len(g.data) {
 		return nil, ErrInvalidOffset
@@ -1869,11 +1894,12 @@ func (g *GSUB) ParseScriptList() (*ScriptList, error) {
 		return nil, ErrInvalidOffset
 	}
 
-	return &ScriptList{
+	g.cachedScriptList = &ScriptList{
 		data:   g.data,
 		offset: off,
 		count:  count,
-	}, nil
+	}
+	return g.cachedScriptList, nil
 }
 
 // FindChosenScriptTag returns the actual script tag found in the font's GSUB table.
