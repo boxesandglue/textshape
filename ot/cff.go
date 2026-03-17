@@ -11,22 +11,22 @@ var TagCFF = MakeTag('C', 'F', 'F', ' ')
 
 // CFF represents a parsed CFF (Compact Font Format) table.
 type CFF struct {
-	data   []byte
-	header cffHeader
-
 	Name        string
-	TopDict     TopDict
-	Strings     []string // Custom strings (SID 391+)
-	GlobalSubrs [][]byte // Global subroutines
-	CharStrings [][]byte // Per-glyph CharStrings
-	PrivateDict PrivateDict
+	data        []byte
+	Strings     []string  // Custom strings (SID 391+)
+	GlobalSubrs [][]byte  // Global subroutines
+	CharStrings [][]byte  // Per-glyph CharStrings
 	LocalSubrs  [][]byte  // Local subroutines
 	Charset     []GlyphID // Glyph ID to SID mapping
 
+	FDArray     []FontDict
+	FDSelect    []byte
+	PrivateDict PrivateDict
+	TopDict     TopDict
+	header      cffHeader
+
 	// CID fonts
-	IsCID    bool
-	FDArray  []FontDict
-	FDSelect []byte
+	IsCID bool
 }
 
 type cffHeader struct {
@@ -62,11 +62,11 @@ type PrivateDict struct {
 	OtherBlues       []int
 	FamilyBlues      []int
 	FamilyOtherBlues []int
-	StdHW            int
-	StdVW            int
 	StemSnapH        []int // Stem snap widths (horizontal)
 	StemSnapV        []int // Stem snap widths (vertical)
-	Subrs            int   // Offset to Local Subrs (relative to Private DICT)
+	StdHW            int
+	StdVW            int
+	Subrs            int // Offset to Local Subrs (relative to Private DICT)
 	DefaultWidthX    int
 	NominalWidthX    int
 	BlueScale        float64

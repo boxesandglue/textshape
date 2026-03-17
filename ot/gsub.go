@@ -45,7 +45,6 @@ const (
 // Coverage represents an OpenType Coverage table.
 // It maps glyph IDs to coverage indices.
 type Coverage struct {
-	format uint16
 	data   []byte
 	offset int // offset to coverage table in data
 
@@ -56,6 +55,7 @@ type Coverage struct {
 	// Format 2: range records
 	rangeCount int
 	rangesOff  int
+	format     uint16
 }
 
 // ParseCoverage parses a Coverage table from data at the given offset.
@@ -179,14 +179,6 @@ func (c *Coverage) Glyphs() []GlyphID {
 
 // GSUB represents the Glyph Substitution table.
 type GSUB struct {
-	data        []byte
-	version     uint32
-	scriptList  uint16 // offset to script list
-	featureList uint16 // offset to feature list
-	lookupList  uint16 // offset to lookup list
-
-	// Parsed lookup list
-	lookups []*GSUBLookup
 
 	// FeatureVariations (GSUB version 1.1+ only)
 	// HarfBuzz: hb-ot-layout-common.hh - struct GSUBGPOS
@@ -195,6 +187,16 @@ type GSUB struct {
 	// Cached parsed tables
 	cachedFeatureList *FeatureList
 	cachedScriptList  *ScriptList
+	data              []byte
+
+	// Parsed lookup list
+	lookups []*GSUBLookup
+
+	version     uint32
+	scriptList  uint16 // offset to script list
+	featureList uint16 // offset to feature list
+	lookupList  uint16 // offset to lookup list
+
 }
 
 // ParseGSUB parses a GSUB table from data.
@@ -300,9 +302,9 @@ func (g *GSUB) GetFeatureVariations() *FeatureVariations {
 
 // GSUBLookup represents a GSUB lookup table.
 type GSUBLookup struct {
+	subtables  []GSUBSubtable
 	Type       uint16
 	Flag       uint16
-	subtables  []GSUBSubtable
 	MarkFilter uint16 // For flag & 0x10
 }
 
@@ -410,14 +412,14 @@ func parseGSUBSubtable(data []byte, offset int, lookupType uint16, gsub *GSUB) (
 
 // SingleSubst represents a Single Substitution subtable.
 type SingleSubst struct {
-	format   uint16
 	coverage *Coverage
-
-	// Format 1: delta
-	delta int16
 
 	// Format 2: substitute array
 	substitutes []GlyphID
+	format      uint16
+
+	// Format 1: delta
+	delta int16
 }
 
 func parseSingleSubst(data []byte, offset int) (*SingleSubst, error) {
@@ -757,20 +759,21 @@ func (a *AlternateSubst) Mapping() map[GlyphID][]GlyphID {
 // ContextSubst represents a Context Substitution subtable (GSUB Type 5).
 // It matches input sequences and applies nested lookups.
 type ContextSubst struct {
-	format uint16
-	gsub   *GSUB
+	gsub *GSUB
 
 	// Format 1: Simple glyph contexts
 	coverage *Coverage
-	ruleSets [][]ContextRule // Indexed by coverage index
 
 	// Format 2: Class-based contexts
 	classDef *ClassDef
 	// ruleSets also used for format 2 (indexed by class)
 
+	ruleSets [][]ContextRule // Indexed by coverage index
+
 	// Format 3: Coverage-based contexts
 	inputCoverages []*Coverage
 	lookupRecords  []LookupRecord
+	format         uint16
 }
 
 // ContextRule represents a single context rule.
@@ -1312,8 +1315,8 @@ func (l *LigatureSubst) LigatureSets() [][]Ligature {
 
 // Ligature represents a single ligature rule.
 type Ligature struct {
-	LigGlyph   GlyphID   // The resulting ligature glyph
 	Components []GlyphID // Component glyphs (starting from second)
+	LigGlyph   GlyphID   // The resulting ligature glyph
 }
 
 func parseLigatureSubst(data []byte, offset int) (*LigatureSubst, error) {
@@ -1612,9 +1615,9 @@ func IsVariationSelector(cp Codepoint) bool {
 // FeatureList represents a GSUB/GPOS FeatureList.
 type FeatureList struct {
 	data   []byte
+	cache  []*FeatureRecord
 	offset int
 	count  int
-	cache  []*FeatureRecord
 }
 
 // ParseFeatureList parses a FeatureList from a GSUB/GPOS table.
@@ -1645,8 +1648,8 @@ func (g *GSUB) ParseFeatureList() (*FeatureList, error) {
 // FeatureRecord represents a parsed feature record with its lookup indices.
 // This is the internal representation from the font's FeatureList table.
 type FeatureRecord struct {
-	Tag     Tag
 	Lookups []uint16
+	Tag     Tag
 }
 
 // GetFeature returns the feature record at the given index.
@@ -1929,8 +1932,8 @@ func (g *GSUB) FindBestLanguage(scriptTag Tag, languageTags []Tag) Tag {
 
 // LangSys represents a Language System table with its feature indices.
 type LangSys struct {
-	RequiredFeature int      // -1 if none
 	FeatureIndices  []uint16 // indices into FeatureList
+	RequiredFeature int      // -1 if none
 }
 
 // GetScript returns the LangSys for a script tag (using default language).
@@ -3069,12 +3072,10 @@ type LookupRecord struct {
 // ChainContextSubst represents a Chaining Context Substitution subtable (GSUB Type 6).
 // It enables substitution based on surrounding context (backtrack, input, lookahead).
 type ChainContextSubst struct {
-	format uint16
-	gsub   *GSUB // Reference to parent GSUB for nested lookup application
+	gsub *GSUB // Reference to parent GSUB for nested lookup application
 
 	// Format 1: Simple glyph contexts
-	coverage      *Coverage
-	chainRuleSets [][]ChainRule // Indexed by coverage index
+	coverage *Coverage
 
 	// Format 2: Class-based contexts
 	backtrackClassDef *ClassDef
@@ -3082,11 +3083,14 @@ type ChainContextSubst struct {
 	lookaheadClassDef *ClassDef
 	// chainRuleSets also used for format 2 (indexed by input class)
 
+	chainRuleSets [][]ChainRule // Indexed by coverage index
+
 	// Format 3: Coverage-based contexts
 	backtrackCoverages []*Coverage
 	inputCoverages     []*Coverage
 	lookaheadCoverages []*Coverage
 	lookupRecords      []LookupRecord
+	format             uint16
 }
 
 // ChainRule represents a single chaining context rule.

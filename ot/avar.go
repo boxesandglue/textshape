@@ -11,8 +11,8 @@ var TagAvar = MakeTag('a', 'v', 'a', 'r')
 // It provides non-linear mapping for normalized axis values.
 type Avar struct {
 	data      []byte
-	axisCount int
 	axisMaps  []axisValueMap
+	axisCount int
 }
 
 // axisValueMap holds the segment map for one axis.

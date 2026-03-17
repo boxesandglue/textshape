@@ -35,24 +35,24 @@ type fallbackSubstEntry struct {
 
 // fallbackLigatureEntry represents a ligature in a fallback lookup
 type fallbackLigatureEntry struct {
-	firstGlyph GlyphID   // First component
 	components []GlyphID // Remaining components
+	firstGlyph GlyphID   // First component
 	ligature   GlyphID   // Result
 }
 
 // fallbackLookup represents a synthesized lookup for fallback shaping
 type fallbackLookup struct {
-	lookupType  int                     // 1=Single, 4=Ligature
-	ignoreMarks bool                    // LookupFlag::IgnoreMarks
 	singles     []fallbackSubstEntry    // For Single Substitution
 	ligatures   []fallbackLigatureEntry // For Ligature Substitution
+	lookupType  int                     // 1=Single, 4=Ligature
+	ignoreMarks bool                    // LookupFlag::IgnoreMarks
 }
 
 // arabicFallbackPlan contains all fallback lookups for Arabic shaping
 type arabicFallbackPlan struct {
+	lookups    [arabicFallbackMaxLookups]*fallbackLookup
 	numLookups int
 	masks      [arabicFallbackMaxLookups]uint32
-	lookups    [arabicFallbackMaxLookups]*fallbackLookup
 }
 
 // createArabicFallbackPlan creates a fallback plan for Arabic shaping.

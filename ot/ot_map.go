@@ -38,22 +38,22 @@ type featureMaskEntry struct {
 // OTMap organizes lookups for GSUB and GPOS tables.
 // HarfBuzz equivalent: hb_ot_map_t in hb-ot-map.hh:42-166
 type OTMap struct {
+
+	// Feature mask allocations for per-cluster range features.
+	// HarfBuzz equivalent: hb_ot_map_t::features (sorted vector of feature_map_t)
+	FeatureMasks map[Tag]featureMaskEntry
 	// Lookups organized by table (0=GSUB, 1=GPOS)
 	// HarfBuzz: hb_sorted_vector_t<lookup_map_t> lookups[2]
 	GSUBLookups []LookupMap
 	GPOSLookups []LookupMap
 
-	// Global mask applied to all glyphs
-	// HarfBuzz: hb_mask_t global_mask
-	GlobalMask uint32
-
 	// Feature requests from shapers (used during plan compilation)
 	// HarfBuzz equivalent: hb_ot_map_builder_t::feature_infos
 	featureRequests []featureRequest
 
-	// Feature mask allocations for per-cluster range features.
-	// HarfBuzz equivalent: hb_ot_map_t::features (sorted vector of feature_map_t)
-	FeatureMasks map[Tag]featureMaskEntry
+	// Global mask applied to all glyphs
+	// HarfBuzz: hb_mask_t global_mask
+	GlobalMask uint32
 }
 
 // NewOTMap creates a new empty OT map.
@@ -327,8 +327,8 @@ func (g *GPOS) applyLookupWithMap(lookupIndex int, buf *Buffer, font *Font, gdef
 // featureInfo is used internally during CompileMap for HarfBuzz-style feature merging.
 // HarfBuzz equivalent: hb_ot_map_builder_t::feature_info_t in hb-ot-map.hh:258-273
 type featureInfo struct {
+	seq          int // sequence number for stable sorting
 	tag          Tag
-	seq          int    // sequence number for stable sorting
 	maxValue     uint32 // maximum feature value
 	defaultValue uint32 // default value for glyphs not in range (0 for non-global)
 	isGlobal     bool   // F_GLOBAL: applies to all glyphs

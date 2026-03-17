@@ -33,7 +33,6 @@ type GlyphOutline struct {
 // pathBuilder converts raw TrueType contour points into path segments.
 // This is a port of HarfBuzz's path-builder.hh logic.
 type pathBuilder struct {
-	segments []Segment
 
 	// State tracking for the current contour.
 	// TrueType contours can start with off-curve points, and consecutive
@@ -41,6 +40,7 @@ type pathBuilder struct {
 	firstOnCurve  *OutlinePoint // first on-curve point seen
 	firstOffCurve *OutlinePoint // first off-curve point (if contour starts off-curve)
 	lastOffCurve  *OutlinePoint // pending off-curve point from previous consumePoint
+	segments      []Segment
 }
 
 func (pb *pathBuilder) moveTo(p OutlinePoint) {

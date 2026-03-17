@@ -16,11 +16,6 @@ const (
 
 // GDEF represents the Glyph Definition table.
 type GDEF struct {
-	data []byte
-
-	// Version (major.minor)
-	versionMajor uint16
-	versionMinor uint16
 
 	// Glyph class definitions (optional)
 	glyphClassDef *ClassDef
@@ -36,6 +31,11 @@ type GDEF struct {
 
 	// Mark glyph sets (version >= 1.2, optional)
 	markGlyphSetsDef *MarkGlyphSetsDef
+	data             []byte
+
+	// Version (major.minor)
+	versionMajor uint16
+	versionMinor uint16
 }
 
 // AttachList contains attachment points for glyphs.

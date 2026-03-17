@@ -69,12 +69,18 @@ func (s *Shaper) normalizeBuffer(buf *Buffer, mode NormalizationMode) {
 	// Phase 3: Recompose if mode allows
 	// HarfBuzz equivalent: hb-ot-shape-normalize.cc:418-473
 	if mode == NormalizationModeComposedDiacritics {
-		decomposed = s.recomposeBuffer(decomposed)
+		decomposed = s.recomposeBuffer(buf, decomposed)
 	}
 
 	// Update buffer
 	buf.Info = decomposed
-	buf.Pos = make([]GlyphPos, len(decomposed))
+	needed := len(decomposed)
+	if cap(buf.Pos) >= needed {
+		buf.Pos = buf.Pos[:needed]
+		clear(buf.Pos)
+	} else {
+		buf.Pos = make([]GlyphPos, needed)
+	}
 }
 
 // decomposeBuffer performs the decomposition phase.
@@ -87,7 +93,13 @@ func (s *Shaper) normalizeBuffer(buf *Buffer, mode NormalizationMode) {
 // CRITICAL: HarfBuzz checks for composed glyph FIRST when shortCircuit=true!
 // This prevents decomposing pre-composed characters like U+0623 when the font has a glyph for them.
 func (s *Shaper) decomposeBuffer(buf *Buffer, mightShortCircuit bool) []GlyphInfo {
-	result := make([]GlyphInfo, 0, len(buf.Info)*2) // Preallocate for possible expansion
+	needed := len(buf.Info) * 2
+	if cap(buf.scratch) >= needed {
+		buf.scratch = buf.scratch[:0]
+	} else {
+		buf.scratch = make([]GlyphInfo, 0, needed)
+	}
+	result := buf.scratch
 	count := len(buf.Info)
 	idx := 0
 
@@ -338,12 +350,17 @@ func sortMarksByCombiningClass(marks []GlyphInfo) {
 
 // recomposeBuffer performs the recomposition phase.
 // HarfBuzz equivalent: hb-ot-shape-normalize.cc:418-473
-func (s *Shaper) recomposeBuffer(info []GlyphInfo) []GlyphInfo {
+func (s *Shaper) recomposeBuffer(buf *Buffer, info []GlyphInfo) []GlyphInfo {
 	if len(info) < 2 {
 		return info
 	}
 
-	result := make([]GlyphInfo, 0, len(info))
+	if cap(buf.scratch2) >= len(info) {
+		buf.scratch2 = buf.scratch2[:0]
+	} else {
+		buf.scratch2 = make([]GlyphInfo, 0, len(info))
+	}
+	result := buf.scratch2
 	result = append(result, info[0])
 	starterIdx := 0
 

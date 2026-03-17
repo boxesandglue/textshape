@@ -24,14 +24,14 @@ type GlyphExtents struct {
 
 // Head represents the font header table.
 type Head struct {
+	Created            int64
+	Modified           int64
 	Version            uint32
 	FontRevision       uint32
 	CheckSumAdjustment uint32
 	MagicNumber        uint32
 	Flags              uint16
 	UnitsPerEm         uint16
-	Created            int64
-	Modified           int64
 	XMin               int16
 	YMin               int16
 	XMax               int16
@@ -74,6 +74,13 @@ func ParseHead(data []byte) (*Head, error) {
 
 // OS2 represents the OS/2 table.
 type OS2 struct {
+	UlUnicodeRange1 uint32
+	UlUnicodeRange2 uint32
+	UlUnicodeRange3 uint32
+	UlUnicodeRange4 uint32
+	// Version 1+
+	UlCodePageRange1    uint32
+	UlCodePageRange2    uint32
 	Version             uint16
 	XAvgCharWidth       int16
 	UsWeightClass       uint16
@@ -90,12 +97,6 @@ type OS2 struct {
 	YStrikeoutSize      int16
 	YStrikeoutPosition  int16
 	SFamilyClass        int16
-	Panose              [10]byte
-	UlUnicodeRange1     uint32
-	UlUnicodeRange2     uint32
-	UlUnicodeRange3     uint32
-	UlUnicodeRange4     uint32
-	AchVendID           [4]byte
 	FsSelection         uint16
 	UsFirstCharIndex    uint16
 	UsLastCharIndex     uint16
@@ -104,15 +105,14 @@ type OS2 struct {
 	STypoLineGap        int16
 	UsWinAscent         uint16
 	UsWinDescent        uint16
-	// Version 1+
-	UlCodePageRange1 uint32
-	UlCodePageRange2 uint32
 	// Version 2+
 	SxHeight      int16
 	SCapHeight    int16
 	UsDefaultChar uint16
 	UsBreakChar   uint16
 	UsMaxContext  uint16
+	Panose        [10]byte
+	AchVendID     [4]byte
 }
 
 // ParseOS2 parses the OS/2 table.
@@ -309,8 +309,8 @@ type Face struct {
 	cmap     *Cmap
 	fvar     *Fvar
 	glyf     *Glyf
-	glyfOnce sync.Once
 	cff      *CFF
+	glyfOnce sync.Once
 	cffOnce  sync.Once
 	upem     uint16
 	isCFF    bool

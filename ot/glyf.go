@@ -6,8 +6,8 @@ import (
 
 // Glyf represents the parsed glyf table (glyph data).
 type Glyf struct {
-	data []byte
 	loca *Loca
+	data []byte
 }
 
 // Loca represents the parsed loca table (index to location).

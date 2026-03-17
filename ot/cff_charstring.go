@@ -6,18 +6,20 @@ import (
 
 // CharStringInterpreter interprets CFF Type 2 CharStrings to find subroutine usage.
 type CharStringInterpreter struct {
-	globalSubrs [][]byte
-	localSubrs  [][]byte
-	globalBias  int
-	localBias   int
 
 	// Closure tracking
 	UsedGlobalSubrs map[int]bool
 	UsedLocalSubrs  map[int]bool
 
+	globalSubrs [][]byte
+	localSubrs  [][]byte
+
 	// Execution state
-	stack     []int
-	callStack []csCallFrame
+	stack      []int
+	callStack  []csCallFrame
+	globalBias int
+	localBias  int
+
 	hintCount int
 }
 
@@ -240,9 +242,9 @@ const (
 // - For normal operators: copy original bytes directly
 // - For callsubr/callgsubr: encode new biased number, then copy operator byte
 type parsedCSElement struct {
-	elemType csElementType
 	// For csElemBytes: the raw bytes to copy (operands and/or operators)
 	rawBytes []byte
+	elemType csElementType
 	// For callsubr/callgsubr: the actual subroutine number (after adding bias)
 	subrNum int
 }

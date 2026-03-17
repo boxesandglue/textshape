@@ -20,24 +20,24 @@ const VariationsNotFoundIndex = 0xFFFFFFFF
 // It allows fonts to substitute feature lookups based on variation axis values.
 type FeatureVariations struct {
 	data    []byte
-	offset  int
 	records []featureVariationRecord
+	offset  int
 }
 
 // featureVariationRecord pairs a ConditionSet with a FeatureTableSubstitution.
 type featureVariationRecord struct {
-	conditionSetOffset uint32
-	featureSubstOffset uint32
 	conditionSet       *ConditionSet
 	featureTableSubst  *FeatureTableSubstitution
+	conditionSetOffset uint32
+	featureSubstOffset uint32
 }
 
 // ConditionSet represents a set of conditions that must ALL be true (AND logic).
 // HarfBuzz: struct ConditionSet in hb-ot-layout-common.hh:4305
 type ConditionSet struct {
 	data       []byte
-	offset     int
 	conditions []*Condition
+	offset     int
 }
 
 // Condition represents a single condition.
@@ -54,15 +54,15 @@ type Condition struct {
 // HarfBuzz: struct FeatureTableSubstitution in hb-ot-layout-common.hh:4479
 type FeatureTableSubstitution struct {
 	data    []byte
+	records []featureSubstitutionRecord
 	offset  int
 	version uint32
-	records []featureSubstitutionRecord
 }
 
 // featureSubstitutionRecord maps a feature index to an alternate feature.
 type featureSubstitutionRecord struct {
-	featureIndex  uint16
 	lookupIndices []uint16
+	featureIndex  uint16
 }
 
 // ParseFeatureVariations parses a FeatureVariations table from data at the given offset.

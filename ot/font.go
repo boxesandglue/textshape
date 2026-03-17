@@ -7,8 +7,8 @@ import (
 
 // Font represents an OpenType font.
 type Font struct {
-	data   []byte
 	tables map[Tag]tableRecord
+	data   []byte
 }
 
 type tableRecord struct {

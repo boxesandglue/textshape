@@ -8,13 +8,13 @@ import (
 // It contains variation data for TrueType glyph outlines.
 type Gvar struct {
 	data                []byte
+	glyphVarDataOffsets []uint32 // Offset for each glyph's variation data
 	axisCount           int
 	sharedTupleCount    int
 	glyphCount          int
-	flags               uint16
 	sharedTuplesOffset  uint32
 	glyphVarDataOffset  uint32
-	glyphVarDataOffsets []uint32 // Offset for each glyph's variation data
+	flags               uint16
 }
 
 // ParseGvar parses a gvar table.

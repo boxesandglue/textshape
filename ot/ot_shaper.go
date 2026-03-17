@@ -26,8 +26,6 @@ const (
 // All function fields are optional (nil means use default behavior).
 // This design matches HarfBuzz where NULL function pointers are allowed.
 type OTShaper struct {
-	// Name identifies this shaper (for debugging)
-	Name string
 
 	// CollectFeatures is called during plan compilation.
 	// Shapers should add their features to the plan's map.
@@ -77,9 +75,8 @@ type OTShaper struct {
 	// HarfBuzz: reorder_marks (hb-ot-shaper.hh:153)
 	ReorderMarks func(plan *ShapePlan, buf *Buffer, start, end int)
 
-	// GPOSTag - If not zero, must match GPOS script tag for GPOS to be applied.
-	// HarfBuzz: gpos_tag (hb-ot-shaper.hh:162)
-	GPOSTag Tag
+	// Name identifies this shaper (for debugging)
+	Name string
 
 	// NormalizationPreference controls how normalization is performed.
 	// HarfBuzz: normalization_preference (hb-ot-shaper.hh:164)
@@ -88,6 +85,10 @@ type OTShaper struct {
 	// ZeroWidthMarks controls how zero-width marks are handled.
 	// HarfBuzz: zero_width_marks (hb-ot-shaper.hh:166)
 	ZeroWidthMarks ZeroWidthMarksType
+
+	// GPOSTag - If not zero, must match GPOS script tag for GPOS to be applied.
+	// HarfBuzz: gpos_tag (hb-ot-shaper.hh:162)
+	GPOSTag Tag
 
 	// FallbackPosition enables fallback positioning when GPOS is not available.
 	// HarfBuzz: fallback_position (hb-ot-shaper.hh:168)
@@ -109,34 +110,37 @@ type NormalizeContext struct {
 // The plan is compiled once and can be reused for multiple shaping calls.
 // This improves performance by avoiding repeated feature lookups.
 type ShapePlan struct {
+
+	// ShaperData holds shaper-specific data created by DataCreate
+	ShaperData interface{}
+
 	// Shaper is the script-specific shaper for this plan
 	Shaper *OTShaper
 
 	// Map contains the compiled lookup map
 	Map *OTMap
 
+	// Internal references
+	gsub *GSUB
+	gpos *GPOS
+	gdef *GDEF
+
 	// Props contains segment properties (direction, script, language)
 	Props SegmentProperties
-
-	// ShaperData holds shaper-specific data created by DataCreate
-	ShaperData interface{}
 
 	// Cached masks for common features
 	FracMask uint32
 	NumrMask uint32
 	DnomMask uint32
-	HasFrac  bool
 
 	RTLMMask uint32
-	HasVert  bool
 
-	KernMask         uint32
+	KernMask uint32
+	HasFrac  bool
+
+	HasVert bool
+
 	RequestedKerning bool
-
-	// Internal references
-	gsub *GSUB
-	gpos *GPOS
-	gdef *GDEF
 }
 
 // SegmentProperties holds text segment properties.

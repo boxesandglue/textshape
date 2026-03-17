@@ -25,9 +25,9 @@ var TagCvar = MakeTag('c', 'v', 'a', 'r')
 // Hvar represents a parsed HVAR (Horizontal Metrics Variations) table.
 // It allows adjusting glyph advances based on variation axis settings.
 type Hvar struct {
-	data     []byte
 	varStore *ItemVariationStore
 	advMap   *DeltaSetIndexMap
+	data     []byte
 }
 
 // ParseHvar parses an HVAR table.
@@ -105,8 +105,8 @@ type ItemVariationStore struct {
 }
 
 type varDataOffset struct {
-	offset uint32
 	data   []byte
+	offset uint32
 }
 
 // parseItemVariationStore parses an ItemVariationStore.

@@ -212,13 +212,13 @@ func (k *kernFormat0) KernPair(left, right GlyphID) int16 {
 type kernFormat2 struct {
 	leftClasses  []uint16 // class value for each glyph (indexed by glyph - firstGlyph)
 	rightClasses []uint16
+	kernArray    []byte // raw kern values
+	arrayOffset  int    // offset of array in subtable
 	leftFirst    uint16
 	rightFirst   uint16
 	leftCount    uint16
 	rightCount   uint16
 	rowWidth     uint16 // bytes per row in kern array
-	kernArray    []byte // raw kern values
-	arrayOffset  int    // offset of array in subtable
 }
 
 func parseKernFormat2(data []byte, headerSize int, numGlyphs int) (*kernFormat2, error) {

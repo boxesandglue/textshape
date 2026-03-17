@@ -55,9 +55,9 @@ type gposBuilder struct {
 }
 
 type gposLookupBuilder struct {
+	subtables  [][]byte
 	lookupType uint16
 	flag       uint16
-	subtables  [][]byte
 }
 
 func newGPOSBuilder(glyphMap map[ot.GlyphID]ot.GlyphID, glyphSet map[ot.GlyphID]bool) *gposBuilder {
@@ -219,8 +219,8 @@ func (b *gposBuilder) subsetPairPos(pp *ot.PairPos) []byte {
 
 // pairSetEntry holds a remapped pair set.
 type pairSetEntry struct {
-	firstGlyph ot.GlyphID
 	pairs      []pairValueEntry
+	firstGlyph ot.GlyphID
 }
 
 // pairValueEntry holds a remapped pair value.
@@ -688,9 +688,9 @@ func buildClassDefFormat2(entries []classEntry) []byte {
 
 // cursiveEntry holds a remapped cursive attachment entry.
 type cursiveEntry struct {
-	glyph ot.GlyphID
 	entry *ot.Anchor
 	exit  *ot.Anchor
+	glyph ot.GlyphID
 }
 
 // subsetCursivePos subsets a CursivePos subtable.
@@ -774,15 +774,15 @@ func (b *gposBuilder) buildCursivePos(entries []cursiveEntry) []byte {
 
 // markEntry holds a remapped mark entry.
 type markEntry struct {
+	anchor *ot.Anchor
 	glyph  ot.GlyphID
 	class  uint16
-	anchor *ot.Anchor
 }
 
 // baseEntry holds a remapped base entry.
 type baseEntry struct {
-	glyph   ot.GlyphID
 	anchors []*ot.Anchor // Per-class anchors
+	glyph   ot.GlyphID
 }
 
 // subsetMarkBasePos subsets a MarkBasePos subtable.
@@ -888,8 +888,8 @@ func (b *gposBuilder) buildMarkBasePos(marks []markEntry, bases []baseEntry, cla
 
 // ligEntry holds a remapped ligature entry.
 type ligEntry struct {
-	glyph   ot.GlyphID
 	anchors [][]*ot.Anchor // [component][class]
+	glyph   ot.GlyphID
 }
 
 // subsetMarkLigPos subsets a MarkLigPos subtable.

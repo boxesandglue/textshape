@@ -13,27 +13,24 @@ type cffDrawInterpreter struct {
 
 	// Argument stack. HarfBuzz uses double (number_t), we use float64.
 	// HarfBuzz equivalent: arg_stack_t in hb-cff-interp-common.hh:428
-	stack    []float64
-	argStart int // offset to skip width argument; HarfBuzz: arg_start in hb-cff1-interp-cs.hh:75
+	stack []float64
+
+	// Subroutine data.
+	globalSubrs [][]byte
+	localSubrs  [][]byte
+	argStart    int // offset to skip width argument; HarfBuzz: arg_start in hb-cff1-interp-cs.hh:75
 
 	// Current point (absolute coordinates).
 	// HarfBuzz equivalent: point_t pt in cs_interp_env_t (hb-cff-interp-cs-common.hh:209)
 	x, y float64
-
-	// Width handling.
-	// HarfBuzz equivalent: processed_width, has_width in hb-cff1-interp-cs.hh:73-74
-	processedWidth bool
 
 	// Hint tracking for hintmask/cntrmask byte skipping.
 	// HarfBuzz equivalent: hstem_count, vstem_count in hb-cff-interp-cs-common.hh:201-202
 	hstemCount int
 	vstemCount int
 
-	// Subroutine data.
-	globalSubrs [][]byte
-	localSubrs  [][]byte
-	globalBias  int
-	localBias   int
+	globalBias int
+	localBias  int
 
 	// Call stack for subroutine calls. Max depth 10.
 	// HarfBuzz equivalent: callStack in hb-cff-interp-cs-common.hh:204
@@ -42,6 +39,10 @@ type cffDrawInterpreter struct {
 	// Operation counter to prevent infinite loops.
 	// HarfBuzz equivalent: max_ops in cs_interpreter_t::interpret (hb-cff-interp-cs-common.hh:884)
 	opsCount int
+
+	// Width handling.
+	// HarfBuzz equivalent: processed_width, has_width in hb-cff1-interp-cs.hh:73-74
+	processedWidth bool
 
 	err bool
 }

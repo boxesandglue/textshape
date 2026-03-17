@@ -137,16 +137,19 @@ func collectSubrClosure(charStrings [][]byte, globalSubrs, localSubrs [][]byte) 
 
 	// Process each CharString
 	for _, cs := range charStrings {
-		collectSubrsFromCharString(cs, globalSubrs, localSubrs, globalBias, localBias, globalClosure, localClosure, make(map[int]bool), make(map[int]bool))
+		hintCount := 0
+		collectSubrsFromCharString(cs, globalSubrs, localSubrs, globalBias, localBias, globalClosure, localClosure, make(map[int]bool), make(map[int]bool), &hintCount)
 	}
 
 	return globalClosure, localClosure
 }
 
 // collectSubrsFromCharString recursively collects subroutine calls from a CharString.
+// hintCount tracks the cumulative number of stem hints (shared across subroutine calls)
+// so that hintmask/cntrmask mask bytes can be properly skipped.
 func collectSubrsFromCharString(data []byte, globalSubrs, localSubrs [][]byte,
 	globalBias, localBias int, globalClosure, localClosure map[int]bool,
-	visitedGlobal, visitedLocal map[int]bool) {
+	visitedGlobal, visitedLocal map[int]bool, hintCount *int) {
 
 	pos := 0
 	stack := make([]int, 0, 48)
@@ -193,6 +196,19 @@ func collectSubrsFromCharString(data []byte, globalSubrs, localSubrs [][]byte,
 			}
 
 			switch op {
+			case 1, 18: // hstem, hstemhm
+				*hintCount += len(stack) / 2
+				stack = stack[:0]
+			case 3, 23: // vstem, vstemhm
+				*hintCount += len(stack) / 2
+				stack = stack[:0]
+			case 19, 20: // hintmask, cntrmask
+				// Any remaining pairs on the stack are implicit vstem hints
+				*hintCount += len(stack) / 2
+				stack = stack[:0]
+				// Skip mask bytes (ceil(hintCount / 8))
+				maskBytes := (*hintCount + 7) / 8
+				pos += maskBytes
 			case 10: // callsubr (local)
 				if len(stack) > 0 {
 					biasedNum := stack[len(stack)-1]
@@ -202,9 +218,9 @@ func collectSubrsFromCharString(data []byte, globalSubrs, localSubrs [][]byte,
 					if subrNum >= 0 && subrNum < len(localSubrs) && !visitedLocal[subrNum] {
 						localClosure[subrNum] = true
 						visitedLocal[subrNum] = true
-						// Recursively process the subroutine
+						// Recursively process the subroutine (shares hintCount)
 						collectSubrsFromCharString(localSubrs[subrNum], globalSubrs, localSubrs,
-							globalBias, localBias, globalClosure, localClosure, visitedGlobal, visitedLocal)
+							globalBias, localBias, globalClosure, localClosure, visitedGlobal, visitedLocal, hintCount)
 					}
 				}
 			case 29: // callgsubr (global)
@@ -216,9 +232,9 @@ func collectSubrsFromCharString(data []byte, globalSubrs, localSubrs [][]byte,
 					if subrNum >= 0 && subrNum < len(globalSubrs) && !visitedGlobal[subrNum] {
 						globalClosure[subrNum] = true
 						visitedGlobal[subrNum] = true
-						// Recursively process the subroutine
+						// Recursively process the subroutine (shares hintCount)
 						collectSubrsFromCharString(globalSubrs[subrNum], globalSubrs, localSubrs,
-							globalBias, localBias, globalClosure, localClosure, visitedGlobal, visitedLocal)
+							globalBias, localBias, globalClosure, localClosure, visitedGlobal, visitedLocal, hintCount)
 					}
 				}
 			case 11: // return
@@ -226,7 +242,7 @@ func collectSubrsFromCharString(data []byte, globalSubrs, localSubrs [][]byte,
 			case 14: // endchar
 				return
 			default:
-				// Clear stack for most operators (simplified)
+				// Clear stack for drawing/other operators
 				stack = stack[:0]
 			}
 		}
@@ -234,7 +250,8 @@ func collectSubrsFromCharString(data []byte, globalSubrs, localSubrs [][]byte,
 }
 
 // remapCharStringSubrs rewrites a CharString with new subroutine numbers.
-func remapCharStringSubrs(data []byte, globalRemap, localRemap *subrRemap, oldGlobalBias, oldLocalBias int) []byte {
+// hintCount tracks cumulative stem hints for proper hintmask/cntrmask mask byte handling.
+func remapCharStringSubrs(data []byte, globalRemap, localRemap *subrRemap, oldGlobalBias, oldLocalBias int, hintCount *int) []byte {
 	var result bytes.Buffer
 	pos := 0
 	stack := make([]int, 0, 48)
@@ -291,6 +308,30 @@ func remapCharStringSubrs(data []byte, globalRemap, localRemap *subrRemap, oldGl
 			}
 
 			switch op {
+			case 1, 18: // hstem, hstemhm
+				*hintCount += len(stack) / 2
+				result.Write(data[startPos:pos])
+				stack = stack[:0]
+				stackPositions = stackPositions[:0]
+			case 3, 23: // vstem, vstemhm
+				*hintCount += len(stack) / 2
+				result.Write(data[startPos:pos])
+				stack = stack[:0]
+				stackPositions = stackPositions[:0]
+			case 19, 20: // hintmask, cntrmask
+				// Any remaining pairs on the stack are implicit vstem hints
+				*hintCount += len(stack) / 2
+				stack = stack[:0]
+				stackPositions = stackPositions[:0]
+				// Copy the operator byte(s)
+				result.Write(data[startPos:pos])
+				// Copy mask bytes (ceil(hintCount / 8))
+				maskBytes := (*hintCount + 7) / 8
+				if pos+maskBytes <= len(data) {
+					result.Write(data[pos : pos+maskBytes])
+				}
+				pos += maskBytes
+
 			case 10: // callsubr (local)
 				if len(stack) > 0 && localRemap != nil {
 					biasedNum := stack[len(stack)-1]
@@ -417,7 +458,8 @@ func (p *Plan) subsetCFF() ([]byte, error) {
 
 	// 6. Remap CharStrings with new subroutine numbers
 	for i := range usedCharStrings {
-		usedCharStrings[i] = remapCharStringSubrs(usedCharStrings[i], globalRemap, localRemap, oldGlobalBias, oldLocalBias)
+		hc := 0
+		usedCharStrings[i] = remapCharStringSubrs(usedCharStrings[i], globalRemap, localRemap, oldGlobalBias, oldLocalBias, &hc)
 	}
 
 	// 7. Build new subroutine arrays (only used ones, in order)
@@ -449,7 +491,8 @@ func extractUsedSubrs(subrs [][]byte, closure map[int]bool, globalRemap, localRe
 	for newNum, oldNum := range nums {
 		if oldNum >= 0 && oldNum < len(subrs) {
 			// Remap subr calls within the subroutine
-			result[newNum] = remapCharStringSubrs(subrs[oldNum], globalRemap, localRemap, oldGlobalBias, oldLocalBias)
+			hc := 0
+			result[newNum] = remapCharStringSubrs(subrs[oldNum], globalRemap, localRemap, oldGlobalBias, oldLocalBias, &hc)
 		} else {
 			result[newNum] = []byte{11} // return
 		}

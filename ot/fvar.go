@@ -44,10 +44,10 @@ type AxisInfo struct {
 
 // NamedInstance represents a predefined style like "Bold" or "Light".
 type NamedInstance struct {
+	Coords           []float32
 	Index            int
 	SubfamilyNameID  uint16
 	PostScriptNameID uint16 // 0 if not present
-	Coords           []float32
 }
 
 // Fvar represents a parsed fvar (Font Variations) table.

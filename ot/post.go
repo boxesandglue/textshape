@@ -8,17 +8,18 @@ import "encoding/binary"
 // PostTable represents a fully parsed post table with glyph name support.
 // This extends the basic Post struct in metrics.go with full format 2.0 support.
 type PostTable struct {
-	Version            uint32
-	ItalicAngle        int32
-	UnderlinePosition  int16
-	UnderlineThickness int16
-	IsFixedPitch       uint32
-
-	// Format 2.0 specific fields
-	numGlyphs      uint16
 	glyphNameIndex []uint16 // Maps glyph ID to name index
 	stringPool     []byte   // Pascal strings (length byte + string bytes)
 	indexToOffset  []int    // Maps custom name index to offset in stringPool
+	Version        uint32
+	ItalicAngle    int32
+	IsFixedPitch   uint32
+
+	UnderlinePosition  int16
+	UnderlineThickness int16
+
+	// Format 2.0 specific fields
+	numGlyphs uint16
 }
 
 // macRomanNames contains the 258 standard glyph names used in post format 1.0 and 2.0.

@@ -262,28 +262,12 @@ const (
 
 // Buffer holds a sequence of glyphs being shaped.
 type Buffer struct {
-	Info      []GlyphInfo
-	Pos       []GlyphPos
-	Direction Direction
-	Flags     BufferFlags
-
-	// Idx is the cursor into Info and Pos arrays.
-	// HarfBuzz: hb_buffer_t::idx (hb-buffer.hh line 97)
-	Idx int
+	Info []GlyphInfo
+	Pos  []GlyphPos
 
 	// Output buffer for in-place modifications
 	// HarfBuzz: hb_buffer_t::out_info, out_len, have_output (hb-buffer.hh lines 93-102)
-	outInfo    []GlyphInfo
-	outLen     int
-	haveOutput bool
-
-	// Serial counter for ligature IDs
-	// HarfBuzz: hb_buffer_t::serial (hb-buffer.hh line 109)
-	serial uint8
-
-	// Script and Language for shaping (optional, can be auto-detected)
-	Script             Tag
-	Language           Tag
+	outInfo            []GlyphInfo
 	LanguageCandidates []Tag // Multiple language candidates in priority order (BCP47→OT may produce multiple)
 
 	// PreContext and PostContext hold Unicode codepoints that surround the text being shaped.
@@ -292,15 +276,16 @@ type Buffer struct {
 	PreContext  []Codepoint
 	PostContext []Codepoint
 
-	// ScratchFlags holds temporary flags used during shaping.
-	// HarfBuzz equivalent: scratch_flags in hb-buffer.hh
-	ScratchFlags ScratchFlags
+	// scratch and scratch2 are reusable slices for intermediate results (decomposition, recomposition).
+	scratch   []GlyphInfo
+	scratch2  []GlyphInfo
+	Direction Direction
 
-	// RandomState for the 'rand' feature's pseudo-random number generator.
-	// HarfBuzz equivalent: random_state in hb-buffer.hh
-	// Uses minstd_rand: state = state * 48271 % 2147483647
-	// Initial value 1 (set in NewBuffer/reset).
-	RandomState uint32
+	// Idx is the cursor into Info and Pos arrays.
+	// HarfBuzz: hb_buffer_t::idx (hb-buffer.hh line 97)
+	Idx int
+
+	outLen int
 
 	// ClusterLevel controls cluster merging behavior.
 	// HarfBuzz equivalent: cluster_level in hb-buffer.hh
@@ -314,6 +299,28 @@ type Buffer struct {
 	// not found in the font. -1 means not set (VS will be removed from buffer).
 	// HarfBuzz equivalent: not_found_variation_selector in hb-buffer.hh
 	NotFoundVSGlyph int
+
+	Flags BufferFlags
+
+	// Script and Language for shaping (optional, can be auto-detected)
+	Script   Tag
+	Language Tag
+
+	// ScratchFlags holds temporary flags used during shaping.
+	// HarfBuzz equivalent: scratch_flags in hb-buffer.hh
+	ScratchFlags ScratchFlags
+
+	// RandomState for the 'rand' feature's pseudo-random number generator.
+	// HarfBuzz equivalent: random_state in hb-buffer.hh
+	// Uses minstd_rand: state = state * 48271 % 2147483647
+	// Initial value 1 (set in NewBuffer/reset).
+	RandomState uint32
+
+	haveOutput bool
+
+	// Serial counter for ligature IDs
+	// HarfBuzz: hb_buffer_t::serial (hb-buffer.hh line 109)
+	serial uint8
 }
 
 // ScratchFlags are temporary flags used during shaping.
@@ -370,8 +377,8 @@ func (b *Buffer) AddCodepoints(codepoints []Codepoint) {
 func (b *Buffer) AddString(s string) {
 	// HarfBuzz: cluster = index into input text (hb-buffer.cc:1858)
 	// No mark grouping here - clusters are merged during shaping (ligatures, etc.)
-	runes := []rune(s)
-	for i, r := range runes {
+	i := 0
+	for _, r := range s {
 		cp := Codepoint(r)
 		info := GlyphInfo{
 			Codepoint: cp,
@@ -394,8 +401,15 @@ func (b *Buffer) AddString(s string) {
 			info.GlyphProps |= GlyphPropsHidden
 		}
 		b.Info = append(b.Info, info)
+		i++
 	}
-	b.Pos = make([]GlyphPos, len(b.Info))
+	needed := len(b.Info)
+	if cap(b.Pos) >= needed {
+		b.Pos = b.Pos[:needed]
+		clear(b.Pos)
+	} else {
+		b.Pos = make([]GlyphPos, needed)
+	}
 }
 
 // SetDirection sets the text direction.
@@ -418,12 +432,22 @@ func (b *Buffer) Clear() {
 func (b *Buffer) Reset() {
 	b.Info = b.Info[:0]
 	b.Pos = b.Pos[:0]
+	b.outInfo = b.outInfo[:0]
+	b.outLen = 0
+	b.haveOutput = false
+	b.Idx = 0
 	b.Direction = 0 // Unset - will be determined by GuessSegmentProperties or shaper
 	b.Flags = BufferFlagDefault
 	b.Script = 0
 	b.Language = 0
+	b.LanguageCandidates = b.LanguageCandidates[:0]
+	b.PreContext = b.PreContext[:0]
+	b.PostContext = b.PostContext[:0]
 	b.serial = 0
 	b.ScratchFlags = 0
+	b.RandomState = 1
+	b.ClusterLevel = 0
+	b.NotFoundVSGlyph = -1
 }
 
 // Reverse reverses the order of glyphs in the buffer.
@@ -800,8 +824,13 @@ func (b *Buffer) sync() {
 		b.nextGlyph()
 	}
 
-	// Replace Info with output
-	b.Info = make([]GlyphInfo, len(b.outInfo))
+	// Replace Info with output, reusing existing capacity when possible
+	needed := len(b.outInfo)
+	if cap(b.Info) >= needed {
+		b.Info = b.Info[:needed]
+	} else {
+		b.Info = make([]GlyphInfo, needed)
+	}
 	copy(b.Info, b.outInfo)
 
 	// Reset output state
@@ -809,8 +838,13 @@ func (b *Buffer) sync() {
 	b.outLen = 0
 	b.Idx = 0
 
-	// Recreate Pos array with correct length
-	b.Pos = make([]GlyphPos, len(b.Info))
+	// Reuse Pos array if capacity is sufficient
+	if cap(b.Pos) >= needed {
+		b.Pos = b.Pos[:needed]
+		clear(b.Pos)
+	} else {
+		b.Pos = make([]GlyphPos, needed)
+	}
 }
 
 // deleteGlyphsInplace removes glyphs from the buffer that match the filter.
@@ -1029,14 +1063,6 @@ type Shaper struct {
 	vhea *Vhea // Vertical header
 	vorg *VORG // Vertical origin (CFF/CFF2 fonts)
 
-	// Default features to apply when nil is passed to Shape
-	defaultFeatures []Feature
-
-	// Variation state (for variable fonts)
-	designCoords      []float32 // User-space coordinates
-	normalizedCoords  []float32 // Normalized coordinates [-1, 1]
-	normalizedCoordsI []int     // Normalized coords in F2DOT14 format, after avar mapping
-
 	// Script-specific mark reordering callback.
 	// HarfBuzz equivalent: plan->shaper->reorder_marks in hb-ot-shape-normalize.cc:394-395
 	// Set this before calling normalizeBuffer for scripts that need mark reordering
@@ -1058,15 +1084,23 @@ type Shaper struct {
 	// Lazily initialized when first shaping Indic text.
 	indicPlans map[Tag]*IndicPlan
 
+	// Default features to apply when nil is passed to Shape
+	defaultFeatures []Feature
+
+	// Variation state (for variable fonts)
+	designCoords      []float32 // User-space coordinates
+	normalizedCoords  []float32 // Normalized coordinates [-1, 1]
+	normalizedCoordsI []int     // Normalized coords in F2DOT14 format, after avar mapping
+
 	// Synthetic bold/slant (HarfBuzz: hb_font_set_synthetic_bold / hb_font_set_synthetic_slant)
-	xEmbolden       float32
-	yEmbolden       float32
-	emboldenInPlace bool
-	slant           float32
+	xEmbolden float32
+	yEmbolden float32
+	slant     float32
 
 	// Computed bold strengths in font units (xStrength = round(upem * xEmbolden))
-	xStrength int16
-	yStrength int16
+	xStrength       int16
+	yStrength       int16
+	emboldenInPlace bool
 }
 
 // SetSyntheticBold sets synthetic bold parameters.

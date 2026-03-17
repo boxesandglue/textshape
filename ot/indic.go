@@ -100,13 +100,7 @@ var indicFeatures = [indicNumFeatures]indicFeature{
 // IndicPlan holds pre-computed data for Indic shaping.
 // HarfBuzz equivalent: indic_shape_plan_t in hb-ot-shaper-indic.cc:289-308
 type IndicPlan struct {
-	config    *IndicConfig
-	isOldSpec bool
-	viramaGID GlyphID
-
-	// Feature masks - dynamically generated based on font features
-	// HarfBuzz equivalent: mask_array[INDIC_NUM_FEATURES] in hb-ot-shaper-indic.cc:307
-	maskArray [indicNumFeatures]uint32
+	config *IndicConfig
 
 	// Would-substitute feature testers
 	// HarfBuzz equivalent: rphf, pref, blwf, pstf, vatu in hb-ot-shaper-indic.cc:299-305
@@ -115,6 +109,14 @@ type IndicPlan struct {
 	blwf indicWouldSubstitute
 	pstf indicWouldSubstitute
 	vatu indicWouldSubstitute
+
+	// Feature masks - dynamically generated based on font features
+	// HarfBuzz equivalent: mask_array[INDIC_NUM_FEATURES] in hb-ot-shaper-indic.cc:307
+	maskArray [indicNumFeatures]uint32
+
+	viramaGID GlyphID
+
+	isOldSpec bool
 }
 
 // indicWouldSubstitute holds data for testing if a feature would substitute glyphs.

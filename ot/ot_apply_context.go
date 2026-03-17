@@ -24,14 +24,48 @@ const (
 type OTApplyContext struct {
 	// Core components
 	// HarfBuzz: hb_buffer_t *buffer, hb_font_t *font
-	Buffer    *Buffer
-	Font      *Font
-	GDEF      *GDEF
+	Buffer *Buffer
+	Font   *Font
+	GDEF   *GDEF
+
+	// RecurseFunc is the callback for recursive lookup application.
+	// HarfBuzz equivalent: recurse_func_t recurse_func in hb_ot_apply_context_t:733
+	// This is set by the caller (GPOS/GSUB) to enable nested lookup calls.
+	RecurseFunc func(ctx *OTApplyContext, lookupIndex int) bool
+
+	// Match positions for context/chaining lookups
+	// HarfBuzz: hb_vector_t<uint32_t> match_positions
+	MatchPositions []int
+
 	TableType TableType // 0=GSUB, 1=GPOS
 
 	// Direction for RTL handling
 	// HarfBuzz: hb_direction_t direction
 	Direction Direction
+
+	// LookupIndex is the current lookup index.
+	// HarfBuzz: lookup_index
+	LookupIndex int
+
+	// Mark filtering
+	// HarfBuzz: Uses lookup_props with MarkFilteringSet flag
+	MarkFilteringSet int // Mark filtering set index (-1 if not used)
+
+	NewSyllables int // New syllable value for substituted glyphs (-1 = don't change)
+
+	// Per-syllable range constraints
+	// When PerSyllable is true, these define the valid range for context matching
+	RangeStart int // Start of current syllable range (inclusive)
+	RangeEnd   int // End of current syllable range (exclusive)
+
+	// Recursion control
+	// HarfBuzz: unsigned nesting_level_left in hb_ot_apply_context_t:732
+	NestingLevel int // Current nesting level for nested lookups
+
+	// GPOS-specific: last base glyph tracking
+	// HarfBuzz: signed last_base, unsigned last_base_until in hb_ot_apply_context_t:741-742
+	LastBase      int // Index of last base glyph (-1 if none)
+	LastBaseUntil int // Valid until this index
 
 	// Lookup properties
 	// HarfBuzz: hb_mask_t lookup_mask, unsigned lookup_props
@@ -47,14 +81,6 @@ type OTApplyContext struct {
 	// Legacy name: LookupFlag (from GSUBContext/GPOSContext)
 	LookupFlag uint16
 
-	// LookupIndex is the current lookup index.
-	// HarfBuzz: lookup_index
-	LookupIndex int
-
-	// Mark filtering
-	// HarfBuzz: Uses lookup_props with MarkFilteringSet flag
-	MarkFilteringSet int // Mark filtering set index (-1 if not used)
-
 	// ZWNJ/ZWJ handling
 	// HarfBuzz: bool auto_zwnj, bool auto_zwj in hb_ot_apply_context_t:735-736
 	AutoZWNJ bool // Automatically handle ZWNJ (default: true)
@@ -63,36 +89,12 @@ type OTApplyContext struct {
 	// Syllable tracking
 	// HarfBuzz: bool per_syllable, unsigned new_syllables in hb_ot_apply_context_t:737-739
 	PerSyllable   bool  // Apply lookup per-syllable (GSUB only)
-	NewSyllables  int   // New syllable value for substituted glyphs (-1 = don't change)
 	MatchSyllable uint8 // Reference syllable for per-syllable matching (0 = no constraint)
 	// HarfBuzz equivalent: matcher_t::syllable set via reset(start_index_)
-
-	// Per-syllable range constraints
-	// When PerSyllable is true, these define the valid range for context matching
-	RangeStart int // Start of current syllable range (inclusive)
-	RangeEnd   int // End of current syllable range (exclusive)
 
 	// Random feature support
 	// HarfBuzz: bool random in hb_ot_apply_context_t:738
 	Random bool
-
-	// Recursion control
-	// HarfBuzz: unsigned nesting_level_left in hb_ot_apply_context_t:732
-	NestingLevel int // Current nesting level for nested lookups
-
-	// RecurseFunc is the callback for recursive lookup application.
-	// HarfBuzz equivalent: recurse_func_t recurse_func in hb_ot_apply_context_t:733
-	// This is set by the caller (GPOS/GSUB) to enable nested lookup calls.
-	RecurseFunc func(ctx *OTApplyContext, lookupIndex int) bool
-
-	// Match positions for context/chaining lookups
-	// HarfBuzz: hb_vector_t<uint32_t> match_positions
-	MatchPositions []int
-
-	// GPOS-specific: last base glyph tracking
-	// HarfBuzz: signed last_base, unsigned last_base_until in hb_ot_apply_context_t:741-742
-	LastBase      int // Index of last base glyph (-1 if none)
-	LastBaseUntil int // Valid until this index
 
 	// Has glyph classes from GDEF
 	// HarfBuzz: bool has_glyph_classes

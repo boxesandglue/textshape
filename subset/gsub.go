@@ -57,26 +57,26 @@ type gsubBuilder struct {
 }
 
 type lookupBuilder struct {
+	subtables  [][]byte
 	lookupType uint16
 	flag       uint16
-	subtables  [][]byte
 }
 
 type featureRecord struct {
-	tag     ot.Tag
 	lookups []uint16
+	tag     ot.Tag
 }
 
 type scriptRecord struct {
-	tag      ot.Tag
-	langSys  []langSysRecord
 	dfltLang *langSysRecord
+	langSys  []langSysRecord
+	tag      ot.Tag
 }
 
 type langSysRecord struct {
+	features []uint16
 	tag      ot.Tag
 	reqFeat  uint16
-	features []uint16
 }
 
 func newGSUBBuilder(glyphMap map[ot.GlyphID]ot.GlyphID, glyphSet map[ot.GlyphID]bool) *gsubBuilder {
@@ -222,8 +222,8 @@ func (b *gsubBuilder) buildSingleSubstFormat2(entries []struct{ in, out ot.Glyph
 
 // multipleSubstEntry holds a remapped multiple substitution entry.
 type multipleSubstEntry struct {
-	in  ot.GlyphID
 	out []ot.GlyphID
+	in  ot.GlyphID
 }
 
 // subsetMultipleSubst subsets a MultipleSubst subtable.
@@ -253,7 +253,7 @@ func (b *gsubBuilder) subsetMultipleSubst(st *ot.MultipleSubst) []byte {
 			}
 		}
 		if allOk {
-			entries = append(entries, multipleSubstEntry{newIn, newOut})
+			entries = append(entries, multipleSubstEntry{in: newIn, out: newOut})
 		}
 	}
 
@@ -314,8 +314,8 @@ func (b *gsubBuilder) buildMultipleSubst(entries []multipleSubstEntry) []byte {
 
 // alternateSubstEntry holds a remapped alternate substitution entry.
 type alternateSubstEntry struct {
-	in   ot.GlyphID
 	alts []ot.GlyphID
+	in   ot.GlyphID
 }
 
 // subsetAlternateSubst subsets an AlternateSubst subtable.
@@ -340,7 +340,7 @@ func (b *gsubBuilder) subsetAlternateSubst(st *ot.AlternateSubst) []byte {
 			}
 		}
 		if len(newAlts) > 0 {
-			entries = append(entries, alternateSubstEntry{newIn, newAlts})
+			entries = append(entries, alternateSubstEntry{in: newIn, alts: newAlts})
 		}
 	}
 
@@ -398,14 +398,14 @@ func (b *gsubBuilder) buildAlternateSubst(entries []alternateSubstEntry) []byte 
 
 // ligatureEntry holds a remapped ligature.
 type ligatureEntry struct {
-	ligGlyph   ot.GlyphID
 	components []ot.GlyphID
+	ligGlyph   ot.GlyphID
 }
 
 // ligatureSetEntry holds a remapped ligature set.
 type ligatureSetEntry struct {
-	firstGlyph ot.GlyphID
 	ligatures  []ligatureEntry
+	firstGlyph ot.GlyphID
 }
 
 // subsetLigatureSubst subsets a LigatureSubst subtable.
@@ -450,12 +450,12 @@ func (b *gsubBuilder) subsetLigatureSubst(st *ot.LigatureSubst) []byte {
 			}
 
 			if allOk {
-				ligs = append(ligs, ligatureEntry{newLigGlyph, newComps})
+				ligs = append(ligs, ligatureEntry{ligGlyph: newLigGlyph, components: newComps})
 			}
 		}
 
 		if len(ligs) > 0 {
-			sets = append(sets, ligatureSetEntry{newFirst, ligs})
+			sets = append(sets, ligatureSetEntry{firstGlyph: newFirst, ligatures: ligs})
 		}
 	}
 

@@ -7,13 +7,14 @@ import (
 
 // Cmap provides Unicode to glyph ID mapping.
 type Cmap struct {
-	data     []byte
 	subtable cmapSubtable
 	format14 *cmapFormat14 // For variation selectors (optional)
 
+	data     []byte
+	fontPage uint16 // From OS/2 table (version 0: fsSelection & 0xFF00)
+
 	// Symbol font support (Platform 3, Encoding 0)
 	isSymbol bool
-	fontPage uint16 // From OS/2 table (version 0: fsSelection & 0xFF00)
 }
 
 // cmapSubtable is the interface for different cmap subtable formats.
@@ -345,8 +346,8 @@ func (f *cmapFormat4) idRangeOffsetAt(i int) uint16 {
 // --- Format 6: Trimmed table mapping (BMP, contiguous range) ---
 
 type cmapFormat6 struct {
-	firstCode uint16
 	glyphIDs  []uint16
+	firstCode uint16
 }
 
 func parseCmapFormat6(data []byte, offset int) (*cmapFormat6, error) {

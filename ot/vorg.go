@@ -8,8 +8,8 @@ import (
 // VORG represents the Vertical Origin table (used by CFF/CFF2 fonts).
 // It provides the vertical origin Y coordinate for glyphs.
 type VORG struct {
-	defaultVertOriginY int16
 	entries            []vorgEntry // sorted by glyphIndex
+	defaultVertOriginY int16
 }
 
 type vorgEntry struct {

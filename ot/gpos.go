@@ -129,13 +129,6 @@ func (vr *ValueRecord) IsZero() bool {
 
 // GPOS represents the Glyph Positioning table.
 type GPOS struct {
-	data        []byte
-	version     uint32
-	scriptList  uint16
-	featureList uint16
-	lookupList  uint16
-
-	lookups []*GPOSLookup
 
 	// FeatureVariations (GPOS version 1.1+ only)
 	// HarfBuzz: hb-ot-layout-common.hh - struct GSUBGPOS
@@ -144,6 +137,14 @@ type GPOS struct {
 	// Cached parsed tables
 	cachedFeatureList *FeatureList
 	cachedScriptList  *ScriptList
+	data              []byte
+
+	lookups []*GPOSLookup
+
+	version     uint32
+	scriptList  uint16
+	featureList uint16
+	lookupList  uint16
 }
 
 // ParseGPOS parses a GPOS table from data.
@@ -246,9 +247,9 @@ func (g *GPOS) GetFeatureVariations() *FeatureVariations {
 
 // GPOSLookup represents a GPOS lookup table.
 type GPOSLookup struct {
+	subtables  []GPOSSubtable
 	Type       uint16
 	Flag       uint16
-	subtables  []GPOSSubtable
 	MarkFilter uint16
 }
 
@@ -354,11 +355,11 @@ func parseGPOSSubtable(data []byte, offset int, lookupType uint16) (GPOSSubtable
 
 // SinglePos represents a Single Positioning subtable.
 type SinglePos struct {
-	format       uint16
 	coverage     *Coverage
-	valueFormat  uint16
-	valueRecord  ValueRecord   // Format 1: single value for all
 	valueRecords []ValueRecord // Format 2: per-glyph values
+	valueRecord  ValueRecord   // Format 1: single value for all
+	format       uint16
+	valueFormat  uint16
 }
 
 func parseSinglePos(data []byte, offset int) (*SinglePos, error) {
@@ -465,20 +466,22 @@ func (sp *SinglePos) ValueRecords() []ValueRecord {
 
 // PairPos represents a Pair Positioning subtable.
 type PairPos struct {
-	format       uint16
-	coverage     *Coverage
-	valueFormat1 uint16
-	valueFormat2 uint16
+	coverage *Coverage
+
+	// Format 2: class-based
+	classDef1 *ClassDef
+	classDef2 *ClassDef
 
 	// Format 1: per-glyph pair sets
 	pairSets [][]PairValueRecord
 
-	// Format 2: class-based
-	classDef1   *ClassDef
-	classDef2   *ClassDef
+	classMatrix  [][]PairClassRecord // [class1][class2]
+	format       uint16
+	valueFormat1 uint16
+	valueFormat2 uint16
+
 	class1Count uint16
 	class2Count uint16
-	classMatrix [][]PairClassRecord // [class1][class2]
 }
 
 // PairValueRecord holds a pair of glyphs and their positioning values.
@@ -791,9 +794,9 @@ type EntryExitRecord struct {
 // It connects glyphs in cursive scripts (like Arabic) by aligning
 // exit anchors with entry anchors of adjacent glyphs.
 type CursivePos struct {
-	format           uint16
 	coverage         *Coverage
 	entryExitRecords []EntryExitRecord
+	format           uint16
 }
 
 func parseCursivePos(data []byte, offset int) (*CursivePos, error) {
@@ -1032,16 +1035,17 @@ func (cp *CursivePos) EntryExitRecords() []EntryExitRecord {
 
 // ClassDef maps glyph IDs to class values.
 type ClassDef struct {
-	format uint16
-	data   []byte
-	offset int
-
-	// Format 1: range starting at startGlyph
-	startGlyph  GlyphID
+	data        []byte
 	classValues []uint16
 
 	// Format 2: class ranges
 	classRanges []classRange
+	offset      int
+
+	format uint16
+
+	// Format 1: range starting at startGlyph
+	startGlyph GlyphID
 }
 
 type classRange struct {
@@ -1475,8 +1479,8 @@ func parseAnchor(data []byte, offset int) (*Anchor, error) {
 
 // MarkRecord associates a mark glyph with a class and anchor.
 type MarkRecord struct {
-	Class  uint16  // Mark class
 	Anchor *Anchor // Anchor for this mark
+	Class  uint16  // Mark class
 }
 
 // --- MarkArray ---
@@ -1526,9 +1530,9 @@ func parseMarkArray(data []byte, offset int) (*MarkArray, error) {
 // Rows correspond to base glyphs (in BaseCoverage order).
 // Columns correspond to mark classes (0 to classCount-1).
 type BaseArray struct {
+	Anchors    [][]*Anchor // [row][class] -> Anchor (may be nil)
 	Rows       int
 	ClassCount int
-	Anchors    [][]*Anchor // [row][class] -> Anchor (may be nil)
 }
 
 // parseBaseArray parses a BaseArray (AnchorMatrix) from data.
@@ -1589,12 +1593,12 @@ func (ba *BaseArray) GetAnchor(baseIndex, markClass int) *Anchor {
 // MarkBasePos represents a Mark-to-Base Attachment subtable (GPOS Type 4).
 // It positions mark glyphs relative to base glyphs using anchor points.
 type MarkBasePos struct {
-	format       uint16
 	markCoverage *Coverage
 	baseCoverage *Coverage
-	classCount   uint16
 	markArray    *MarkArray
 	baseArray    *BaseArray
+	format       uint16
+	classCount   uint16
 }
 
 func parseMarkBasePos(data []byte, offset int) (*MarkBasePos, error) {
@@ -1954,9 +1958,9 @@ func propagateAttachmentOffsetsRecursive(positions []GlyphPos, i int, direction 
 // - Rows correspond to ligature components (in writing order)
 // - Columns correspond to mark classes
 type LigatureAttach struct {
+	Anchors        [][]*Anchor // [component][class] -> Anchor (may be nil)
 	ComponentCount int         // Number of ligature components
 	ClassCount     int         // Number of mark classes
-	Anchors        [][]*Anchor // [component][class] -> Anchor (may be nil)
 }
 
 // parseLigatureAttach parses a LigatureAttach table (same structure as AnchorMatrix).
@@ -2050,12 +2054,12 @@ func parseLigatureArray(data []byte, offset int, classCount int) (*LigatureArray
 // It positions mark glyphs relative to ligature glyphs.
 // Each ligature can have multiple components, and each component has its own anchor points.
 type MarkLigPos struct {
-	format           uint16
 	markCoverage     *Coverage
 	ligatureCoverage *Coverage
-	classCount       uint16
 	markArray        *MarkArray
 	ligatureArray    *LigatureArray
+	format           uint16
+	classCount       uint16
 }
 
 func parseMarkLigPos(data []byte, offset int) (*MarkLigPos, error) {
@@ -2271,12 +2275,12 @@ func (m *MarkLigPos) LigatureArray() *LigatureArray {
 // It positions mark glyphs (mark1) relative to preceding mark glyphs (mark2).
 // This is used for stacking diacritics, e.g., placing an accent on top of another accent.
 type MarkMarkPos struct {
-	format        uint16
-	mark1Coverage *Coverage // Coverage for the attaching mark (mark1)
-	mark2Coverage *Coverage // Coverage for the base mark (mark2)
-	classCount    uint16
+	mark1Coverage *Coverage  // Coverage for the attaching mark (mark1)
+	mark2Coverage *Coverage  // Coverage for the base mark (mark2)
 	mark1Array    *MarkArray // Anchor information for mark1 glyphs
 	mark2Array    *BaseArray // Anchor matrix for mark2 glyphs (same structure as BaseArray)
+	format        uint16
+	classCount    uint16
 }
 
 func parseMarkMarkPos(data []byte, offset int) (*MarkMarkPos, error) {
@@ -2484,18 +2488,19 @@ type GPOSContextRule struct {
 // It matches input sequences and applies nested positioning lookups.
 // HarfBuzz equivalent: ContextPos in OT/Layout/GPOS/ContextPos.hh
 type ContextPos struct {
-	format uint16
 
 	// Format 1: Simple glyph contexts
 	coverage *Coverage
-	ruleSets [][]GPOSContextRule
 
 	// Format 2: Class-based contexts
 	classDef *ClassDef
 
+	ruleSets [][]GPOSContextRule
+
 	// Format 3: Coverage-based contexts
 	inputCoverages []*Coverage
 	lookupRecords  []GPOSLookupRecord
+	format         uint16
 }
 
 func parseContextPos(data []byte, offset int) (*ContextPos, error) {
@@ -2942,11 +2947,9 @@ type GPOSChainRule struct {
 // It matches backtrack, input, and lookahead sequences, then applies nested lookups.
 // HarfBuzz equivalent: ChainContextPos in OT/Layout/GPOS/ChainContextPos.hh
 type ChainContextPos struct {
-	format uint16
 
 	// Format 1: Simple glyph contexts
-	coverage      *Coverage
-	chainRuleSets [][]GPOSChainRule // Indexed by coverage index
+	coverage *Coverage
 
 	// Format 2: Class-based contexts
 	backtrackClassDef *ClassDef
@@ -2954,11 +2957,14 @@ type ChainContextPos struct {
 	lookaheadClassDef *ClassDef
 	// chainRuleSets also used for format 2 (indexed by input class)
 
+	chainRuleSets [][]GPOSChainRule // Indexed by coverage index
+
 	// Format 3: Coverage-based contexts
 	backtrackCoverages []*Coverage
 	inputCoverages     []*Coverage
 	lookaheadCoverages []*Coverage
 	lookupRecords      []GPOSLookupRecord
+	format             uint16
 }
 
 func parseChainContextPos(data []byte, offset int) (*ChainContextPos, error) {

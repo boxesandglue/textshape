@@ -24,9 +24,6 @@ type Plan struct {
 	// glyphSet contains all old glyph IDs to retain.
 	glyphSet map[ot.GlyphID]bool
 
-	// numOutputGlyphs is the number of glyphs in the output font.
-	numOutputGlyphs int
-
 	// Parsed tables (cached for subsetting)
 	cmap *ot.Cmap
 	gdef *ot.GDEF
@@ -47,6 +44,9 @@ type Plan struct {
 
 	// Normalized coordinates for instancing (F2DOT14 format)
 	normalizedCoords []int
+
+	// numOutputGlyphs is the number of glyphs in the output font.
+	numOutputGlyphs int
 }
 
 // CreatePlan creates a subset plan from a font and input configuration.

@@ -161,8 +161,8 @@ func (b *gdefBuilder) subsetGlyphClassDef() []byte {
 // subsetAttachList subsets the AttachList.
 func (b *gdefBuilder) subsetAttachList() []byte {
 	type attachEntry struct {
-		glyph  ot.GlyphID
 		points []uint16
+		glyph  ot.GlyphID
 	}
 	var entries []attachEntry
 
@@ -170,7 +170,7 @@ func (b *gdefBuilder) subsetAttachList() []byte {
 		points := b.gdef.GetAttachPoints(oldGlyph)
 		if len(points) > 0 {
 			if newGlyph, ok := b.glyphMap[oldGlyph]; ok {
-				entries = append(entries, attachEntry{newGlyph, points})
+				entries = append(entries, attachEntry{glyph: newGlyph, points: points})
 			}
 		}
 	}
@@ -229,8 +229,8 @@ func (b *gdefBuilder) subsetAttachList() []byte {
 // subsetLigCaretList subsets the LigCaretList.
 func (b *gdefBuilder) subsetLigCaretList() []byte {
 	type caretEntry struct {
-		glyph  ot.GlyphID
 		carets []ot.CaretValue
+		glyph  ot.GlyphID
 	}
 	var entries []caretEntry
 
@@ -238,7 +238,7 @@ func (b *gdefBuilder) subsetLigCaretList() []byte {
 		carets := b.gdef.GetLigCarets(oldGlyph)
 		if len(carets) > 0 {
 			if newGlyph, ok := b.glyphMap[oldGlyph]; ok {
-				entries = append(entries, caretEntry{newGlyph, carets})
+				entries = append(entries, caretEntry{glyph: newGlyph, carets: carets})
 			}
 		}
 	}
