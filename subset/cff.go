@@ -139,19 +139,38 @@ func collectSubrClosure(charStrings [][]byte, globalSubrs, localSubrs [][]byte) 
 	for _, cs := range charStrings {
 		hintCount := 0
 		stack := make([]int, 0, 48)
-		collectSubrsFromCharString(cs, globalSubrs, localSubrs, globalBias, localBias, globalClosure, localClosure, make(map[int]bool), make(map[int]bool), &hintCount, &stack)
+		collectSubrsFromCharString(cs, globalSubrs, localSubrs, globalBias, localBias, globalClosure, localClosure, &hintCount, &stack, 0)
 	}
 
 	return globalClosure, localClosure
 }
 
+// maxSubrCallDepth bounds the closure walker against malformed fonts with
+// circular subroutine calls (the CFF Type 2 spec forbids them, but we don't
+// want to loop forever on bad input). 10 nested calls is the spec's
+// well-formed limit; we allow a little slack.
+const maxSubrCallDepth = 64
+
 // collectSubrsFromCharString recursively collects subroutine calls from a CharString.
 // hintCount tracks the cumulative number of stem hints (shared across subroutine calls)
 // so that hintmask/cntrmask mask bytes can be properly skipped.
 // stack is shared between caller and callee (CFF subroutines share the operand stack).
+//
+// IMPORTANT: subroutines must be re-walked on every call, not cached by a
+// "visited" set. A subroutine called twice from the same charstring may see
+// different caller-stack states, and its drawing ops consume args off the
+// shared stack. Skipping the second walk leaves stale args on the stack,
+// which then get miscounted as implicit vstem hints by the next hintmask —
+// inflating the mask-byte skip and derailing the byte stream (observed:
+// LibertinusSans-Regular.otf, glyph "m" missing subr 580 from its closure).
+// Use the depth parameter to bound against malformed circular subroutines.
 func collectSubrsFromCharString(data []byte, globalSubrs, localSubrs [][]byte,
 	globalBias, localBias int, globalClosure, localClosure map[int]bool,
-	visitedGlobal, visitedLocal map[int]bool, hintCount *int, stack *[]int) {
+	hintCount *int, stack *[]int, depth int) {
+
+	if depth > maxSubrCallDepth {
+		return
+	}
 
 	pos := 0
 
@@ -217,12 +236,10 @@ func collectSubrsFromCharString(data []byte, globalSubrs, localSubrs [][]byte,
 					*stack = (*stack)[:len(*stack)-1]
 					subrNum := biasedNum + localBias
 
-					if subrNum >= 0 && subrNum < len(localSubrs) && !visitedLocal[subrNum] {
+					if subrNum >= 0 && subrNum < len(localSubrs) {
 						localClosure[subrNum] = true
-						visitedLocal[subrNum] = true
-						// Recursively process the subroutine (shares hintCount and stack)
 						collectSubrsFromCharString(localSubrs[subrNum], globalSubrs, localSubrs,
-							globalBias, localBias, globalClosure, localClosure, visitedGlobal, visitedLocal, hintCount, stack)
+							globalBias, localBias, globalClosure, localClosure, hintCount, stack, depth+1)
 					}
 				}
 			case 29: // callgsubr (global)
@@ -231,12 +248,10 @@ func collectSubrsFromCharString(data []byte, globalSubrs, localSubrs [][]byte,
 					*stack = (*stack)[:len(*stack)-1]
 					subrNum := biasedNum + globalBias
 
-					if subrNum >= 0 && subrNum < len(globalSubrs) && !visitedGlobal[subrNum] {
+					if subrNum >= 0 && subrNum < len(globalSubrs) {
 						globalClosure[subrNum] = true
-						visitedGlobal[subrNum] = true
-						// Recursively process the subroutine (shares hintCount and stack)
 						collectSubrsFromCharString(globalSubrs[subrNum], globalSubrs, localSubrs,
-							globalBias, localBias, globalClosure, localClosure, visitedGlobal, visitedLocal, hintCount, stack)
+							globalBias, localBias, globalClosure, localClosure, hintCount, stack, depth+1)
 					}
 				}
 			case 11: // return

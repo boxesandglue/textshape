@@ -404,6 +404,155 @@ func TestCFFClosureSyntheticSharedStack(t *testing.T) {
 	}
 }
 
+// TestCFFClosureRewalksRepeatedSubr exercises a subroutine that is called twice
+// from the same charstring AND leaves residual values on the shared stack after
+// returning (i.e. it does not end with a stack-clearing drawing operator).
+// A walker that caches visited subroutines (skipping the second walk) will miss
+// the stack-mutating ops on the second call, polluting the shared stack with
+// stale values. The subsequent hintmask then counts those stale values as
+// implicit vstem args, inflates its mask-byte skip, and falls out of byte
+// alignment — typically misidentifying a 2-byte push prefix as a 1-byte
+// operator and adding the wrong subroutine to the closure.
+//
+// Real-world trigger: LibertinusSans-Regular.otf "m" glyph. Subroutine 396
+// pushes 5 final values that the caller consumes via vvcurveto. On a second
+// invocation reached via a different subr that calls global subr 4
+// (a previously-visited drawing subroutine), the walker skipped re-walking
+// subr 4, leaving 4 stale values on the stack — then the next hintmask
+// computed maskBytes=2 instead of 1, advanced past the prefix byte of the
+// next 2-byte push, and added subr 77 (drawing) to the closure instead of
+// subr 580 (the real callee).
+func TestCFFClosureRewalksRepeatedSubr(t *testing.T) {
+	// Charstring layout:
+	//   hstem(hm) declaring 3 stems
+	//   hintmask + 1 mask byte
+	//   callsubr 0  (visits subr 0 → recursively walks subr 1)
+	//   callsubr 0  (second call; old code skipped subr 0 → stack polluted)
+	//   hintmask    (sees polluted stack → maskBytes too large → misalignment)
+	//   push 473 via 2-byte encoding f8 6d
+	//   callsubr 2  (the real callee; old code missed it)
+	//   endchar
+	//
+	// Encoding cheat sheet (1-byte push):  byte b in [32,246] → value b-139
+	//   149 → 10, 159 → 20, 169 → 30, 179 → 40, 189 → 50, 199 → 60
+	//   With localBias=107 (subr count < 1240): subr index = (byte-139) + 107.
+	//   subr 0:   biased = -107 → byte 32
+	//   subr 1:   biased = -106 → byte 33
+	//   subr 2:   biased = -105 → byte 34
+
+	// subr 0: a one-byte drawing subroutine that consumes whatever args the
+	// caller pushed. With a real walk, this clears the shared stack.
+	// On a buggy second visit (cached), the walker skips this entirely and
+	// leaves the caller's pushed args on the stack.
+	localSubr0 := []byte{
+		7,  // vlineto (consumes all args on stack)
+		11, // return
+	}
+
+	// subr 1: the target subroutine. Must be in the closure for a correct subset.
+	localSubr1 := []byte{
+		139, 139, // push 0, 0
+		21, // rmoveto
+		11, // return
+	}
+
+	localSubrs := [][]byte{localSubr0, localSubr1}
+	var globalSubrs [][]byte
+
+	// Build a charstring that:
+	//   1. Declares exactly 8 stem hints (hintCount=8, maskBytes=1).
+	//   2. Calls subr 0 once with 2 args — first call, walked, stack cleared.
+	//   3. Calls subr 0 again with 2 args — second call.
+	//      Buggy walker: cached, skips the subr → stack stays at [2 vals].
+	//      Fixed walker: re-walks, vlineto clears → stack empty.
+	//   4. Hits a hintmask.
+	//      Buggy: hintCount += 2/2 = 1 → 9 → maskBytes = (9+7)/8 = 2.
+	//      Fixed: hintCount += 0 → 8 → maskBytes = 1.
+	//   5. Encodes `mask byte, push -106 (= biased subr 1), callsubr` after.
+	//      Buggy walker skips 2 bytes (mask byte AND the push), then sees
+	//      callsubr with an empty stack and bails — subr 1 NOT in closure.
+	//      Fixed walker skips 1 byte (mask byte), reads push + callsubr,
+	//      subr 1 IS in closure.
+
+	pushPairs := []byte{} // 8 hint pairs = 16 values
+	for i := 0; i < 16; i++ {
+		pushPairs = append(pushPairs, byte(139+i)) // pushes 0..15
+	}
+
+	charstring := []byte{}
+	charstring = append(charstring, pushPairs...)
+	charstring = append(charstring,
+		18,   // hstemhm → 8 hstems, hintCount=8
+		19,   // hintmask
+		0x80, // 1 mask byte (correct: hintCount=8)
+		149, 159, // push 10, 20 (drawing args for subr 0's vlineto)
+		32, // push -107 (= biased subr 0)
+		10, // callsubr 0 (first call — vlineto consumes 10, 20)
+		149, 159, // push 10, 20 again
+		32,   // push -107 (= biased subr 0)
+		10,   // callsubr 0 (SECOND call — the bug trigger)
+		19,   // hintmask
+		0x40, // mask byte (correct), or skipped as garbage push (buggy)
+		33,   // push -106 (= biased subr 1)
+		10,   // callsubr 1 — must end up in closure
+		14,   // endchar
+	)
+
+	_, localClosure := collectSubrClosure([][]byte{charstring}, globalSubrs, localSubrs)
+
+	if !localClosure[0] {
+		t.Error("subr 0 missing from closure")
+	}
+	if !localClosure[1] {
+		t.Error("subr 1 missing from closure — visited-cache bug: closure walker did not re-walk subr 0 on its second call, leaving 2 stale stack args that inflated the next hintmask's byte skip from 1 to 2, derailing byte alignment")
+	}
+
+	// Same scenario but exercising the callgsubr (op 29) path, since the
+	// real-world Libertinus "m" bug hit a global subr, not a local one.
+	// callsubr and callgsubr had IDENTICAL !visited gating — and would also
+	// be reintroduced as a pair by a refactor — but they're separate code
+	// paths, and a regression test that only fires on one is half-blind.
+	globalSubr0 := []byte{
+		7,  // vlineto
+		11, // return
+	}
+	globalSubr1 := []byte{
+		139, 139, // push 0, 0
+		21, // rmoveto
+		11, // return
+	}
+	gsubrs := [][]byte{globalSubr0, globalSubr1}
+	var lsubrs [][]byte
+
+	gCharstring := []byte{}
+	gCharstring = append(gCharstring, pushPairs...)
+	gCharstring = append(gCharstring,
+		18,   // hstemhm → 8 hstems
+		19,   // hintmask
+		0x80, // 1 mask byte
+		149, 159, // push 10, 20
+		32, // push -107 (biased global subr 0)
+		29, // callgsubr 0 (first call)
+		149, 159, // push 10, 20
+		32, // push -107
+		29, // callgsubr 0 (second call — bug trigger on global path)
+		19, // hintmask
+		0x40,
+		33, // push -106 (biased global subr 1)
+		29, // callgsubr 1
+		14, // endchar
+	)
+
+	globalClosure, _ := collectSubrClosure([][]byte{gCharstring}, gsubrs, lsubrs)
+
+	if !globalClosure[0] {
+		t.Error("global subr 0 missing from closure (callgsubr path)")
+	}
+	if !globalClosure[1] {
+		t.Error("global subr 1 missing from closure — visited-cache bug on the callgsubr path (this is the path that the LibertinusSans-Regular 'm' bug actually took)")
+	}
+}
+
 // TestCFFSubrClosureWithHintsInSubroutines tests that subroutine closure collection
 // and charstring remapping work correctly when stem hints are defined in subroutines
 // rather than in the top-level charstring. CFF subroutines share the operand stack
