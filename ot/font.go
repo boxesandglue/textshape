@@ -362,6 +362,121 @@ func (f *Font) GetGlyphFromName(name string) (GlyphID, bool) {
 	return 0, false
 }
 
+// HasColorPalettes returns true if the font carries a CPAL table with at
+// least one palette.
+//
+// HarfBuzz equivalent: hb_ot_color_has_palettes (hb-ot-color.cc:68-83)
+// delegating to CPAL::has_data (OT/Color/CPAL/CPAL.hh:173).
+func (f *Font) HasColorPalettes() bool {
+	data, err := f.TableData(TagCPAL)
+	if err != nil {
+		return false
+	}
+	cpal, err := ParseCPAL(data)
+	if err != nil {
+		return false
+	}
+	return cpal.HasData()
+}
+
+// NumColorPalettes returns the number of color palettes in the font, or 0
+// if no CPAL table is present.
+//
+// HarfBuzz equivalent: hb_ot_color_palette_get_count (hb-ot-color.cc:84-103)
+// delegating to CPAL::get_palette_count (OT/Color/CPAL/CPAL.hh:178).
+func (f *Font) NumColorPalettes() int {
+	data, err := f.TableData(TagCPAL)
+	if err != nil {
+		return 0
+	}
+	cpal, err := ParseCPAL(data)
+	if err != nil {
+		return 0
+	}
+	return cpal.NumPalettes()
+}
+
+// ColorPaletteFlags returns the flags for the given palette index.
+// Returns PaletteFlagDefault if the CPAL table is missing, the index is
+// out of range, or the table is CPAL version 0 (no flags array).
+//
+// HarfBuzz equivalent: hb_ot_color_palette_get_flags (hb-ot-color.cc:146-176)
+// delegating to CPAL::get_palette_flags (OT/Color/CPAL/CPAL.hh:181-182).
+func (f *Font) ColorPaletteFlags(paletteIndex int) PaletteFlags {
+	data, err := f.TableData(TagCPAL)
+	if err != nil {
+		return PaletteFlagDefault
+	}
+	cpal, err := ParseCPAL(data)
+	if err != nil {
+		return PaletteFlagDefault
+	}
+	return cpal.PaletteFlags(paletteIndex)
+}
+
+// ColorPaletteColors returns the colors of the given palette, or nil if
+// the palette index is out of range or no CPAL table is present.
+//
+// HarfBuzz equivalent: hb_ot_color_palette_get_colors (hb-ot-color.cc:178-200)
+// delegating to CPAL::get_palette_colors (OT/Color/CPAL/CPAL.hh:190-197).
+// HB's variant paginates via start_offset+count for C-API memory
+// management; we return a slice because Go callers do not need that.
+func (f *Font) ColorPaletteColors(paletteIndex int) []BGRAColor {
+	data, err := f.TableData(TagCPAL)
+	if err != nil {
+		return nil
+	}
+	cpal, err := ParseCPAL(data)
+	if err != nil {
+		return nil
+	}
+	return cpal.PaletteColors(paletteIndex)
+}
+
+// HasColorLayers returns true if the font has a COLR table that contains
+// at least one COLRv0 base-glyph record. Returns false for fonts that only
+// carry COLRv1 paint trees — see GlyphColorLayers commentary for why.
+//
+// HarfBuzz equivalent: hb_ot_color_has_layers (hb-ot-color.cc:204-218)
+// delegating to COLR::has_v0_data (OT/Color/COLR/COLR.hh:2095). Note that
+// HB returns true ONLY for v0 data here — separate accessors
+// (hb_ot_color_has_paint at hb-ot-color.cc:222) report v1 presence.
+func (f *Font) HasColorLayers() bool {
+	data, err := f.TableData(TagCOLR)
+	if err != nil {
+		return false
+	}
+	colr, err := ParseCOLR(data)
+	if err != nil {
+		return false
+	}
+	return colr.HasV0Data()
+}
+
+// GlyphColorLayers returns the COLRv0 layer list for the given base glyph,
+// or nil if the glyph has no v0 record (or no COLR table exists at all).
+// Callers that get nil should fall back to the plain outline.
+//
+// HarfBuzz equivalent: hb_ot_color_glyph_get_layers
+// (hb-ot-color.cc:262-270) delegating to COLR::get_glyph_layers
+// (OT/Color/COLR/COLR.hh:2105-2122). HB paginates output via
+// start_offset+count for C-API memory management; we return a slice.
+//
+// Each returned ColorLayer carries a CPAL color index that may be
+// ForegroundColorIndex (0xFFFF) — see ColorLayer's documentation for the
+// "use foreground color" sentinel.
+func (f *Font) GlyphColorLayers(gid GlyphID) []ColorLayer {
+	data, err := f.TableData(TagCOLR)
+	if err != nil {
+		return nil
+	}
+	colr, err := ParseCOLR(data)
+	if err != nil {
+		return nil
+	}
+	return colr.GlyphLayers(gid)
+}
+
 // GlyphID represents a glyph index.
 type GlyphID = uint16
 
