@@ -586,6 +586,44 @@ func (f *Font) GlyphColorPNG(gid GlyphID, requestedPPEM int) *ColorPNG {
 	return nil
 }
 
+// HasColorSVG returns true if the font carries an SVG color table with
+// at least one document entry.
+//
+// HarfBuzz equivalent: hb_ot_color_has_svg (hb-ot-color.cc:287-291)
+// delegating to SVG::has_data (OT/Color/svg/SVG.hh:81).
+func (f *Font) HasColorSVG() bool {
+	data, err := f.TableData(TagSVG)
+	if err != nil {
+		return false
+	}
+	svg, err := ParseSVG(data)
+	if err != nil {
+		return false
+	}
+	return svg.HasData()
+}
+
+// GlyphColorSVG returns the SVG document bytes for the given glyph, or
+// nil if no SVG entry covers it. The returned bytes are decompressed
+// (gzip is auto-inflated). The same SVG document may cover several
+// glyphs in a range — the caller must locate the right `<g id="glyphN">`
+// subtree inside the returned XML.
+//
+// HarfBuzz equivalent: hb_ot_color_glyph_reference_svg
+// (hb-ot-color.cc:306-310). HB returns the raw (possibly gzipped) blob;
+// we inflate eagerly because every consumer downstream would too.
+func (f *Font) GlyphColorSVG(gid GlyphID) []byte {
+	data, err := f.TableData(TagSVG)
+	if err != nil {
+		return nil
+	}
+	svg, err := ParseSVG(data)
+	if err != nil {
+		return nil
+	}
+	return svg.GlyphSVG(gid)
+}
+
 // GlyphID represents a glyph index.
 type GlyphID = uint16
 
