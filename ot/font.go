@@ -477,6 +477,115 @@ func (f *Font) GlyphColorLayers(gid GlyphID) []ColorLayer {
 	return colr.GlyphLayers(gid)
 }
 
+// ColorPNG is the PNG payload of a color-bitmap glyph as returned by
+// GlyphColorPNG. The fields combine HB's sbix and CBDT result shapes
+// into one type: callers do not need to know which table the bitmap
+// came from. Width/Height are in pixels; XOffset/YOffset are the
+// per-glyph bearing carried in the source table (sbix: font units of
+// 1/UnitsPerEm; CBDT: pixels).
+//
+// HarfBuzz equivalent: the combined outputs of
+// sbix::accelerator_t::reference_png (sbix.hh:221-231) and
+// CBDT::accelerator_t::reference_png (CBDT.hh:894-942), unified.
+type ColorPNG struct {
+	PNG     []byte
+	PPEM    int
+	Width   int
+	Height  int
+	XOffset int
+	YOffset int
+	Source  Tag // TagSbix or TagCBDT — useful for offset-unit interpretation
+}
+
+// HasColorPNG returns true if the font carries color bitmap data in
+// either an sbix or a CBDT/CBLC table.
+//
+// HarfBuzz equivalent: hb_ot_color_has_png (hb-ot-color.cc:327-331)
+// which is true if face->table.CBDT->has_data() OR
+// face->table.sbix->has_data().
+func (f *Font) HasColorPNG() bool {
+	if f.HasTable(TagSbix) {
+		data, err := f.TableData(TagSbix)
+		if err == nil {
+			sbix, err := ParseSbix(data, f.NumGlyphs())
+			if err == nil && sbix.HasData() {
+				return true
+			}
+		}
+	}
+	if f.HasTable(TagCBLC) && f.HasTable(TagCBDT) {
+		data, err := f.TableData(TagCBLC)
+		if err == nil {
+			cblc, err := ParseCBLC(data)
+			if err == nil && cblc.HasData() {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// GlyphColorPNG returns the color bitmap for the given glyph at the
+// strike best matching requestedPPEM, trying sbix first and then CBDT.
+// Returns nil if no bitmap is available for this glyph.
+//
+// HarfBuzz equivalent: hb_ot_color_glyph_reference_png
+// (hb-ot-color.cc:348-360). HB takes hb_font_t because PPEM is part of
+// the font instance; in textshape font size is not bound to ot.Font,
+// so the caller passes PPEM explicitly. requestedPPEM == 0 means
+// "give me the largest strike" — mirrors HB's behavior when PPEM is
+// unset (hb-ot-color.cc:339 documents this).
+func (f *Font) GlyphColorPNG(gid GlyphID, requestedPPEM int) *ColorPNG {
+	// Try sbix first — matches HB ordering at hb-ot-color.cc:353-354.
+	if f.HasTable(TagSbix) {
+		data, err := f.TableData(TagSbix)
+		if err == nil {
+			sbix, err := ParseSbix(data, f.NumGlyphs())
+			if err == nil {
+				if g := sbix.GlyphBlob(gid, requestedPPEM); g != nil && g.GraphicType == MakeTag('p', 'n', 'g', ' ') {
+					// sbix offsets are int16 font units, not pixels.
+					strike := sbix.chooseStrike(requestedPPEM)
+					ppem := 0
+					if strike != nil {
+						ppem = int(strike.PPEM)
+					}
+					return &ColorPNG{
+						PNG:     g.Data,
+						PPEM:    ppem,
+						XOffset: int(g.XOffset),
+						YOffset: int(g.YOffset),
+						Source:  TagSbix,
+					}
+				}
+			}
+		}
+	}
+	// Then try CBDT.
+	if f.HasTable(TagCBLC) && f.HasTable(TagCBDT) {
+		cblcData, err := f.TableData(TagCBLC)
+		if err == nil {
+			cblc, err := ParseCBLC(cblcData)
+			if err == nil {
+				cbdtData, err := f.TableData(TagCBDT)
+				if err == nil {
+					if g := cblc.GlyphPNG(gid, requestedPPEM, cbdtData); g != nil {
+						return &ColorPNG{
+							PNG:     g.PNG,
+							PPEM:    g.PPEM,
+							Width:   g.Width,
+							Height:  g.Height,
+							XOffset: int(g.XOffset),
+							YOffset: int(g.YOffset),
+							Source:  TagCBDT,
+						}
+					}
+				}
+			}
+		}
+	}
+	return nil
+}
+
 // GlyphID represents a glyph index.
 type GlyphID = uint16
 
