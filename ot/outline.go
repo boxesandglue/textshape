@@ -1,6 +1,9 @@
 package ot
 
-import "encoding/binary"
+import (
+	"encoding/binary"
+	"math"
+)
 
 // SegmentOp represents the type of a path segment operation.
 type SegmentOp uint8
@@ -382,4 +385,64 @@ func (g *Glyf) parseCompositeWithTransform(data []byte) []compositeTransform {
 // f2dot14 converts a F2Dot14 fixed-point value to float32.
 func f2dot14(v uint16) float32 {
 	return float32(int16(v)) / 16384.0
+}
+
+// GlyphBBox is the axis-aligned bounding box of a glyph's outline, in
+// font units. yMin / yMax measure from the glyph baseline (yMin < 0
+// means the glyph extends below the baseline = depth in TeX terms).
+type GlyphBBox struct {
+	XMin, YMin, XMax, YMax int16
+}
+
+// GlyphExtents returns the bounding box of the given glyph's outline.
+// Works for both TrueType (glyf) and CFF/CFF2 outlines. Returns
+// (zero-bbox, false) for glyphs with no outline (space, control
+// characters, missing data).
+//
+// Used by math typesetting to replace the pauschal "Height = Size −
+// Depth" model with per-glyph extents — important for sub/sup placement
+// against ascender-only letters (a, c, e) vs ascender + descender
+// letters (g, p, q).
+func (f *Face) GlyphExtents(gid GlyphID) (GlyphBBox, bool) {
+	o, ok := f.GlyphOutline(gid)
+	if !ok || len(o.Segments) == 0 {
+		return GlyphBBox{}, false
+	}
+	first := true
+	var minX, minY, maxX, maxY float32
+	consume := func(p OutlinePoint) {
+		if first {
+			minX, maxX = p.X, p.X
+			minY, maxY = p.Y, p.Y
+			first = false
+			return
+		}
+		if p.X < minX {
+			minX = p.X
+		}
+		if p.X > maxX {
+			maxX = p.X
+		}
+		if p.Y < minY {
+			minY = p.Y
+		}
+		if p.Y > maxY {
+			maxY = p.Y
+		}
+	}
+	for _, s := range o.Segments {
+		n := argsCount(s.Op)
+		for i := 0; i < n; i++ {
+			consume(s.Args[i])
+		}
+	}
+	if first {
+		return GlyphBBox{}, false
+	}
+	return GlyphBBox{
+		XMin: int16(math.Round(float64(minX))),
+		YMin: int16(math.Round(float64(minY))),
+		XMax: int16(math.Round(float64(maxX))),
+		YMax: int16(math.Round(float64(maxY))),
+	}, true
 }

@@ -1062,6 +1062,7 @@ type Shaper struct {
 	vmtx *Vmtx // Vertical metrics
 	vhea *Vhea // Vertical header
 	vorg *VORG // Vertical origin (CFF/CFF2 fonts)
+	math *Math // OpenType MATH table (math-typesetting metrics)
 
 	// Script-specific mark reordering callback.
 	// HarfBuzz equivalent: plan->shaper->reorder_marks in hb-ot-shape-normalize.cc:394-395
@@ -1381,6 +1382,16 @@ func NewShaperFromFace(face *Face) (*Shaper, error) {
 		}
 	}
 
+	// Parse MATH (OpenType math-typesetting table). Optional — only present in
+	// math fonts (Latin Modern Math, STIX Two Math, …). Consumed by the
+	// boxesandglue/frontend/math layout engine, never by the text shaper.
+	if font.HasTable(TagMATH) {
+		data, err := font.TableData(TagMATH)
+		if err == nil {
+			s.math, _ = ParseMath(data)
+		}
+	}
+
 	// Initialize Arabic fallback plan if needed
 	// HarfBuzz: arabic_fallback_plan_create() in hb-ot-shaper-arabic-fallback.hh:323-347
 	// Only creates plan for Arabic script fonts without GSUB positional features
@@ -1517,6 +1528,11 @@ func (s *Shaper) Hvar() *Hvar {
 // HasHvar returns true if the font has HVAR data for variable advances.
 func (s *Shaper) HasHvar() bool {
 	return s.hvar != nil && s.hvar.HasData()
+}
+
+// Math returns the parsed MATH table, or nil if the font has no MATH support.
+func (s *Shaper) Math() *Math {
+	return s.math
 }
 
 // applyAvarMapping applies avar non-linear mapping to normalizedCoordsI.
