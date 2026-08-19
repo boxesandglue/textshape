@@ -1530,6 +1530,12 @@ func (s *Shaper) HasHvar() bool {
 	return s.hvar != nil && s.hvar.HasData()
 }
 
+// Face returns the underlying Face the shaper operates on, giving
+// callers access to font-wide metrics such as CapHeight or Ascender.
+func (s *Shaper) Face() *Face {
+	return s.face
+}
+
 // Math returns the parsed MATH table, or nil if the font has no MATH support.
 func (s *Shaper) Math() *Math {
 	return s.math
