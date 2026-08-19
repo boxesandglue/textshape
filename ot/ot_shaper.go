@@ -301,6 +301,7 @@ func SelectShaper(script Tag, direction Direction) *OTShaper {
 		MakeTag('C', 'h', 'a', 'm'), // Cham
 		MakeTag('D', 'i', 'a', 'k'), // Dives Akuru
 		MakeTag('D', 'o', 'g', 'r'), // Dogra
+		MakeTag('E', 'g', 'y', 'p'), // Egyptian Hieroglyphs (hb-ot-shaper.hh:312, Unicode-5.2 additions)
 		MakeTag('G', 'r', 'a', 'n'), // Grantha
 		MakeTag('G', 'o', 'n', 'g'), // Gunjala Gondi
 		MakeTag('G', 'u', 'k', 'h'), // Gurung Khema

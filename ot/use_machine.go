@@ -35,17 +35,13 @@ func FindSyllablesUSE(syllables []USESyllableInfo) (hasBroken bool) {
 
 	for i := 0; i < n; i++ {
 		cat := syllables[i].Category
-		// Filter 1: Skip CGJ (HarfBuzz: not_ccs_default_ignorable)
+		// Filter 1: Skip CGJ (HarfBuzz: not_ccs_default_ignorable).
+		// ZWJ (U+200D) is category CGJ as well (is_CGJ in gen-use-table.py
+		// covers Joiner, variation selectors and ZWJ), so it is filtered
+		// here too. U+2060 WORD JOINER stays category WJ and is NOT
+		// filtered - it breaks clusters and triggers dotted circle
+		// insertion for broken syllables.
 		if cat == USE_CGJ {
-			continue
-		}
-		// Filter 1b: Skip ZWJ (U+200D) from Ragel input.
-		// HarfBuzz's compiled C Ragel machine treats ZWJ (category WJ=16) as transparent
-		// within clusters, but our Go Ragel compilation breaks clusters at ZWJ.
-		// U+2060 (Word Joiner) also has category WJ but must NOT be filtered - it should
-		// break clusters and trigger dotted circle insertion for broken syllables.
-		// Only filter the actual ZWJ character (U+200D).
-		if cat == USE_WJ && syllables[i].Codepoint == 0x200D {
 			continue
 		}
 		// Filter 2: Skip ZWNJ if next non-CGJ glyph is a unicode mark

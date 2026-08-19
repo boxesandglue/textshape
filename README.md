@@ -1,3 +1,5 @@
+[![Explore in Constellation](https://img.shields.io/badge/Explore%20in-Constellation-blue)](https://constellation.speedata.de)
+
 # textshape
 
 A pure Go text shaping engine and font subsetter. The shaping logic is a port of [HarfBuzz](https://harfbuzz.github.io/).
@@ -106,6 +108,12 @@ harfbuzz-tests/   HarfBuzz compatibility test suite
 - **Font units only**: The shaper works in font units (no scaling). Callers scale by `fontSize / upem`.
 - **Shaper reuse**: A `Shaper` is created once per font and reused across shaping calls. Settings like synthetic bold, variations, and default features persist between calls.
 - **int16 positions**: Glyph positions use `int16` (matching the OpenType spec's typical value range), not `int32` or `float`.
+
+## Ecosystem
+
+textshape is part of a broader ecosystem of PDF, typesetting and publishing technologies.
+
+**[Explore the constellation →](https://constellation.speedata.de)**
 
 ## License
 

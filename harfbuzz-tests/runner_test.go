@@ -986,8 +986,8 @@ var fileCategories = []struct {
 		"myanmar-misc", "myanmar-syllable", "myanmar-zawgyi",
 	}},
 	{"USE (Universal Shaping)", []string{
-		"use", "use-indic3", "use-javanese", "use-marchen", "use-syllable",
-		"use-vowel-letter-spoofing",
+		"egyptian", "use", "use-indic3", "use-javanese", "use-marchen",
+		"use-syllable", "use-vowel-letter-spoofing",
 	}},
 	{"Tibetan", []string{
 		"tibetan-contractions-1", "tibetan-contractions-2", "tibetan-vowels",
