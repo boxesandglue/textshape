@@ -38,12 +38,18 @@ type cffHeader struct {
 
 // TopDict contains top-level font dictionary data.
 type TopDict struct {
-	Version     int // SID
-	Notice      int // SID
-	FullName    int // SID
-	FamilyName  int // SID
-	Weight      int // SID
-	FontBBox    [4]int
+	Version    int // SID
+	Notice     int // SID
+	FullName   int // SID
+	FamilyName int // SID
+	Weight     int // SID
+	FontBBox   [4]int
+	// FontMatrix holds the encoded operands of the FontMatrix operator
+	// (12 7) as they appear in the font, nil when the font uses the
+	// default [0.001 0 0 0.001 0 0]. A font with 2048 or 4000 units per em
+	// needs it, and the operands are real numbers the DICT parser does not
+	// decode, so the subsetter copies them verbatim.
+	FontMatrix  []byte
 	CharStrings int    // Offset to CharStrings INDEX
 	Private     [2]int // [size, offset]
 	Charset     int    // Offset to Charset
@@ -267,6 +273,7 @@ func parseTopDict(data []byte) (TopDict, error) {
 	}
 
 	operands := make([]int, 0, 16)
+	operandStart := -1
 	pos := 0
 
 	for pos < len(data) {
@@ -274,6 +281,9 @@ func parseTopDict(data []byte) (TopDict, error) {
 
 		// Operand
 		if b >= 32 && b <= 254 || b == 28 || b == 29 || b == 30 {
+			if operandStart < 0 {
+				operandStart = pos
+			}
 			val, consumed := decodeDictOperand(data[pos:])
 			operands = append(operands, val)
 			pos += consumed
@@ -281,6 +291,7 @@ func parseTopDict(data []byte) (TopDict, error) {
 		}
 
 		// Operator
+		operandEnd := pos
 		op := int(b)
 		pos++
 		if b == 12 && pos < len(data) {
@@ -289,6 +300,10 @@ func parseTopDict(data []byte) (TopDict, error) {
 		}
 
 		switch op {
+		case dictFontMatrix:
+			if len(operands) == 6 && operandEnd <= len(data) {
+				dict.FontMatrix = append([]byte(nil), data[operandStart:operandEnd]...)
+			}
 		case dictVersion:
 			if len(operands) > 0 {
 				dict.Version = operands[len(operands)-1]
@@ -348,6 +363,7 @@ func parseTopDict(data []byte) (TopDict, error) {
 		}
 
 		operands = operands[:0]
+		operandStart = -1
 	}
 
 	return dict, nil

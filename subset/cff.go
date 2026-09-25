@@ -932,6 +932,14 @@ func buildTopDictWithSIDs(original *ot.CFF, sids topDictSIDs, charsetOff, charSt
 		writeDictInt(&buf, sids.Weight, 4) // Weight
 	}
 
+	// FontMatrix (operator 12 7), only when the font does not use the
+	// default. Dropping it scales a font with 4000 units per em by four.
+	if len(original.TopDict.FontMatrix) > 0 {
+		buf.Write(original.TopDict.FontMatrix)
+		buf.WriteByte(12)
+		buf.WriteByte(7)
+	}
+
 	// FontBBox (operator 5) - REQUIRED
 	writeIntArray(&buf, original.TopDict.FontBBox[:], 5)
 
