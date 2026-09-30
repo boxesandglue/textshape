@@ -704,12 +704,15 @@ func (c *Cmap) CollectMapping() map[rune]GlyphID {
 }
 
 // CollectReverseMapping returns a map of glyph IDs to Unicode codepoints.
-// If multiple codepoints map to the same glyph, the last one wins.
+// If multiple codepoints map to the same glyph, the lowest codepoint wins,
+// so the result does not depend on map iteration order.
 func (c *Cmap) CollectReverseMapping() map[GlyphID]rune {
 	mapping := c.CollectMapping()
 	reverse := make(map[GlyphID]rune, len(mapping))
 	for r, gid := range mapping {
-		reverse[gid] = r
+		if prev, ok := reverse[gid]; !ok || r < prev {
+			reverse[gid] = r
+		}
 	}
 	return reverse
 }
