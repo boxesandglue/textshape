@@ -816,42 +816,23 @@ func serializeCFFWithSIDMap(original *ot.CFF, charStrings [][]byte,
 
 	privateDictSize := privateDict.Len() + subrsOperatorSize
 
-	// Build Top DICT with remapped SIDs (like HarfBuzz)
-	topDictData := buildTopDictWithSIDs(original, topSIDs, 0, 0, privateDictSize, 0)
-
-	// Estimate Top DICT INDEX size
-	estimatedTopDictSize := len(topDictData)
-	topDictINDEXSize := 2 + 1 + 2 + estimatedTopDictSize // count + offSize + offsets + data
-
-	// Calculate offsets
-	offset := headerSize
-	offset += len(nameINDEX)
-	offset += topDictINDEXSize
-	offset += len(stringINDEX)
-	offset += len(globalSubrsINDEX)
-
-	charsetOffset := offset
-	offset += len(charset)
-
-	charStringsOffset := offset
-	offset += len(charStringsINDEX)
-
-	privateDictOffset := offset
-
-	// Rebuild Top DICT with correct offsets
-	topDictData = buildTopDictWithSIDs(original, topSIDs, charsetOffset, charStringsOffset, privateDictSize, privateDictOffset)
-	topDictINDEX := buildINDEX([][]byte{topDictData})
-
-	// Recalculate if size changed
-	if len(topDictINDEX) != topDictINDEXSize {
-		sizeDiff := len(topDictINDEX) - topDictINDEXSize
-
-		charsetOffset += sizeDiff
-		charStringsOffset += sizeDiff
-		privateDictOffset += sizeDiff
-
-		topDictData = buildTopDictWithSIDs(original, topSIDs, charsetOffset, charStringsOffset, privateDictSize, privateDictOffset)
-		topDictINDEX = buildINDEX([][]byte{topDictData})
+	// Build Top DICT with remapped SIDs (like HarfBuzz). It holds the
+	// offsets of the data behind it, and its own length depends on how many
+	// bytes those offsets take. Rebuild it until the length stays the same:
+	// moving the offsets by the growth can push one over an encoding
+	// boundary (107/108, 1131/1132, 32767/32768) and grow the DICT again.
+	// Offsets only grow, so the loop ends.
+	topDictINDEX := buildINDEX([][]byte{buildTopDictWithSIDs(original, topSIDs, 0, 0, privateDictSize, 0)})
+	for {
+		charsetOffset := headerSize + len(nameINDEX) + len(topDictINDEX) + len(stringINDEX) + len(globalSubrsINDEX)
+		charStringsOffset := charsetOffset + len(charset)
+		privateDictOffset := charStringsOffset + len(charStringsINDEX)
+		next := buildINDEX([][]byte{buildTopDictWithSIDs(original, topSIDs, charsetOffset, charStringsOffset, privateDictSize, privateDictOffset)})
+		done := len(next) == len(topDictINDEX)
+		topDictINDEX = next
+		if done {
+			break
+		}
 	}
 
 	// Phase 2: Write the CFF data
