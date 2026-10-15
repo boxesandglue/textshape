@@ -1,10 +1,10 @@
-[![Explore in Constellation](https://img.shields.io/badge/Explore%20in-Constellation-blue)](https://constellation.speedata.de)
+[![Explore in Constellation](https://img.shields.io/badge/Explore%20in-Constellation-blue)](https://constellation.speedata.de/#textshape)
 
 # textshape
 
 A pure Go text shaping engine and font subsetter. The shaping logic is a port of [HarfBuzz](https://harfbuzz.github.io/).
 
-> **Status:** Beta. The library is actively used in [boxes and glue](https://github.com/boxesandglue/boxesandglue) for PDF typesetting. The API may still change.
+textshape is used in [boxes and glue](https://github.com/boxesandglue/boxesandglue) for PDF typesetting.
 
 ## Features
 
@@ -113,7 +113,7 @@ harfbuzz-tests/   HarfBuzz compatibility test suite
 
 textshape is part of a broader ecosystem of PDF, typesetting and publishing technologies.
 
-**[Explore the constellation →](https://constellation.speedata.de)**
+**[Explore the constellation →](https://constellation.speedata.de/#textshape)**
 
 ## License
 
