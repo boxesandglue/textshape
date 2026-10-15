@@ -20,8 +20,10 @@ import (
 // 1 layer, 1 palette × 1 color.
 //
 // CPAL header bytes (offset 8 into the table) decode as:
-//   version=0  numColors=1  numPalettes=1  numColorRecords=1
-//   colorRecordsZ -> offset 14 from CPAL table start
+//
+//	version=0  numColors=1  numPalettes=1  numColorRecords=1
+//	colorRecordsZ -> offset 14 from CPAL table start
+//
 // The single color record bytes are 00 00 c8 ff i.e. BGRA
 // (B=0, G=0, R=200, A=255) — dark red (#C80000). The font author chose a
 // distinctive color so "color rendered correctly" is visually obvious.

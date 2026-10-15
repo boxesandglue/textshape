@@ -346,7 +346,7 @@ func TestCFFClosureSyntheticSharedStack(t *testing.T) {
 	}
 
 	// Verify computeTotalHintCount with shared stack
-	localBias := calcSubrBias(len(localSubrs))  // 107
+	localBias := calcSubrBias(len(localSubrs))   // 107
 	globalBias := calcSubrBias(len(globalSubrs)) // 107
 	hintCount := computeTotalHintCount(charstring, globalSubrs, localSubrs, globalBias, localBias)
 	if hintCount != 2 {
@@ -363,8 +363,8 @@ func TestCFFClosureSyntheticSharedStack(t *testing.T) {
 	}
 	// subr 0 now: calls subr 2 (which pushes 2 values), pushes 2 more, hstem, return
 	localSubr0nested := []byte{
-		34, // push -105 (subr 2 biased index: 2-107=-105, byte=139+(-105)=34)
-		10, // callsubr (calls subr 2, which pushes 10, 20)
+		34,       // push -105 (subr 2 biased index: 2-107=-105, byte=139+(-105)=34)
+		10,       // callsubr (calls subr 2, which pushes 10, 20)
 		169, 179, // push 30, 40
 		1,  // hstem → consumes all 4 values = 2 hints
 		11, // return
@@ -482,12 +482,12 @@ func TestCFFClosureRewalksRepeatedSubr(t *testing.T) {
 	charstring := []byte{}
 	charstring = append(charstring, pushPairs...)
 	charstring = append(charstring,
-		18,   // hstemhm → 8 hstems, hintCount=8
-		19,   // hintmask
-		0x80, // 1 mask byte (correct: hintCount=8)
+		18,       // hstemhm → 8 hstems, hintCount=8
+		19,       // hintmask
+		0x80,     // 1 mask byte (correct: hintCount=8)
 		149, 159, // push 10, 20 (drawing args for subr 0's vlineto)
-		32, // push -107 (= biased subr 0)
-		10, // callsubr 0 (first call — vlineto consumes 10, 20)
+		32,       // push -107 (= biased subr 0)
+		10,       // callsubr 0 (first call — vlineto consumes 10, 20)
 		149, 159, // push 10, 20 again
 		32,   // push -107 (= biased subr 0)
 		10,   // callsubr 0 (SECOND call — the bug trigger)
@@ -527,12 +527,12 @@ func TestCFFClosureRewalksRepeatedSubr(t *testing.T) {
 	gCharstring := []byte{}
 	gCharstring = append(gCharstring, pushPairs...)
 	gCharstring = append(gCharstring,
-		18,   // hstemhm → 8 hstems
-		19,   // hintmask
-		0x80, // 1 mask byte
+		18,       // hstemhm → 8 hstems
+		19,       // hintmask
+		0x80,     // 1 mask byte
 		149, 159, // push 10, 20
-		32, // push -107 (biased global subr 0)
-		29, // callgsubr 0 (first call)
+		32,       // push -107 (biased global subr 0)
+		29,       // callgsubr 0 (first call)
 		149, 159, // push 10, 20
 		32, // push -107
 		29, // callgsubr 0 (second call — bug trigger on global path)

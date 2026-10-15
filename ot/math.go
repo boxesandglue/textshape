@@ -625,13 +625,13 @@ func parseMathKern(data []byte, off int) (*mathKernTable, error) {
 // parseMathVariants reads the MathVariants block at the given offset
 // (relative to the MATH table start). Layout per OT-MATH spec:
 //
-//	  0  uint16   minConnectorOverlap
-//	  2  Offset16 vertGlyphCoverageOffset    (relative to MathVariants)
-//	  4  Offset16 horizGlyphCoverageOffset
-//	  6  uint16   vertGlyphCount
-//	  8  uint16   horizGlyphCount
-//	 10  Offset16 vertGlyphConstruction[vertGlyphCount]
-//	     Offset16 horizGlyphConstruction[horizGlyphCount]
+//	 0  uint16   minConnectorOverlap
+//	 2  Offset16 vertGlyphCoverageOffset    (relative to MathVariants)
+//	 4  Offset16 horizGlyphCoverageOffset
+//	 6  uint16   vertGlyphCount
+//	 8  uint16   horizGlyphCount
+//	10  Offset16 vertGlyphConstruction[vertGlyphCount]
+//	    Offset16 horizGlyphConstruction[horizGlyphCount]
 //
 // Each MathGlyphConstruction inhabits its own sub-table with variants and
 // optionally a glyph assembly. We materialize everything into Go maps so
@@ -709,11 +709,11 @@ func (m *Math) parseMathVariants(data []byte, off int) error {
 
 // parseMathGlyphConstruction reads one MathGlyphConstruction sub-table:
 //
-//	  0  Offset16 glyphAssemblyOffset (relative to this table; 0 = none)
-//	  2  uint16   variantCount
-//	  4  MathGlyphVariantRecord variants[variantCount]   // 4 bytes each
-//	     uint16 variantGlyph
-//	     uint16 advanceMeasurement
+//	0  Offset16 glyphAssemblyOffset (relative to this table; 0 = none)
+//	2  uint16   variantCount
+//	4  MathGlyphVariantRecord variants[variantCount]   // 4 bytes each
+//	   uint16 variantGlyph
+//	   uint16 advanceMeasurement
 func parseMathGlyphConstruction(data []byte, off int) ([]MathVariant, *MathGlyphAssembly, error) {
 	if off < 0 || off+4 > len(data) {
 		return nil, nil, ErrInvalidOffset
@@ -744,14 +744,14 @@ func parseMathGlyphConstruction(data []byte, off int) ([]MathVariant, *MathGlyph
 
 // parseGlyphAssembly reads a GlyphAssembly sub-table:
 //
-//	  0  MathValueRecord italicsCorrection   (4 bytes; only value used)
-//	  4  uint16          partCount
-//	  6  GlyphPartRecord parts[partCount]     // 10 bytes each
-//	     uint16 glyph
-//	     uint16 startConnectorLength
-//	     uint16 endConnectorLength
-//	     uint16 fullAdvance
-//	     uint16 partFlags                    // bit 0 = EXTENDER
+//	0  MathValueRecord italicsCorrection   (4 bytes; only value used)
+//	4  uint16          partCount
+//	6  GlyphPartRecord parts[partCount]     // 10 bytes each
+//	   uint16 glyph
+//	   uint16 startConnectorLength
+//	   uint16 endConnectorLength
+//	   uint16 fullAdvance
+//	   uint16 partFlags                    // bit 0 = EXTENDER
 func parseGlyphAssembly(data []byte, off int) (*MathGlyphAssembly, error) {
 	if off < 0 || off+6 > len(data) {
 		return nil, ErrInvalidOffset

@@ -77,18 +77,18 @@ func TestSbixParseSynthetic(t *testing.T) {
 	strike = appendBE16(strike, 64) // ppem
 	strike = appendBE16(strike, 72) // resolution
 	const glyphOff = uint32(4 + (numGlyphs+1)*4)
-	strike = appendBE32(strike, glyphOff)                          // imageOffsets[0]
-	strike = appendBE32(strike, glyphOff+uint32(len(glyph)))       // imageOffsets[1]
-	strike = appendBE32(strike, glyphOff+uint32(len(glyph)))       // imageOffsets[2] (sentinel; gid 1 zero-length)
+	strike = appendBE32(strike, glyphOff)                    // imageOffsets[0]
+	strike = appendBE32(strike, glyphOff+uint32(len(glyph))) // imageOffsets[1]
+	strike = appendBE32(strike, glyphOff+uint32(len(glyph))) // imageOffsets[2] (sentinel; gid 1 zero-length)
 	strike = append(strike, glyph...)
 
 	// sbix layout: 8-byte header + 4-byte strike offset, then strike body.
 	const strikeAbsOff = uint32(8 + 4)
 	tbl := []byte{}
-	tbl = appendBE16(tbl, 1)              // version = 1
-	tbl = appendBE16(tbl, 1)              // flags = 0x0001
-	tbl = appendBE32(tbl, 1)              // numStrikes = 1
-	tbl = appendBE32(tbl, strikeAbsOff)   // strikeOffsets[0]
+	tbl = appendBE16(tbl, 1)            // version = 1
+	tbl = appendBE16(tbl, 1)            // flags = 0x0001
+	tbl = appendBE32(tbl, 1)            // numStrikes = 1
+	tbl = appendBE32(tbl, strikeAbsOff) // strikeOffsets[0]
 	tbl = append(tbl, strike...)
 
 	sbix, err := ParseSbix(tbl, numGlyphs)
@@ -137,9 +137,9 @@ func TestSbixChooseStrike(t *testing.T) {
 		requested int
 		wantPPEM  uint16
 	}{
-		{requested: 20, wantPPEM: 32},   // smallest at-least 20
-		{requested: 32, wantPPEM: 32},   // exact match
-		{requested: 50, wantPPEM: 64},   // smallest at-least 50
+		{requested: 20, wantPPEM: 32}, // smallest at-least 20
+		{requested: 32, wantPPEM: 32}, // exact match
+		{requested: 50, wantPPEM: 64}, // smallest at-least 50
 		{requested: 96, wantPPEM: 96},
 		{requested: 200, wantPPEM: 256}, // smallest at-least 200
 		{requested: 500, wantPPEM: 256}, // none big enough — pick largest
